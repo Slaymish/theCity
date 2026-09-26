@@ -1,0 +1,9 @@
+Checking MCP server health…
+
+claude.ai Claude Docs: https://example.invalid/mcp - ✔ Connected
+claude.ai Google Calendar: https://example.invalid/mcp - ✔ Connected
+claude.ai Google Drive: https://example.invalid/mcp - ✔ Connected
+plugin:chrome-devtools-mcp:chrome-devtools: npx chrome-devtools-mcp@1.9.0 - ✔ Connected
+penpot: https://example.invalid/mcp (HTTP) - ✔ Connected
+specification-website: https://example.invalid/mcp (HTTP) - ✔ Connected
+shadcn: npx shadcn@latest mcp - ⏸ Pending approval (run `claude` to approve)

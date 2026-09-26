@@ -1,0 +1,6 @@
+[submodule "Assets/Vendor/KayKit-City-Builder-Bits-1.0"]
+	path = Assets/Vendor/KayKit-City-Builder-Bits-1.0
+	url = https://github.com/KayKit-Game-Assets/KayKit-City-Builder-Bits-1.0.git
+[submodule "Assets/Vendor/KayKit-Furniture-Bits-1.0"]
+	path = Assets/Vendor/KayKit-Furniture-Bits-1.0
+	url = https://github.com/KayKit-Game-Assets/KayKit-Furniture-Bits-1.0.git

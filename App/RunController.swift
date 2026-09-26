@@ -1,0 +1,754 @@
+import AppKit
+import Foundation
+import Observation
+import SwiftUI
+import OfficeCore
+
+struct LogEntry: Identifiable {
+    enum Kind { case event(String), malformed(String), app, sent }
+    let id = UUID()
+    let elapsed: TimeInterval
+    let kind: Kind
+    let text: String
+    /// Some lines run to tens of thousands of characters; laying them out even at two lines stalls scrolling.
+    let preview: String
+
+    init(elapsed: TimeInterval, kind: Kind, text: String) {
+        self.elapsed = elapsed
+        self.kind = kind
+        self.text = text
+        preview = text.count > 600 ? String(text.prefix(600)) + "…" : text
+    }
+}
+
+struct Step: Identifiable, Equatable {
+    enum Status { case waiting, working, done }
+    var id: String { room }
+    var room: String
+    var colour: NSColor
+    var isContractor: Bool
+    var status: Status = .waiting
+    var workedFor: TimeInterval = 0
+    var startedAt: Date?
+}
+
+@MainActor
+@Observable
+final class RunController {
+    enum Screen { case reception, hiring, office }
+    enum PanelTab { case requests, room, kit }
+
+    let buildingID: UUID?
+    private(set) var floorID: UUID?
+    var pendingFloorName: String?
+    private(set) var queued: [String] = []
+    let scene = OfficeScene()
+
+    var screen: Screen = .reception
+    enum Readiness: Equatable {
+        case checking, ready, cliMissing, notLoggedIn
+    }
+
+    struct LimitNotice: Equatable {
+        var message: String
+        var url: URL?
+        var resetsAt: Date?
+    }
+
+    var request = RunController.launchArgument("-request") ?? ""
+    private(set) var readiness: Readiness = .checking
+    private(set) var limitNotice: LimitNotice?
+    private(set) var catalogueNames: [String] = []
+    private(set) var hiringIsSlow = false
+    var workingDirectory: URL? {
+        didSet {
+            UserDefaults.standard.set(workingDirectory?.path, forKey: "workingDirectory")
+            loadKit()
+            refreshCatalogue()
+        }
+    }
+    var budgetUSD: Double = Preferences.shared.budgetUSD
+    var panelTab: PanelTab = .requests
+    var showPanel = false
+    var selectedRoom: String?
+    var model: String? = RunController.launchArgument("-model") ?? Preferences.shared.model
+    var configDirectory: URL? = Preferences.shared.configDirectory {
+        didSet {
+            loadKit()
+            checkReadiness()
+        }
+    }
+    private(set) var kit: Kit?
+    private(set) var isLoadingKit = false
+    var allowedServers: Set<String> = []
+    var allowedSkills: Set<String> = []
+    private(set) var kitReasons: [String: String] = [:]
+    @ObservationIgnored private var kitTask: Task<Kit?, Never>?
+
+    private(set) var candidates: [Candidate] = []
+    private(set) var hiringNote: String?
+    private(set) var isHiring = false
+    private(set) var hired: [Department] = []
+
+    private(set) var state = OfficeState()
+    private(set) var steps: [Step] = []
+    private(set) var activity: [ActivityItem] = []
+    private(set) var log: [LogEntry] = []
+    private(set) var startedAt: Date?
+    private(set) var endedAt: Date?
+    private(set) var jobFiles: [String] = []
+    private(set) var followUps: [String] = []
+    private(set) var resumeSession: String?
+    private(set) var currentJob: UUID?
+    private(set) var jobCost: Double = 0
+    private(set) var jobDuration: TimeInterval = 0
+
+
+    @ObservationIgnored private var reducer = OfficeReducer()
+    @ObservationIgnored private var process: ClaudeProcess?
+    @ObservationIgnored private var consumer: Task<Void, Never>?
+    @ObservationIgnored private var isReplay = false
+
+    static let budgets: [Double] = [0.5, 1, 2, 5, 10]
+    static let models = ["sonnet", "haiku", "opus", "fable"]
+
+    init(building: CityStore.Building?, floor: CityStore.Floor?) {
+        buildingID = building?.id
+        floorID = floor?.id
+        workingDirectory = building?.url ?? Self.defaultWorkspace
+        refreshCatalogue()
+        loadKit()
+        checkReadiness()
+        guard let floor, let url = building?.url else { return }
+        let catalogue = AgentCatalogue.load(workingDirectory: url)
+        hired = floor.hires.compactMap { name in catalogue.first { $0.name == name } }
+        model = floor.model
+        budgetUSD = floor.budgetUSD
+        if let servers = floor.allowedServers { allowedServers = Set(servers) }
+        if let skills = floor.allowedSkills { allowedSkills = Set(skills) }
+        resumeSession = floor.sessionID
+        request = floor.lastRequest ?? ""
+        screen = .office
+        buildScene()
+    }
+
+    /// The floor's own office, built from its team and the services it may use.
+    func buildScene() {
+        let dark = Preferences.shared.isDark
+        scene.build(hired: hired, servers: (kit?.usableServers ?? []).filter { allowedServers.contains($0.name) },
+                    colour: { [weak self] in self?.colour(for: $0) ?? Palette.muted }, dark: dark)
+        showRecords()
+    }
+
+    func showRecords() {
+        guard let floorID, let buildingID else { return }
+        let journal = CityStore.shared.journal
+        let mine = journal.filter { $0.floorID == floorID && $0.outcome == "completed" }
+        let fastest = journal.filter { $0.buildingID == buildingID && $0.outcome == "completed" }.min { $0.duration < $1.duration }
+        scene.showRecords(mine, fastest: fastest?.floorID == floorID ? fastest?.duration : nil)
+    }
+
+    var displayTitle: String {
+        guard let buildingID, let floorID, let floor = CityStore.shared.floor(floorID, in: buildingID) else { return "New floor" }
+        return floor.name
+    }
+
+    func loadKit() {
+        guard let workingDirectory else { return }
+        let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
+        guard let executable = Self.cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment) else { return }
+        kitTask?.cancel()
+        isLoadingKit = true
+        let task = Task { () -> Kit? in
+            let loaded = await KitLoader.load(executable: executable, environment: environment, workingDirectory: workingDirectory)
+            return Task.isCancelled ? nil : loaded
+        }
+        kitTask = task
+        Task {
+            guard let loaded = await task.value else { return }
+            kit = loaded
+            let floor = floorID.flatMap { id in buildingID.flatMap { CityStore.shared.floor(id, in: $0) } }
+            allowedServers = floor?.allowedServers.map(Set.init) ?? Set(loaded.usableServers.map(\.name))
+            allowedSkills = floor?.allowedSkills.map(Set.init) ?? Set(loaded.skills.map(\.name))
+            kitReasons = [:]
+            isLoadingKit = false
+            if screen == .office && !isRunning { buildScene() }
+        }
+    }
+
+    func toggleServer(_ name: String) {
+        if !allowedServers.insert(name).inserted { allowedServers.remove(name) }
+    }
+
+    func toggleSkill(_ name: String) {
+        if !allowedSkills.insert(name).inserted { allowedSkills.remove(name) }
+    }
+
+    func friendly(_ toolName: String) -> String {
+        McpNaming.friendly(toolName, servers: (kit?.servers ?? state.mcpServers).map(\.name))
+    }
+
+    var isRunning: Bool { state.phase == .running || (consumer != nil && endedAt == nil) }
+
+    static var configDirectories: [URL] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: home.path)) ?? []
+        return names.filter { $0.hasPrefix(".claude-") }.sorted()
+            .map { home.appendingPathComponent($0) }
+            .filter { FileManager.default.fileExists(atPath: $0.appendingPathComponent(".claude.json").path) }
+    }
+
+    private static var cliOverride: URL? {
+        (launchArgument("-cli") ?? Preferences.shared.cliPath).map { URL(fileURLWithPath: $0) }
+    }
+
+    var primaryModels: [ModelOption] {
+        Array((kit?.models ?? []).filter { $0.value != "default" }.prefix(4))
+    }
+
+    var otherModels: [ModelOption] {
+        Array((kit?.models ?? []).filter { $0.value != "default" }.dropFirst(4))
+    }
+
+    func modelName(_ value: String?) -> String {
+        guard let value else { return "Default" }
+        return kit?.models.first { $0.value == value }?.displayName ?? value.capitalized
+    }
+
+    var workspaceSummary: String? {
+        guard let workingDirectory else { return nil }
+        let count = catalogueNames.count
+        return "\(workingDirectory.lastPathComponent) · \(count == 0 ? "no" : "\(count)") department\(count == 1 ? "" : "s") on staff"
+    }
+
+    func refreshCatalogue() {
+        catalogueNames = workingDirectory.map { AgentCatalogue.load(workingDirectory: $0).map(\.name) } ?? []
+    }
+
+    func checkReadiness() {
+        let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
+        guard let executable = Self.cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment),
+              FileManager.default.isExecutableFile(atPath: executable.path) else {
+            readiness = .cliMissing
+            return
+        }
+        if readiness != .ready { readiness = .checking }
+        Task {
+            let loggedIn = await ClaudeEnvironment.isLoggedIn(executable: executable, environment: environment)
+            readiness = loggedIn == false ? .notLoggedIn : .ready
+        }
+    }
+
+    func signIn() {
+        let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
+        guard let executable = Self.cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment) else { return }
+        let script = FileManager.default.temporaryDirectory.appendingPathComponent("The Office sign-in.command")
+        let config = configDirectory.map { "export CLAUDE_CONFIG_DIR='\($0.path)'\n" } ?? ""
+        let body = "#!/bin/zsh\n\(config)'\(executable.path)' auth login\necho\necho 'You can close this window and return to The Office.'\n"
+        do {
+            try body.write(to: script, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+            NSWorkspace.shared.open(script)
+        } catch {
+            appLog("Couldn’t open Terminal to sign in: \(error.localizedDescription)")
+        }
+    }
+
+    func clearLimitNoticeIfExpired() {
+        if let resets = limitNotice?.resetsAt, resets < .now { limitNotice = nil }
+    }
+
+    static func launchArgument(_ name: String) -> String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let i = arguments.firstIndex(of: name), i + 1 < arguments.count else { return nil }
+        return arguments[i + 1]
+    }
+
+    static var defaultWorkspace: URL? {
+        launchArgument("-workspace").map { URL(fileURLWithPath: $0) }
+    }
+
+    func colour(for room: String) -> NSColor {
+        if room == "manager" { return Palette.manager }
+        if let index = catalogueNames.firstIndex(of: room) { return Palette.accent(forHireIndex: index) }
+        return Palette.muted
+    }
+
+    func displayName(_ room: String) -> String {
+        if room == "manager" { return "The manager" }
+        if room == "contractor" || !catalogueNames.contains(room) { return "Contractor" }
+        return room.capitalized
+    }
+
+    // MARK: Hiring
+
+    func beginHiring() {
+        guard let workingDirectory, !request.isEmpty else { return }
+        screen = .hiring
+        askReceptionist(workingDirectory: workingDirectory)
+    }
+
+    func askAgain() {
+        guard let workingDirectory, !isHiring else { return }
+        askReceptionist(workingDirectory: workingDirectory)
+    }
+
+    func move(_ id: String, before target: String) {
+        guard id != target, let from = candidates.firstIndex(where: { $0.id == id }) else { return }
+        let moving = candidates.remove(at: from)
+        let to = candidates.firstIndex(where: { $0.id == target }) ?? candidates.endIndex
+        candidates.insert(moving, at: to)
+    }
+
+    private func askReceptionist(workingDirectory: URL) {
+        isHiring = true
+        hiringNote = nil
+        let catalogue = AgentCatalogue.load(workingDirectory: workingDirectory)
+        catalogueNames = catalogue.map(\.name)
+        hiringIsSlow = false
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if isHiring { hiringIsSlow = true }
+        }
+        candidates = catalogue.map { Candidate(department: $0, reason: nil, hired: false) }
+        guard !catalogue.isEmpty else {
+            isHiring = false
+            hiringNote = "No departments found in \(workingDirectory.lastPathComponent)/.claude/agents. Add agent files there to hire them."
+            return
+        }
+        let request = request
+        let kitTask = kitTask
+        Task {
+            let kit = await Self.value(of: kitTask, within: .seconds(3)) ?? self.kit
+            let outcome = await HiringDesk.propose(request: request, catalogue: catalogue, kit: kit)
+            guard screen == .hiring else { return }
+            switch outcome {
+            case .proposed(let proposed, let kitPlan):
+                candidates = proposed
+                if !proposed.contains(where: \.hired) { hiringNote = "The receptionist didn’t think any department was needed. Pick some yourself." }
+                if let kit, let kitPlan {
+                    allowedServers = kitPlan.servers
+                    allowedSkills = kitPlan.skills
+                    kitReasons = kitPlan.reasons
+                    self.kit = kit
+                }
+            case .unavailable(let note, let everyone):
+                candidates = everyone
+                hiringNote = note
+            }
+            isHiring = false
+        }
+    }
+
+    private static func value(of task: Task<Kit?, Never>?, within limit: Duration) async -> Kit? {
+        guard let task else { return nil }
+        return await withTaskGroup(of: Kit?.self) { group in
+            group.addTask { await task.value }
+            group.addTask {
+                try? await Task.sleep(for: limit)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
+    func moveUp(_ candidate: Candidate) {
+        guard let index = candidates.firstIndex(of: candidate), index > 0 else { return }
+        candidates.swapAt(index, index - 1)
+    }
+
+    func moveDown(_ candidate: Candidate) {
+        guard let index = candidates.firstIndex(of: candidate), index < candidates.count - 1 else { return }
+        candidates.swapAt(index, index + 1)
+    }
+
+    func toggle(_ candidate: Candidate) {
+        guard let index = candidates.firstIndex(of: candidate) else { return }
+        candidates[index].hired.toggle()
+    }
+
+    func backToReception() {
+        guard !isRunning else { return }
+        screen = .reception
+    }
+
+    func openOffice() {
+        hired = candidates.filter(\.hired).map(\.department)
+        screen = .office
+        jobFiles = []
+        followUps = []
+        currentJob = nil
+        resumeSession = nil
+        selectedRoom = nil
+        panelTab = .requests
+        buildScene()
+        if floorID == nil { floorID = CityStore.shared.floorOpened(self) }
+        start(message: request, resume: nil)
+    }
+
+    /// A job that arrives while the floor is busy waits its turn.
+    func queue(_ text: String) {
+        queued.append(text)
+        appLog("Queued for when this floor is free: \(text)")
+    }
+
+    /// A fresh job for this floor's existing team.
+    func newJobOnFloor(_ text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isRunning, !text.isEmpty else { return }
+        request = text
+        jobFiles = []
+        followUps = []
+        currentJob = nil
+        start(message: text, resume: nil)
+    }
+
+    var recordLine: String? {
+        let journal = CityStore.shared.journal
+        guard case .ended(.completed) = state.phase, let job = journal.last(where: { $0.id == currentJob }) else { return nil }
+        let earlier = journal.filter { $0.id != job.id && $0.workingDirectory == job.workingDirectory && $0.outcome == "completed" }
+        if earlier.count >= 2, earlier.allSatisfy({ $0.duration > job.duration }) {
+            return "Fastest job in \(job.folderName) yet: \(Self.clock(job.duration))"
+        }
+        if let cost = job.costUSD, job.budgetUSD - cost >= 0.01 {
+            return "Under budget by \((job.budgetUSD - cost).formatted(.currency(code: "USD")))"
+        }
+        return nil
+    }
+
+    static func clock(_ seconds: TimeInterval) -> String {
+        let whole = Int(seconds.rounded())
+        return whole < 60 ? "\(whole)s" : String(format: "%d:%02d", whole / 60, whole % 60)
+    }
+
+    private func recordJob(_ outcome: RunOutcome) {
+        guard let workingDirectory else { return }
+        let runCost = state.tally.costUSD ?? 0
+        let runTime = (endedAt ?? .now).timeIntervalSince(startedAt ?? .now)
+        let label: String = switch outcome {
+        case .completed: "completed"
+        case .cancelled: "cancelled"
+        case .failed: "failed"
+        }
+        CityStore.shared.jobEnded(on: floorID, in: buildingID, sessionID: state.sessionID, outcome: label)
+        let job = currentJob ?? UUID()
+        let files = jobFiles
+        let session = state.sessionID
+        let (request, hires, budget, buildingID, floorID) = (request, hired.map(\.name), budgetUSD, buildingID, floorID)
+        currentJob = job
+        defer { CityStore.shared.sessions.values.filter { $0.buildingID == buildingID }.forEach { $0.showRecords() } }
+        CityStore.shared.record { journal in
+            if let index = journal.firstIndex(where: { $0.id == job }) {
+                journal[index].costUSD = (journal[index].costUSD ?? 0) + runCost
+                journal[index].duration += runTime
+                journal[index].files = files
+                journal[index].sessionID = session ?? journal[index].sessionID
+                journal[index].outcome = label
+                journal[index].date = .now
+                journal.append(journal.remove(at: index))
+            } else {
+                journal.append(JobRecord(id: job, date: .now, request: request, workingDirectory: workingDirectory.path,
+                                         hires: hires, costUSD: runCost, budgetUSD: budget, duration: runTime,
+                                         files: files, sessionID: session, outcome: label, buildingID: buildingID, floorID: floorID))
+            }
+        }
+    }
+
+    func followUp(_ text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isRunning, !text.isEmpty, let session = state.sessionID ?? resumeSession else { return }
+        followUps.append(text)
+        start(message: text, resume: session)
+    }
+
+    // MARK: Running
+
+    private func start(message request: String, resume: String?) {
+        guard !isRunning, let workingDirectory else { return }
+        isReplay = false
+        reset(keepLog: resume != nil)
+        CityStore.shared.jobStarted(on: floorID, in: buildingID, request: request)
+        if let resume { appLog("Follow-up in session \(resume): \(request)") }
+        let config = RunConfig(
+            request: request,
+            workingDirectory: workingDirectory,
+            claudeConfigDirectory: configDirectory,
+            model: model,
+            maxBudgetUSD: budgetUSD,
+            appendSystemPrompt: hired.isEmpty ? nil : AgentCatalogue.hiringBrief(for: hired),
+            resumeSessionID: resume,
+            blockedTools: kit.map { Kit.blockRules(servers: $0.usableServers, allowedServers: allowedServers,
+                                                   skills: $0.skills, allowedSkills: allowedSkills) } ?? []
+        )
+        let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
+        consumer = Task { [weak self] in
+            guard let self else { return }
+            guard let executable = Self.cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment),
+                  FileManager.default.isExecutableFile(atPath: executable.path) else {
+                appLog(Self.cliOverride.map { "No executable at \($0.path)" } ?? "claude CLI not found on PATH or in \(ClaudeEnvironment.extraPaths.joined(separator: ", "))")
+                return send(.launchFailed(.cliNotFound))
+            }
+            appLog("Using \(executable.path)")
+            appLog("Checking login (claude auth status)…")
+            if await ClaudeEnvironment.isLoggedIn(executable: executable, environment: environment) == false {
+                appLog("Not logged in for config directory \(configDirectory?.path ?? "default")")
+                return send(.launchFailed(.notLoggedIn))
+            }
+            guard !Task.isCancelled else { return }
+            do {
+                let process = try ClaudeProcess(
+                    executable: executable,
+                    arguments: config.arguments,
+                    environment: environment,
+                    workingDirectory: workingDirectory,
+                    keepInputOpen: true
+                )
+                self.process = process
+                appLog("Launched in \(workingDirectory.path)")
+                if let brief = config.appendSystemPrompt { appLog("Hiring brief: \(brief)") }
+                if !config.blockedTools.isEmpty { appLog("Blocked for this job: \(config.blockedTools.joined(separator: ", "))") }
+                send(.launched)
+                write(ControlMessage.initialize(), note: "initialize")
+                write(ControlMessage.userMessage(request), note: "request")
+                await consume(process.output)
+            } catch {
+                appLog("Launch failed: \(error.localizedDescription)")
+                send(.launchFailed(.couldNotStart(error.localizedDescription)))
+            }
+        }
+    }
+
+    func replay(_ url: URL) {
+        guard !isRunning else { return }
+        if let workingDirectory { hired = AgentCatalogue.load(workingDirectory: workingDirectory) }
+        screen = .office
+        jobFiles = []
+        followUps = []
+        buildScene()
+        reset(keepLog: false)
+        do {
+            isReplay = true
+            let stream = try FixtureReplay.stream(contentsOf: url)
+            appLog("Replaying \(url.lastPathComponent)")
+            send(.launched)
+            consumer = Task { [weak self] in await self?.consume(stream) }
+        } catch {
+            appLog("Could not read \(url.path): \(error.localizedDescription)")
+        }
+    }
+
+    func cancel() {
+        guard isRunning else { return }
+        appLog("Cancel requested (SIGINT)")
+        send(.cancelRequested)
+        if let process {
+            process.closeInput()
+            process.cancel()
+        } else {
+            consumer?.cancel()
+            send(.processExited(code: 0, stderr: ""))
+        }
+    }
+
+    func newJob() {
+        guard !isRunning else { return }
+        reset(keepLog: false)
+        clearLimitNoticeIfExpired()
+    }
+
+    var isAccountFailure: Bool {
+        guard case .ended(.failed(let reason, let message)) = state.phase else { return false }
+        switch reason {
+        case .cliNotFound, .notLoggedIn: return true
+        case .runError: return (message ?? "").localizedCaseInsensitiveContains("limit")
+        default: return false
+        }
+    }
+
+    func select(room: String) {
+        selectedRoom = room
+        panelTab = state.pendingRequests.contains { $0.room == room } ? .requests : .room
+    }
+
+    func shutDown() async {
+        guard isRunning else { return }
+        cancel()
+        for _ in 0..<60 where isRunning { try? await Task.sleep(for: .milliseconds(100)) }
+    }
+
+    // MARK: Questions and approvals
+
+    func answer(_ pending: PendingRequest, answers: [String: String]) {
+        write(ControlMessage.answer(pending.request, answers: answers), note: "answered \(answers.values.joined(separator: " / "))")
+        send(.requestResolved(requestID: pending.id))
+    }
+
+    func allow(_ pending: PendingRequest, always: Bool = false) {
+        let note = always ? "always allowed \(pending.request.suggestedRules.joined(separator: ", "))" : "allowed \(pending.request.toolName)"
+        write(ControlMessage.allow(pending.request, always: always), note: note)
+        send(.requestResolved(requestID: pending.id))
+    }
+
+    func deny(_ pending: PendingRequest) {
+        write(ControlMessage.deny(pending.request, message: "The user denied this in The Office."), note: "denied \(pending.request.toolName)")
+        send(.requestResolved(requestID: pending.id))
+    }
+
+    private func write(_ line: Data, note: String) {
+        let sent = process?.send(line) ?? false
+        log.append(LogEntry(elapsed: sinceStart, kind: .sent, text: sent ? "→ \(note)" : "→ \(note) (not sent: no live process)"))
+    }
+
+    private func consume(_ stream: AsyncStream<RunnerOutput>) async {
+        for await output in stream {
+            switch output {
+            case .line(let line):
+                switch line.parsed {
+                case .event(let event):
+                    log.append(LogEntry(elapsed: sinceStart, kind: .event(Self.tag(for: event)), text: line.raw))
+                    send(.wire(event))
+                    if case .result = event { closeInputIfIdle() }
+                case .malformed(let reason):
+                    log.append(LogEntry(elapsed: sinceStart, kind: .malformed(reason), text: line.raw))
+                }
+            case .exited(let code, let stderr):
+                appLog("Process exited with code \(code)")
+                if !stderr.isEmpty { appLog("stderr: \(stderr)") }
+                send(.processExited(code: code, stderr: stderr))
+            }
+        }
+        process = nil
+    }
+
+    /// Background subagents start a fresh turn when they finish, so stdin stays open until nothing is outstanding.
+    private func closeInputIfIdle() {
+        guard let process, state.backgroundTasks == 0, state.pendingRequests.isEmpty else { return }
+        appLog("Turn finished with nothing outstanding; closing input")
+        process.closeInput()
+    }
+
+    private func send(_ input: RunInput) {
+        let events = reducer.apply(input)
+        state = reducer.state
+        if case .wire(.rateLimit(let limit)) = input { UsageStore.shared.record(limit) }
+        Attention.shared.waiting(state.pendingRequests.count)
+        if case .ended = state.phase, endedAt == nil { endedAt = .now }
+        track(events)
+        for path in state.outputFiles where !jobFiles.contains(path) { jobFiles.append(path) }
+        if !events.isEmpty { scene.apply(events) }
+    }
+
+    private func note(_ room: String, _ text: String) {
+        activity.append(ActivityItem(room: room, text: text))
+        if activity.count > 40 { activity.removeFirst(activity.count - 40) }
+    }
+
+    private func track(_ events: [OfficeEvent]) {
+        for event in events {
+            let name = { (room: String) in self.displayName(room) }
+            switch event {
+            case .handoff(_, let room, let description):
+                note("manager", "The manager briefed \(name(room))\(description.map { ": \($0)" } ?? "")")
+            case .roomActivity(let room, let tool):
+                let last = state.handoffs(in: room).last?.tools.last?.summary.map { URL(fileURLWithPath: $0).lastPathComponent }
+                note(room, "\(name(room)): \(Wording.verb(tool).lowercased())\(last.map { " \($0)" } ?? "")")
+            case .roomFinished(_, let room, let outcome):
+                note(room, outcome == .completed ? "\(name(room)) finished" : "\(name(room)) stopped")
+            case .skillLoaded(let room, let skill):
+                note(room, "\(name(room)) picked up the \(skill) skill")
+            case .serviceCall(_, let room, let server, true):
+                note(room, "\(name(room)) is calling \(OfficeScene.shortName(server))")
+            default:
+                break
+            }
+            switch event {
+            case .handoff(_, let room, _):
+                if !steps.contains(where: { $0.room == room }) {
+                    steps.append(Step(room: room, colour: colour(for: room), isContractor: true))
+                }
+            case .roomStarted(_, let room):
+                guard let i = steps.firstIndex(where: { $0.room == room }) else { break }
+                steps[i].status = .working
+                steps[i].startedAt = steps[i].startedAt ?? .now
+            case .roomFinished(_, let room, _):
+                guard let i = steps.firstIndex(where: { $0.room == room }), let start = steps[i].startedAt else { break }
+                steps[i].workedFor += Date.now.timeIntervalSince(start)
+                steps[i].startedAt = nil
+                steps[i].status = .done
+            case .handRaised(let request, let room):
+                panelTab = .requests
+                Attention.shared.needsInput(from: room, request: request)
+                let who = room == "manager" ? "The manager" : room.capitalized
+                AccessibilityNotification.Announcement("\(who) needs you").post()
+            case .runEnded(let outcome):
+                Attention.shared.finished(outcome, files: state.outputFiles)
+                noteLimit(outcome)
+                if !isReplay { recordJob(outcome) }
+                if !queued.isEmpty {
+                    let next = queued.removeFirst()
+                    Task { @MainActor [weak self] in
+                        try? await Task.sleep(for: .seconds(1))
+                        self?.newJobOnFloor(next)
+                    }
+                }
+            default:
+                break
+            }
+        }
+    }
+
+    private func noteLimit(_ outcome: RunOutcome) {
+        let rejected = state.rateLimit?.isRejected == true
+        guard case .failed(let reason, let message) = outcome else { return }
+        switch reason {
+        case .notLoggedIn: readiness = .notLoggedIn
+        case .cliNotFound: readiness = .cliMissing
+        case .runError where rejected || (message ?? "").localizedCaseInsensitiveContains("limit"):
+            let text = message ?? "Your Claude plan’s limit is reached."
+            let url = (try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue))?
+                .firstMatch(in: text, range: NSRange(text.startIndex..., in: text))?.url
+            limitNotice = LimitNotice(message: text, url: url, resetsAt: rejected ? state.rateLimit?.resetsAt : nil)
+        default: break
+        }
+    }
+
+    private func reset(keepLog: Bool) {
+        reducer = OfficeReducer()
+        state = reducer.state
+        if !keepLog { log = [] }
+        steps = hired.map { Step(room: $0.name, colour: colour(for: $0.name), isContractor: false) }
+        activity = []
+        startedAt = .now
+        endedAt = nil
+        process = nil
+        consumer = nil
+        scene.apply([])
+    }
+
+    private func appLog(_ text: String) {
+        log.append(LogEntry(elapsed: sinceStart, kind: .app, text: text))
+    }
+
+    private var sinceStart: TimeInterval { startedAt.map { Date.now.timeIntervalSince($0) } ?? 0 }
+
+    private static func tag(for event: WireEvent) -> String {
+        switch event {
+        case .sessionStarted: "system/init"
+        case .assistant(let m): m.parentToolUseID == nil ? "assistant" : "assistant (subagent)"
+        case .user(let m): m.parentToolUseID == nil ? "user" : "user (subagent)"
+        case .taskStarted: "system/task_started"
+        case .taskProgress: "system/task_progress"
+        case .taskUpdated: "system/task_updated"
+        case .taskNotification: "system/task_notification"
+        case .thinkingTokens: "system/thinking_tokens"
+        case .backgroundTasksChanged: "system/background_tasks_changed"
+        case .permissionRequest(let r): "control_request/can_use_tool (\(McpNaming.friendly(r.toolName, servers: [])))"
+        case .controlResponse: "control_response"
+        case .rateLimit: "rate_limit_event"
+        case .result: "result"
+        case .unknown(let type, let subtype): "\(type)/\(subtype ?? "-") (unknown)"
+        }
+    }
+}

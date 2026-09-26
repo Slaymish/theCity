@@ -1,0 +1,16 @@
+{
+  "id": "alphero",
+  "name": "Alphero",
+  "logo": "logo.svg",
+  "font": { "family": "Lexend", "file": "Lexend-Variable.ttf" },
+  "light": {
+    "background": "#FFFFFF", "panel": "#F7F6F8", "panelEdge": "#E8E5EC", "text": "#1C1825", "muted": "#6B6478",
+    "primaryFill": "#3D2051", "primaryText": "#FFFFFF", "floor": "#F7F6F8", "walls": "#FFFFFF",
+    "screen": "#2D3A36", "screenPixels": "#B6F26B",
+    "robot": "#F5F2F8", "desk": "#CC9E73", "lamp": "#FFDB9E", "folder": "#FAC740", "error": "#E54D4D", "tray": "#4D5266", "grass": "#BFE3A0"
+  },
+  "departments": ["#3D2051"],
+  "manager": "#3D2051",
+  "onAccent": "#FFFFFF",
+  "notes": "From the Alphero deck guidelines (background, surface, border, text, muted, accent, Lexend, logo). Still needed from Alphero: department colours beyond the accent, and a dark theme. Office props (screen, robot, desk, lamp, folder, error, tray, grass) use The Office's defaults."
+}

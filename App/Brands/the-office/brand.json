@@ -1,0 +1,21 @@
+{
+  "id": "the-office",
+  "name": "The Office",
+  "wordmarkSymbol": "building.2.fill",
+  "font": { "family": "Fredoka", "file": "Fredoka-Variable.ttf" },
+  "light": {
+    "background": "#DCEEFB", "panel": "#FFFDF7", "panelEdge": "#EADFCB", "text": "#3B2F2A", "muted": "#7A6A60",
+    "primaryFill": "#F2C14E", "primaryText": "#3B2F2A", "floor": "#E8CFA8", "walls": "#F6EEDF",
+    "screen": "#2D3A36", "screenPixels": "#B6F26B",
+    "robot": "#F5F2F8", "desk": "#CC9E73", "lamp": "#FFDB9E", "folder": "#FAC740", "error": "#E54D4D", "tray": "#4D5266", "grass": "#BFE3A0"
+  },
+  "dark": {
+    "background": "#2B2438", "panel": "#3A3149", "panelEdge": "#51466A", "text": "#FFF4E6", "muted": "#C9B8A6",
+    "primaryFill": "#F2C14E", "primaryText": "#3B2F2A", "floor": "#8A6F52", "walls": "#4A3F5C",
+    "screen": "#2D3A36", "screenPixels": "#B6F26B",
+    "robot": "#F5F2F8", "desk": "#CC9E73", "lamp": "#FFDB9E", "folder": "#FAC740", "error": "#E54D4D", "tray": "#4D5266", "grass": "#5E7A4F"
+  },
+  "departments": ["#F2836B", "#7DBB5E", "#F2C14E", "#5A7BD8"],
+  "manager": "#C9557A",
+  "onAccent": "#3B2F2A"
+}

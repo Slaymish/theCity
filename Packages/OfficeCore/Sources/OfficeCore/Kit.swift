@@ -1,0 +1,119 @@
+import Foundation
+
+public enum McpNaming {
+    /// Tool names are `mcp__<server>__<tool>`, with every character of the server name outside `[A-Za-z0-9_-]` turned into `_`.
+    public static func toolPrefix(forServer server: String) -> String {
+        let safe = server.unicodeScalars.map { scalar -> String in
+            CharacterSet.alphanumerics.contains(scalar) && scalar.isASCII || scalar == "_" || scalar == "-" ? String(scalar) : "_"
+        }.joined()
+        return "mcp__\(safe)__"
+    }
+
+    public static func split(_ toolName: String, servers: [String]) -> (server: String, tool: String)? {
+        guard toolName.hasPrefix("mcp__") else { return nil }
+        if let server = servers.first(where: { toolName.hasPrefix(toolPrefix(forServer: $0)) }) {
+            return (server, String(toolName.dropFirst(toolPrefix(forServer: server).count)))
+        }
+        let parts = toolName.dropFirst(5).components(separatedBy: "__")
+        guard parts.count >= 2 else { return nil }
+        return (parts[0], parts.dropFirst().joined(separator: "__"))
+    }
+
+    public static func friendly(_ toolName: String, servers: [String]) -> String {
+        split(toolName, servers: servers).map { "\($0.server) › \($0.tool)" } ?? toolName
+    }
+}
+
+public struct ModelOption: Sendable, Equatable, Hashable, Identifiable {
+    public var id: String { value }
+    public var value: String
+    public var displayName: String
+    public var description: String
+}
+
+public enum HandBack {
+    /// The CLI wraps a subagent's report in a notice for the model; the user only needs the indented report inside it.
+    public static func clean(_ text: String) -> String {
+        guard let marker = text.range(of: "The report follows:\n") else { return text }
+        var lines = text[marker.upperBound...].components(separatedBy: "\n")
+        if let trailer = lines.firstIndex(where: { $0.hasPrefix("agentId: ") || $0.hasPrefix("<usage>") }) {
+            lines = Array(lines[..<trailer])
+        }
+        return lines.map { $0.hasPrefix("  ") ? String($0.dropFirst(2)) : $0 }
+            .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+public struct Kit: Sendable, Equatable {
+    public var models: [ModelOption] = []
+    public var servers: [McpServer]
+    public var skills: [CommandInfo]
+    /// Every slash command, skills included, with its description; the job field's picker lists these.
+    public var commands: [CommandInfo]
+
+    public init(servers: [McpServer] = [], skills: [CommandInfo] = [], commands: [CommandInfo] = []) {
+        self.servers = servers
+        self.skills = skills
+        self.commands = commands
+    }
+
+    public var usableServers: [McpServer] { servers.filter { $0.status == "connected" } }
+
+    /// Builds the kit from an inventory stream (handshake plus `init`) and `claude mcp list` output.
+    public static func from(lines: [String], mcpList: String?) -> Kit {
+        var session: SessionInit?
+        var commands: [CommandInfo] = []
+        var models: [ModelOption] = []
+        for line in lines {
+            switch StreamParser.parse(line) {
+            case .event(.sessionStarted(let s)): session = s
+            case .event(.controlResponse(_, let c)) where !c.isEmpty:
+                commands = c
+                models = modelOptions(line)
+            default: break
+            }
+        }
+        let health = mcpList.map(parseMcpList) ?? [:]
+        let servers = (session?.mcpServers ?? []).map { server in
+            McpServer(name: server.name, status: health[server.name] ?? server.status, source: server.source)
+        }
+        let described = Dictionary(commands.map { ($0.name, $0.description) }, uniquingKeysWith: { first, _ in first })
+        let skills = (session?.skills ?? []).map { CommandInfo(name: $0, description: described[$0] ?? "") }
+        var kit = Kit(servers: servers, skills: skills, commands: commands)
+        kit.models = models
+        return kit
+    }
+
+    static func modelOptions(_ line: String) -> [ModelOption] {
+        guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+              let response = (json["response"] as? [String: Any])?["response"] as? [String: Any],
+              let models = response["models"] as? [[String: Any]] else { return [] }
+        return models.compactMap { model in
+            guard let value = model["value"] as? String, value != KitLoader.inventoryModel else { return nil }
+            return ModelOption(value: value, displayName: model["displayName"] as? String ?? value,
+                               description: model["description"] as? String ?? "")
+        }
+    }
+
+    /// `claude mcp list` prints `name: target - ✔ Connected`; names may contain `:` but not `: `.
+    public static func parseMcpList(_ text: String) -> [String: String] {
+        var result: [String: String] = [:]
+        for line in text.components(separatedBy: .newlines) {
+            guard let nameEnd = line.range(of: ": "), let statusStart = line.range(of: " - ", options: .backwards),
+                  nameEnd.lowerBound < statusStart.lowerBound else { continue }
+            let name = String(line[..<nameEnd.lowerBound])
+            let status = line[statusStart.upperBound...].lowercased()
+            result[name] = if status.contains("connected") && !status.contains("fail") { "connected" }
+                else if status.contains("pending") { "pending" }
+                else if status.contains("auth") { "needs-auth" }
+                else if status.contains("fail") || status.contains("✘") { "failed" }
+                else { "unknown" }
+        }
+        return result
+    }
+
+    public static func blockRules(servers: [McpServer], allowedServers: Set<String>, skills: [CommandInfo], allowedSkills: Set<String>) -> [String] {
+        servers.filter { !allowedServers.contains($0.name) }.map { String(McpNaming.toolPrefix(forServer: $0.name).dropLast(2)) }
+            + skills.filter { !allowedSkills.contains($0.name) }.map { "Skill(\($0.name))" }
+    }
+}

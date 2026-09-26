@@ -1,0 +1,43 @@
+name: TheOffice
+options:
+  bundleIdPrefix: nz.hamish
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+packages:
+  OfficeCore:
+    path: Packages/OfficeCore
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+targets:
+  TheOffice:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+        excludes: ["Brands/**"]
+      - path: App/Brands
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: OfficeCore
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: The Office
+        CFBundleName: The Office
+        LSApplicationCategoryType: public.app-category.developer-tools
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nz.hamish.theoffice
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: NO
+        ENABLE_APP_SANDBOX: NO
+schemes:
+  TheOffice:
+    build:
+      targets:
+        TheOffice: all

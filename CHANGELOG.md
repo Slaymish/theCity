@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1
+
+- New app icon: a city block with its robot out front.
+- New jobs now ask before every tool by default instead of running in Auto mode, unless you've picked a mode in Settings.
+- The City now needs Claude Code 2.1.163 or later, and Reception explains how to update an older version before running a job.
+- Approval notifications no longer have an Allow button, so tools can only be allowed from the desk card; Deny still works from the notification.
+- Updates are only accepted from a signed feed and are verified before they're unpacked.
+- Fixed Sign In… failing when the path to Claude Code or the account folder contains an apostrophe.
+
 ## 0.1.0
 
 First public release.

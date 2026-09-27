@@ -129,7 +129,9 @@ struct CandidateBadge: View {
                 Text("“\(reason)”").font(Typography.caption).foregroundStyle(Color(Palette.muted)).lineLimit(3)
             }
             Spacer(minLength: 0)
-            Button(candidate.hired ? "Hired" : "Hire", action: toggle)
+            Button(action: toggle) {
+                if candidate.hired { Label("Hired", systemImage: "checkmark") } else { Text("Hire") }
+            }
                 .buttonStyle(PillButtonStyle(kind: order == nil ? .secondary : .accent(colour)))
                 .accessibilityLabel(candidate.hired ? "Release \(candidate.department.name)" : "Hire \(candidate.department.name)")
         }

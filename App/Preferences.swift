@@ -272,6 +272,13 @@ struct SettingsView: View {
                 }
             }
             .tabItem { Label("Alerts", systemImage: "bell") }
+            page {
+                Section("Updates") {
+                    LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+                    Button("Check for Updates…") { Updater.shared.controller.checkForUpdates(nil) }
+                }
+            }
+            .tabItem { Label("Updates", systemImage: "arrow.down.circle") }
         }
     }
 

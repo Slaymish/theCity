@@ -271,27 +271,29 @@ struct DeskRequestLayer: View {
         let room = shown?.room ?? controller.selectedRoom
         GeometryReader { geometry in
             if let room {
+                let limit = geometry.size.width - (controller.showPanel ? OfficeView.panelWidth + 40 : 20)
+                // Built outside the timeline, so each frame only moves the card; rebuilt inside, a fresh `NSColor` re-ran the card's body every frame.
+                let card = VStack(alignment: .leading, spacing: 8) {
+                    if let shown {
+                        DeskCard(pending: shown, colour: controller.colour(for: shown.room), controller: controller)
+                            .id(shown.id)
+                    } else if room != "outbox" {
+                        AgentCard(controller: controller, room: room)
+                    }
+                    if shown != nil, pending.count > 1 {
+                        Button("\(pending.count - 1) more waiting", systemImage: "chevron.forward") {
+                            index = (min(index, pending.count - 1) + 1) % pending.count
+                        }
+                        .labelStyle(TrailingIconLabelStyle())
+                        .buttonStyle(PillButtonStyle(kind: .secondary))
+                    }
+                }
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { cardSize = $0 }
                 TimelineView(.animation) { _ in
                     let start = scene.cardPoint(of: room) ?? CGPoint(x: geometry.size.width / 2 + 40, y: geometry.size.height / 2)
-                    let limit = geometry.size.width - (controller.showPanel ? OfficeView.panelWidth + 40 : 20)
-                    VStack(alignment: .leading, spacing: 8) {
-                        if let shown {
-                            DeskCard(pending: shown, colour: controller.colour(for: shown.room), controller: controller)
-                                .id(shown.id)
-                        } else if room != "outbox" {
-                            AgentCard(controller: controller, room: room)
-                        }
-                        if shown != nil, pending.count > 1 {
-                            Button("\(pending.count - 1) more waiting", systemImage: "chevron.forward") {
-                                index = (min(index, pending.count - 1) + 1) % pending.count
-                            }
-                            .labelStyle(TrailingIconLabelStyle())
-                            .buttonStyle(PillButtonStyle(kind: .secondary))
-                        }
-                    }
-                    .onGeometryChange(for: CGSize.self) { $0.size } action: { cardSize = $0 }
-                    .position(x: min(max(start.x + cardSize.width / 2, cardSize.width / 2 + 20), limit - cardSize.width / 2),
-                              y: min(max(start.y, cardSize.height / 2 + 20), max(cardSize.height / 2 + 20, geometry.size.height - bottomInset - cardSize.height / 2 - 20)))
+                    card
+                        .position(x: min(max(start.x + cardSize.width / 2, cardSize.width / 2 + 20), limit - cardSize.width / 2),
+                                  y: min(max(start.y, cardSize.height / 2 + 20), max(cardSize.height / 2 + 20, geometry.size.height - bottomInset - cardSize.height / 2 - 20)))
                 }
                 .transition(OfficeScene.reduceMotion ? .opacity : .scale(scale: 0.6, anchor: .leading).combined(with: .opacity))
             }

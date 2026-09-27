@@ -17,7 +17,8 @@ final class CityScene {
     private var dark = false
     private let lighting = Entity()
     private let sun = Entity()
-    private var facades: [UUID: (entity: Entity, height: Float)] = [:]
+    /// Each tower's bounds, measured once: `centre` is its offset from the entity's position, which slides as it sinks and rises.
+    private var facades: [UUID: (entity: Entity, height: Float, centre: SIMD3<Float>, size: SIMD3<Float>)] = [:]
     private var props: [(entity: Entity, height: Float, radius: Float)] = []
     private var slides: [(entity: Entity, from: Float, to: Float, elapsed: Double, duration: Double)] = []
     private var labelsVisible = true
@@ -166,9 +167,12 @@ final class CityScene {
             }
             let goal: Float = blocking ? 0 : 1
             let step = OfficeScene.reduceMotion || dt == 0 ? 1 : Horizon.cloudFade * Float(dt)
-            clouds[index].opacity += max(min(goal - clouds[index].opacity, step), -step)
+            let was = clouds[index].opacity
+            clouds[index].opacity += max(min(goal - was, step), -step)
             let opacity = clouds[index].opacity
-            cloud.isEnabled = opacity > 0
+            // Most frames every cloud is settled, so skip the component writes rather than repeat them.
+            guard opacity != was || dt == 0 else { continue }
+            Self.enable(cloud, opacity > 0)
             if opacity < 1 { cloud.components.set(OpacityComponent(opacity: opacity)) } else { cloud.components.remove(OpacityComponent.self) }
         }
     }
@@ -181,7 +185,7 @@ final class CityScene {
         model.components.set(CollisionComponent(shapes: [.generateBox(size: bounds.extents).offsetBy(translation: bounds.center - model.position)]))
         model.components.set(InputTargetComponent())
         root.addChild(model)
-        facades[building.id] = (model, bounds.extents.y)
+        facades[building.id] = (model, bounds.extents.y, bounds.center - model.position, bounds.extents)
         let beacon = ModelEntity(mesh: .generateSphere(radius: 0.14), materials: [OfficeScene.material(Palette.resolved(Palette.manager, dark: dark))])
         beacon.scale = [1, 1.15, 1]
         beacon.position = [position.x, bounds.max.y + 0.45, position.z]
@@ -215,8 +219,7 @@ final class CityScene {
 
     func facade(of id: UUID) -> (position: SIMD3<Float>, size: SIMD3<Float>)? {
         guard let facade = facades[id] else { return nil }
-        let bounds = facade.entity.visualBounds(relativeTo: root)
-        return ([facade.entity.position.x, 0.1, facade.entity.position.z], bounds.extents)
+        return ([facade.entity.position.x, 0.1, facade.entity.position.z], facade.size)
     }
 
     func sinkFacade(_ id: UUID, down: Bool, animated: Bool) {
@@ -234,19 +237,24 @@ final class CityScene {
     func hideOccluders(eye: SIMD3<Float>?, target: SIMD3<Float>, keeping kept: UUID?) {
         for (id, facade) in facades where id != kept {
             guard let eye else {
-                facade.entity.isEnabled = true
+                Self.enable(facade.entity, true)
                 continue
             }
-            facade.entity.isEnabled = !Self.blocks(facade.entity.position, radius: Self.tile * 0.75, height: facade.height, eye: eye, target: target)
+            Self.enable(facade.entity, !Self.blocks(facade.entity.position, radius: Self.tile * 0.75, height: facade.height, eye: eye, target: target))
         }
         for prop in props {
             guard let eye else {
-                prop.entity.isEnabled = true
+                Self.enable(prop.entity, true)
                 continue
             }
             let beside = simd_distance(SIMD2(prop.entity.position.x, prop.entity.position.z), SIMD2(eye.x, eye.z)) < prop.radius + Self.tile * 0.3 && eye.y < prop.height + 0.4
-            prop.entity.isEnabled = !beside && !Self.blocks(prop.entity.position, radius: prop.radius + Self.tile * 0.15, height: prop.height, eye: eye, target: target)
+            Self.enable(prop.entity, !beside && !Self.blocks(prop.entity.position, radius: prop.radius + Self.tile * 0.15, height: prop.height, eye: eye, target: target))
         }
+    }
+
+    /// This runs every frame in the building view, so it leaves unchanged entities alone.
+    private static func enable(_ entity: Entity, _ enabled: Bool) {
+        if entity.isEnabled != enabled { entity.isEnabled = enabled }
     }
 
     private static func blocks(_ position: SIMD3<Float>, radius: Float, height: Float, eye: SIMD3<Float>, target: SIMD3<Float>) -> Bool {
@@ -447,10 +455,9 @@ final class CityScene {
             let focal = Float(viewSize.height) / 2 / tan(26 * .pi / 360)
             var best = Float.infinity
             for (id, facade) in facades {
-                let bounds = facade.entity.visualBounds(relativeTo: root)
-                guard let (screen, depth) = camera.project(bounds.center, in: viewSize) else { continue }
+                guard let (screen, depth) = camera.project(facade.entity.position + facade.centre, in: viewSize) else { continue }
                 let distance = simd_distance(screen, SIMD2(Float(point.x), Float(point.y)))
-                if distance < max(bounds.extents.x, bounds.extents.y) / 2 / depth * focal, distance < best {
+                if distance < max(facade.size.x, facade.size.y) / 2 / depth * focal, distance < best {
                     best = distance
                     found = id
                 }

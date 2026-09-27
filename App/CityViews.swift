@@ -342,6 +342,19 @@ struct BuildingHUD: View {
         .padding(20)
         .overlay {
             GeometryReader { geometry in
+                // Built outside the timeline, so following the receptionist only moves the panel instead of re-running its body every frame.
+                let panel = Group {
+                    if let draft = city.draft, draft.buildingID == building.id, city.route == .newFloor(building.id) {
+                        HiringView(controller: draft) { city.cancelNewFloor() }
+                            .frame(width: 620)
+                            .glass(padding: 16)
+                            .onAppear { scene.receptionist(thinking: false, pointingAt: nil, scaffold: true) }
+                            .onDisappear { scene.receptionist(thinking: false, pointingAt: nil, scaffold: false) }
+                    } else {
+                        composer ?? ReceptionComposer(city: city, building: building, scene: scene)
+                    }
+                }
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { composerSize = $0 }
                 TimelineView(.animation(paused: !scene.lobbyFocused)) { _ in
                     let resting = CGPoint(x: 20 + composerSize.width / 2, y: geometry.size.height - 20 - composerSize.height / 2)
                     let head = scene.lobbyFocused ? scene.receptionistPoint : nil
@@ -349,18 +362,7 @@ struct BuildingHUD: View {
                         CGPoint(x: min(head.x + 60 + composerSize.width / 2, geometry.size.width - 20 - composerSize.width / 2),
                                 y: min(max(head.y, 20 + composerSize.height / 2), geometry.size.height - 20 - composerSize.height / 2))
                     }
-                    Group {
-                        if let draft = city.draft, draft.buildingID == building.id, city.route == .newFloor(building.id) {
-                            HiringView(controller: draft) { city.cancelNewFloor() }
-                                .frame(width: 620)
-                                .glass(padding: 16)
-                                .onAppear { scene.receptionist(thinking: false, pointingAt: nil, scaffold: true) }
-                                .onDisappear { scene.receptionist(thinking: false, pointingAt: nil, scaffold: false) }
-                        } else {
-                            composer ?? ReceptionComposer(city: city, building: building, scene: scene)
-                        }
-                    }
-                        .onGeometryChange(for: CGSize.self) { $0.size } action: { composerSize = $0 }
+                    panel
                         .position(pinned ?? resting)
                         .animation(OfficeScene.reduceMotion ? nil : .easeOut(duration: 0.3), value: pinned == nil)
                 }

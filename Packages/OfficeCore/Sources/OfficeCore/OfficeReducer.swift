@@ -190,6 +190,9 @@ public struct OfficeState: Sendable, Equatable {
 public struct OfficeReducer: Sendable {
     public private(set) var state = OfficeState()
     private var usageByMessage: [String: TokenUsage] = [:]
+    /// Running sums of `usageByMessage`, overall and by model, so each message costs O(1) rather than a re-sum of the run.
+    private var liveUsage: TokenUsage = .zero
+    private var liveByModel: [String: TokenUsage] = [:]
     /// Totals from the latest `result`; they are cumulative, so later turns add on top of them.
     private var usageBaseline: TokenUsage = .zero
     private var modelBaseline: [String: ModelUsage] = [:]
@@ -255,9 +258,8 @@ public struct OfficeReducer: Sendable {
             if message.error == "authentication_failed" { authFailed = true }
             let model = message.model == "<synthetic>" ? nil : message.model
             if let id = message.messageID, let usage = message.usage, !state.tally.isFinal {
-                usageByMessage[id] = usage
-                if let model { modelByMessage[id] = model }
-                state.tally.usage = usageByMessage.values.reduce(usageBaseline, +)
+                recordUsage(usage, model: model, for: id)
+                state.tally.usage = usageBaseline + liveUsage
                 state.models = liveModels()
                 out.append(.tallyChanged(state.tally))
             }
@@ -363,9 +365,11 @@ public struct OfficeReducer: Sendable {
             if !result.modelUsage.isEmpty {
                 usageBaseline = result.totalUsage
                 usageByMessage = [:]
+                liveUsage = .zero
                 state.tally.usage = usageBaseline
                 modelBaseline = result.modelUsage
                 modelByMessage = [:]
+                liveByModel = [:]
                 state.models = modelBaseline
                 for (model, usage) in result.modelUsage {
                     if let window = usage.contextWindow { state.contextWindows[model] = window }
@@ -428,10 +432,28 @@ public struct OfficeReducer: Sendable {
         state.handoffs[toolUseID]?.step = nil
     }
 
+    /// One API message arrives as several events sharing an id; the latest usage replaces the earlier one.
+    private mutating func recordUsage(_ usage: TokenUsage, model: String?, for id: String) {
+        let previous = usageByMessage.updateValue(usage, forKey: id)
+        liveUsage = liveUsage - (previous ?? .zero) + usage
+        let previousModel = modelByMessage[id]
+        if let model { modelByMessage[id] = model }
+        if let previousModel, let model, previousModel != model {
+            // A message changing model is rare enough to rebuild the per-model sums from scratch.
+            liveByModel = usageByMessage.reduce(into: [:]) { sums, entry in
+                guard let model = modelByMessage[entry.key] else { return }
+                sums[model, default: .zero] = sums[model, default: .zero] + entry.value
+            }
+        } else if let model = modelByMessage[id] {
+            // If the message had no model until now, its earlier usage isn't in any model's sum yet.
+            let counted: TokenUsage = previousModel == nil ? .zero : previous ?? .zero
+            liveByModel[model, default: .zero] = liveByModel[model, default: .zero] - counted + usage
+        }
+    }
+
     private func liveModels() -> [String: ModelUsage] {
-        usageByMessage.reduce(into: modelBaseline) { models, entry in
-            guard let model = modelByMessage[entry.key] else { return }
-            models[model, default: ModelUsage(usage: .zero)].usage = models[model, default: ModelUsage(usage: .zero)].usage + entry.value
+        liveByModel.reduce(into: modelBaseline) { models, entry in
+            models[entry.key, default: ModelUsage(usage: .zero)].usage = models[entry.key, default: ModelUsage(usage: .zero)].usage + entry.value
         }
     }
 
@@ -466,5 +488,16 @@ public struct OfficeReducer: Sendable {
         guard active != state.managerActive else { return [] }
         state.managerActive = active
         return [.managerActive(active)]
+    }
+}
+
+private extension TokenUsage {
+    static func - (lhs: TokenUsage, rhs: TokenUsage) -> TokenUsage {
+        TokenUsage(
+            input: lhs.input - rhs.input,
+            cacheCreation: lhs.cacheCreation - rhs.cacheCreation,
+            cacheRead: lhs.cacheRead - rhs.cacheRead,
+            output: lhs.output - rhs.output
+        )
     }
 }

@@ -24,7 +24,10 @@ public enum StreamParser {
     }
 
     public static func parse(_ raw: String) -> ParsedLine {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Lines can run to tens of thousands of characters, so only copy one that actually has whitespace to trim.
+        let edges = CharacterSet.whitespacesAndNewlines
+        let padded = raw.unicodeScalars.first.map(edges.contains) != false || raw.unicodeScalars.last.map(edges.contains) != false
+        let trimmed = padded ? raw.trimmingCharacters(in: edges) : raw
         guard !trimmed.isEmpty else { return .malformed(reason: "Empty line") }
         let object: Any
         do {

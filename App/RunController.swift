@@ -809,12 +809,13 @@ final class RunController {
 
     private func send(_ input: RunInput) {
         let events = reducer.apply(input)
-        state = reducer.state
+        // Every write to an observed property re-renders its readers, even an equal one, and this runs once per stream line.
+        if state != reducer.state { state = reducer.state }
         // Replayed limits are old or made up, so they mustn't replace the account's saved reading.
         if case .wire(.rateLimit(let limit)) = input, !isReplay { UsageStore.shared.record(limit, configDirectory: configDirectory) }
         Attention.shared.waiting(state.pendingRequests.count)
         if case .ended = state.phase, endedAt == nil { endedAt = Self.now() }
-        contextWindows.merge(state.contextWindows) { $1 }
+        if state.contextWindows.contains(where: { contextWindows[$0.key] != $0.value }) { contextWindows.merge(state.contextWindows) { $1 } }
         track(events)
         for path in state.outputFiles where !jobFiles.contains(path) { jobFiles.append(path) }
         if !events.isEmpty { scene.apply(events) }

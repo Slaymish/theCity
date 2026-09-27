@@ -21,8 +21,11 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
         ])
     }
 
+    /// Called for every stream line, so it only touches the Dock when the badge actually changes.
     func waiting(_ count: Int) {
-        NSApp.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
+        let label = count > 0 ? "\(count)" : nil
+        guard NSApp.dockTile.badgeLabel != label else { return }
+        NSApp.dockTile.badgeLabel = label
     }
 
     func needsInput(from room: String, request: PermissionRequest, place: String, building: UUID?, floor: UUID?) {

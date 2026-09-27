@@ -18,7 +18,7 @@ final class OfficeScene {
     static let wallHeight: Float = 5.2
     static let floorThickness: Float = 0.3
     static let footprint = SIMD2<Float>(3 * podSpacingX + 4, rowZ * 2 + 9)
-    private static let loftHeight: Float = 2.5
+    private static let loftHeight: Float = 3.4
     private static let loftFront: Float = -3.5
 
     private var dark = true
@@ -148,7 +148,7 @@ final class OfficeScene {
 
     private static func loftScale(_ count: Int, rows: Int, span: Float, depth: Float) -> Float {
         let columns = Float((count + rows - 1) / rows)
-        return min(0.75, span / columns / 5.7, depth / Float(rows) / 5.4)
+        return min(0.75, span / columns / 5.7, depth / Float(rows) / 5.4, (wallHeight - loftHeight) / 3.3)
     }
 
     private func buildLoft() {

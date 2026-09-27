@@ -482,7 +482,7 @@ final class CityScene {
         if let environment = ModelLibrary.environment("sky") {
             lighting.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: Self.skyExposure(cycle)))
         }
-        var light = DirectionalLightComponent(color: cycle.sunColour, intensity: cycle.mix(day: 2800, night: 1100))
+        var light = DirectionalLightComponent(color: cycle.sunColour, intensity: cycle.mix(day: 3500, night: 1100))
         light.isRealWorldProxy = false
         sun.components.set(light)
         sun.look(at: .zero, from: cycle.sun([-8, 14, 6]), relativeTo: nil)

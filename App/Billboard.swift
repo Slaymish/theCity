@@ -1,4 +1,5 @@
 import AppKit
+import OfficeCore
 import RealityKit
 import SwiftUI
 
@@ -104,6 +105,7 @@ struct BubbleView: View {
     let symbol: String
     let text: String
     let colour: NSColor
+    var rooms: RoomCounts?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -116,6 +118,18 @@ struct BubbleView: View {
                 .font(Typography.outfit(18, weight: 600))
                 .foregroundStyle(Color(Palette.text))
                 .lineLimit(1)
+            if let rooms {
+                ForEach([RoomState.waiting, .working].filter { rooms.count($0) > 0 }, id: \.self) { state in
+                    HStack(spacing: 4) {
+                        Image(systemName: state.symbol)
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Color(state.colour))
+                        Text("\(rooms.count(state))")
+                            .font(Typography.outfit(18, weight: 600).monospacedDigit())
+                            .foregroundStyle(Color(Palette.text))
+                    }
+                }
+            }
         }
         .padding(.vertical, 6)
         .padding(.leading, 6)

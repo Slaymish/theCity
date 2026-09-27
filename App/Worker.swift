@@ -52,6 +52,7 @@ final class Worker {
     private var doneUntil: Double = 0
     private let glow = Entity()
     private let baseY: Float
+    private let halfWidth: Float
     private static var faces: [String: TextureResource] = [:]
 
     init(robot: Entity, screen: Entity?, colour: NSColor, room: String) {
@@ -69,6 +70,8 @@ final class Worker {
         seatOrientation = robot.orientation
         headBase = head?.position.y ?? 0
         baseY = robot.position.y
+        let extents = robot.visualBounds(relativeTo: robot).extents
+        halfWidth = max(extents.x, extents.z) / 2
         glow.position = [0, 1.25, 0.9]
         robot.addChild(glow)
         if let anchor = robot.descendant(named: "FaceAnchor") {
@@ -93,6 +96,8 @@ final class Worker {
     var headPosition: SIMD3<Float> {
         (head ?? root).position(relativeTo: nil) + [0, 0.4, 0]
     }
+
+    var worldHalfWidth: Float { halfWidth * root.scale(relativeTo: nil).x }
 
     func setMood(_ mood: Mood) {
         guard mood != self.mood else { return }

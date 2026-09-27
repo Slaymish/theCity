@@ -485,9 +485,11 @@ final class OfficeScene {
         return best?.0
     }
 
-    func screenPoint(of room: String) -> CGPoint? {
-        guard let pod = pods[room] ?? pods["contractor"], let (screen, _) = project(pod.worker.headPosition) else { return nil }
-        return CGPoint(x: CGFloat(screen.x), y: CGFloat(screen.y))
+    /// Where a card beside this room's robot starts, clear of the robot however close the camera is.
+    func cardPoint(of room: String) -> CGPoint? {
+        guard let pod = pods[room] ?? pods["contractor"], let (screen, depth) = project(pod.worker.headPosition) else { return nil }
+        let clearance = max(40, CGFloat(camera.pixels(pod.worker.worldHalfWidth, atDepth: depth, in: viewSize)) + 20)
+        return CGPoint(x: CGFloat(screen.x) + clearance, y: CGFloat(screen.y))
     }
 
     private func project(_ point: SIMD3<Float>) -> (SIMD2<Float>, Float)? {
@@ -525,7 +527,7 @@ final class OfficeScene {
             case .roomStarted(_, let room):
                 pod(for: room).worker.setCaption(ToolCaption.thinking)
                 pod(for: room).worker.setMood(.working)
-            case .roomActivity(let room, let tool):
+            case .roomActivity(let room, let tool, _):
                 let pod = pod(for: room)
                 pod.showBubble(symbol: Self.symbol(for: tool), text: Wording.verb(tool), dark: dark)
             case .roomCaption(let room, let caption):

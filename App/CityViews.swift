@@ -62,6 +62,7 @@ struct CityHUD: View {
             HStack(alignment: .top) {
                 Wordmark(compact: true)
                 Spacer()
+                if !city.allFloors.isEmpty { VitalsStrip(city: city, scope: .city(city.buildings)) }
                 UsageHUD(configDirectory: Preferences.shared.configDirectory)
                 Button("New project…", systemImage: "plus") { ProjectPicker.addProject() }
                     .buttonStyle(PillButtonStyle())
@@ -122,6 +123,7 @@ struct ProjectList: View {
                         .disabled(status.working > 0)
                 }
                 .accessibilityLabel("\(building.name), \(building.floors.count) floors\(status.working > 0 ? ", \(status.working) working" : "")\(status.waiting > 0 ? ", needs you" : "")")
+                .help("\(city.statusLine(for: building)). Rooms: \(city.live(on: building.floors).rooms.spoken).")
             }
         }
         .modifier(Glass(radius: 24, padding: EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5)))
@@ -328,6 +330,7 @@ struct BuildingHUD: View {
             Text(building.name).font(Typography.titleSmall)
             Text(building.floors.isEmpty ? "Tell reception what you need. It sets up a floor with the right team." : "Scroll to move between floors. Click one to go in, or ask reception below.")
                 .font(Typography.caption).foregroundStyle(Color(Palette.muted))
+            if !building.floors.isEmpty { VitalsStrip(city: city, scope: .building(building)) }
             Spacer()
             if let since { SinceYouLeftNote(city: city, building: building, since: since) }
             HStack(alignment: .bottom) {
@@ -426,6 +429,8 @@ struct FloorList: View {
                     Label(floor.name, systemImage: (session?.state.pendingRequests.isEmpty == false) ? "hand.raised.fill" : session?.isRunning == true ? "bolt.fill" : "square.stack.3d.up")
                 }
                 .buttonStyle(PillButtonStyle(kind: .secondary))
+                .help(floorStatus(floor, session: session))
+                .accessibilityLabel("\(floor.name), \(floorStatus(floor, session: session))")
                 .contextMenu {
                     Button("Rename…") {
                         newName = floor.name
@@ -447,6 +452,14 @@ struct FloorList: View {
         .modifier(CloseFloorConfirmation(floor: $closing, running: closing.map { city.sessions[$0.id]?.isRunning == true } ?? false) {
             city.removeFloor($0.id, in: building.id)
         })
+    }
+
+    private func floorStatus(_ floor: CityStore.Floor, session: RunController?) -> String {
+        let rooms = city.live(on: [floor]).rooms.spoken
+        guard let session else { return "Quiet. \(rooms)." }
+        if !session.state.pendingRequests.isEmpty { return "Needs you. \(rooms)." }
+        guard session.isRunning else { return "Quiet. \(rooms)." }
+        return "Working\(session.currentStep.map { ": \($0)" } ?? ""). \(rooms)."
     }
 }
 

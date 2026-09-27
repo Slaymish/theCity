@@ -576,7 +576,8 @@ final class CityScene {
             let status = city.status(of: building)
             let colour = status.waiting > 0 ? Palette.manager : status.working > 0 ? Palette.primaryFill : Palette.muted
             let symbol = status.waiting > 0 ? "hand.raised.fill" : status.working > 0 ? "bolt.fill" : "building.2.fill"
-            let text = "\(building.name) · \(city.statusLine(for: building))"
+            let rooms = city.live(on: building.floors).rooms
+            let text = "\(building.name) · \(status.waiting > 0 ? "Needs you" : status.working > 0 ? "Working" : city.statusLine(for: building))"
             lot.waiting = status.waiting > 0
             lot.beacon.isEnabled = labelsVisible && lot.waiting
             if lot.working != (status.working > 0) {
@@ -587,10 +588,11 @@ final class CityScene {
                     lot.glow.components.remove(PointLightComponent.self)
                 }
             }
-            guard text != lot.labelText else { continue }
-            lot.labelText = text
+            let key = "\(text)|\(rooms.waiting)|\(rooms.working)"
+            guard key != lot.labelText else { continue }
+            lot.labelText = key
             lot.label?.removeFromParent()
-            if let label = Billboard.make(BubbleView(symbol: symbol, text: text, colour: colour), dark: dark) {
+            if let label = Billboard.make(BubbleView(symbol: symbol, text: text, colour: colour, rooms: rooms), dark: dark) {
                 label.scale = [0.5, 0.5, 0.5]
                 lot.root.addChild(label)
                 lot.label = label

@@ -16,6 +16,11 @@ struct MenuBarMenu: View {
                 DispatchQueue.main.async { ProjectPicker.addProject() }
             }
         } else {
+            let floors = buildings.flatMap(\.floors)
+            let vitals = city.vitals(on: floors)
+            Button("Rooms: \(vitals.rooms.spoken)", systemImage: symbol(for: vitals.rooms)) {}.disabled(true)
+            Button("Today: \(StatusFormat.jobs(vitals.summary.today)) · \(city.dollars(vitals.summary.todaySpendUSD))", systemImage: "calendar") {}.disabled(true)
+            Divider()
             ForEach(buildings) { building in
                 Menu {
                     Button("Ask Reception…") { MenuBarReception.ask(in: building.id) }
@@ -51,6 +56,10 @@ struct MenuBarMenu: View {
             .keyboardShortcut("q")
     }
 
+    private func symbol(for rooms: RoomCounts) -> String {
+        (rooms.waiting > 0 ? RoomState.waiting : rooms.working > 0 ? .working : .idle).symbol
+    }
+
     private func symbol(for building: CityStore.Building) -> String {
         let status = city.status(of: building)
         return status.waiting > 0 ? "hand.raised.fill" : status.working > 0 ? "bolt.fill" : "building.2"
@@ -59,8 +68,24 @@ struct MenuBarMenu: View {
     private func floorLine(_ floor: CityStore.Floor) -> (text: String, symbol: String) {
         let session = city.sessions[floor.id]
         if session?.state.pendingRequests.isEmpty == false { return ("\(floor.name) is waiting for you", "hand.raised.fill") }
-        if session?.isRunning == true { return ("\(floor.name) · Working", "bolt.fill") }
+        if let session, session.isRunning { return ("\(floor.name) · \(session.currentStep ?? "Working")", "bolt.fill") }
         return (floor.name, "square.stack.3d.up")
+    }
+}
+
+struct MenuBarLabel: View {
+    let city: CityStore
+
+    var body: some View {
+        let waiting = city.pendingCount
+        if waiting > 0 {
+            Label("\(waiting)", systemImage: RoomState.waiting.symbol)
+                .labelStyle(.titleAndIcon)
+                .accessibilityLabel("The City, \(waiting) waiting for you")
+        } else {
+            Label("The City", systemImage: city.anyRunning ? RoomState.working.symbol : "building.2")
+                .labelStyle(.iconOnly)
+        }
     }
 }
 

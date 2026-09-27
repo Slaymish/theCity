@@ -44,9 +44,10 @@ struct TheCityApp: App {
         }
 
         let inMenuBar = !MainWindow.offscreen && (preferences.menuBarIcon == .always || !mainWindow.isOpen)
-        MenuBarExtra("The City", systemImage: city.pendingCount > 0 ? "hand.raised.fill" : "building.2",
-                     isInserted: Binding(get: { inMenuBar }, set: { _ in })) {
+        MenuBarExtra(isInserted: Binding(get: { inMenuBar }, set: { _ in })) {
             MenuBarMenu(city: city)
+        } label: {
+            MenuBarLabel(city: city)
         }
         .menuBarExtraStyle(.menu)
     }

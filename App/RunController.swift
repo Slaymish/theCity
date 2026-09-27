@@ -21,6 +21,21 @@ struct LogEntry: Identifiable {
     }
 }
 
+/// Wall-clock time for one handoff, keyed by its `Agent` tool_use id.
+struct HandoffTiming: Equatable {
+    var startedAt: Date?
+    var endedAt: Date?
+    var waited: TimeInterval = 0
+    var waitingSince: Date?
+
+    func waiting(now: Date) -> TimeInterval { waited + (waitingSince.map { now.timeIntervalSince($0) } ?? 0) }
+
+    func worked(now: Date) -> TimeInterval {
+        guard let startedAt else { return 0 }
+        return max((endedAt ?? now).timeIntervalSince(startedAt) - waiting(now: endedAt ?? now), 0)
+    }
+}
+
 struct Step: Identifiable, Equatable {
     enum Status { case waiting, working, done }
     var id: String { room }
@@ -107,9 +122,9 @@ final class RunController {
     var showHistory = false
     private(set) var resumeSession: String?
     private(set) var currentJob: UUID?
-    private(set) var jobCost: Double = 0
-    private(set) var jobDuration: TimeInterval = 0
-
+    private(set) var timings: [String: HandoffTiming] = [:]
+    /// Context windows seen on this floor, so a follow-up's gauge shows before its first `result`.
+    private(set) var contextWindows: [String: Int] = [:]
 
     @ObservationIgnored private var reducer = OfficeReducer()
     @ObservationIgnored private var process: ClaudeProcess?
@@ -204,6 +219,27 @@ final class RunController {
     }
 
     var isRunning: Bool { state.phase == .running || (consumer != nil && endedAt == nil) }
+
+    var roomCounts: RoomCounts { state.roomCounts(staff: hired.map(\.name)) }
+
+    var currentStep: String? {
+        state.handoffs.values.filter { $0.phase == .working && $0.step != nil }.max { started($0) < started($1) }?.step
+    }
+
+    func started(_ handoff: Handoff) -> Date { timings[handoff.toolUseID]?.startedAt ?? .distantPast }
+
+    func roomStats(_ room: String, now: Date) -> (latest: Handoff?, worked: TimeInterval, waited: TimeInterval, tokens: Int, tools: Int) {
+        let staff = Set(hired.map(\.name))
+        let handoffs = room == "contractor" ? state.handoffs.values.filter { !staff.contains($0.room) } : state.handoffs(in: room)
+        return (handoffs.max { started($0) < started($1) },
+                handoffs.reduce(0) { $0 + (timings[$1.toolUseID]?.worked(now: now) ?? 0) },
+                handoffs.reduce(0) { $0 + (timings[$1.toolUseID]?.waiting(now: now) ?? 0) },
+                handoffs.reduce(0) { $0 + ($1.tokens ?? 0) }, handoffs.reduce(0) { $0 + $1.toolCallCount })
+    }
+
+    var isOnPlan: Bool { StatusFormat.isOnPlan(state.rateLimit, configDirectory: configDirectory) }
+
+    func dollars(_ amount: Double) -> String { StatusFormat.dollars(amount, onPlan: isOnPlan) }
 
     static var configDirectories: [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -480,6 +516,7 @@ final class RunController {
     private func recordJob(_ outcome: RunOutcome) {
         guard let workingDirectory else { return }
         let runCost = state.tally.costUSD ?? 0
+        let runTokens = state.tally.total
         let runTime = (endedAt ?? .now).timeIntervalSince(startedAt ?? .now)
         let label: String = switch outcome {
         case .completed: "completed"
@@ -493,9 +530,14 @@ final class RunController {
         let (request, hires, budget, buildingID, floorID) = (request, hired.map(\.name), budgetUSD, buildingID, floorID)
         currentJob = job
         defer { CityStore.shared.sessions.values.filter { $0.buildingID == buildingID }.forEach { $0.showRecords() } }
+        let previous = CityStore.shared.journal.last { $0.id == job }
+        CityStore.shared.addToTotals(floor: floorID) {
+            $0.add(isNew: previous == nil, outcome: label, replacing: previous?.outcome, costUSD: runCost, tokens: runTokens, duration: runTime)
+        }
         CityStore.shared.record { journal in
             if let index = journal.firstIndex(where: { $0.id == job }) {
                 journal[index].costUSD = (journal[index].costUSD ?? 0) + runCost
+                journal[index].tokens = (journal[index].tokens ?? 0) + runTokens
                 journal[index].duration += runTime
                 journal[index].files = files
                 journal[index].sessionID = session ?? journal[index].sessionID
@@ -505,7 +547,8 @@ final class RunController {
             } else {
                 journal.append(JobRecord(id: job, date: .now, request: request, workingDirectory: workingDirectory.path,
                                          hires: hires, costUSD: runCost, budgetUSD: budget, duration: runTime,
-                                         files: files, sessionID: session, outcome: label, buildingID: buildingID, floorID: floorID))
+                                         files: files, sessionID: session, outcome: label, buildingID: buildingID, floorID: floorID,
+                                         tokens: runTokens))
             }
         }
     }
@@ -771,6 +814,7 @@ final class RunController {
         if case .wire(.rateLimit(let limit)) = input, !isReplay { UsageStore.shared.record(limit, configDirectory: configDirectory) }
         Attention.shared.waiting(state.pendingRequests.count)
         if case .ended = state.phase, endedAt == nil { endedAt = Self.now() }
+        contextWindows.merge(state.contextWindows) { $1 }
         track(events)
         for path in state.outputFiles where !jobFiles.contains(path) { jobFiles.append(path) }
         if !events.isEmpty { scene.apply(events) }
@@ -787,7 +831,7 @@ final class RunController {
             switch event {
             case .handoff(_, let room, let description):
                 note("manager", "The manager briefed \(name(room))\(description.map { ": \($0)" } ?? "")")
-            case .roomActivity(let room, let tool):
+            case .roomActivity(let room, let tool, _):
                 let last = state.handoffs(in: room).last?.tools.last?.summary.map { URL(fileURLWithPath: $0).lastPathComponent }
                 note(room, "\(name(room)): \(Wording.verb(tool).lowercased())\(last.map { " \($0)" } ?? "")")
             case .roomFinished(_, let room, let outcome):
@@ -804,20 +848,26 @@ final class RunController {
                 if !steps.contains(where: { $0.room == room }) {
                     steps.append(Step(room: room, colour: colour(for: room), isContractor: true))
                 }
-            case .roomStarted(_, let room):
+            case .roomStarted(let id, let room):
+                timings[id, default: HandoffTiming()].startedAt = timings[id]?.startedAt ?? Self.now()
                 guard let i = steps.firstIndex(where: { $0.room == room }) else { break }
                 steps[i].status = .working
                 steps[i].startedAt = steps[i].startedAt ?? Self.now()
-            case .roomFinished(_, let room, _):
+            case .roomFinished(let id, let room, _):
+                stopWaiting(id)
+                timings[id]?.endedAt = Self.now()
                 guard let i = steps.firstIndex(where: { $0.room == room }), let start = steps[i].startedAt else { break }
                 steps[i].workedFor += Self.now().timeIntervalSince(start)
                 steps[i].startedAt = nil
                 steps[i].status = .done
             case .handRaised(let request, let room):
+                if let id = workingHandoff(in: room), timings[id]?.waitingSince == nil { timings[id]?.waitingSince = Self.now() }
                 panelTab = .requests
                 if !isReplay { Attention.shared.needsInput(from: room, request: request, place: placeName, building: buildingID, floor: floorID) }
                 let who = room == "manager" ? "The manager" : room.capitalized
                 AccessibilityNotification.Announcement("\(who) needs you").post()
+            case .handLowered(_, let room):
+                if let id = workingHandoff(in: room), !state.pendingRequests.contains(where: { $0.room == room }) { stopWaiting(id) }
             case .runEnded(let outcome):
                 if !isReplay { Attention.shared.finished(outcome, files: state.outputFiles, place: placeName, building: buildingID, floor: floorID) }
                 noteLimit(outcome)
@@ -836,6 +886,16 @@ final class RunController {
                 break
             }
         }
+    }
+
+    private func workingHandoff(in room: String) -> String? {
+        state.handoffs(in: room).last { $0.phase == .working }?.toolUseID
+    }
+
+    private func stopWaiting(_ id: String) {
+        guard let since = timings[id]?.waitingSince else { return }
+        timings[id]?.waited += Self.now().timeIntervalSince(since)
+        timings[id]?.waitingSince = nil
     }
 
     private func noteLimit(_ outcome: RunOutcome) {
@@ -888,6 +948,7 @@ final class RunController {
         if !keepLog { log = [] }
         steps = hired.map { Step(room: $0.name, colour: colour(for: $0.name), isContractor: false) }
         activity = []
+        timings = [:]
         startedAt = Self.now()
         endedAt = nil
         process = nil

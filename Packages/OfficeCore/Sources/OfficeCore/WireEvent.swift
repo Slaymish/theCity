@@ -139,7 +139,9 @@ public struct TaskProgress: Sendable, Equatable {
     public var toolUseID: String?
     public var subagentType: String?
     public var lastToolName: String?
+    public var description: String?
     public var totalTokens: Int?
+    public var toolUses: Int?
     public var durationMs: Int?
 }
 
@@ -154,7 +156,40 @@ public struct RunResult: Sendable, Equatable {
     public var numTurns: Int?
     public var errors: [String]
     /// Keyed by model id; includes subagent usage, unlike the top-level `usage`. Cumulative across a process's results.
-    public var modelUsage: [String: TokenUsage]
+    public var modelUsage: [String: ModelUsage]
+    public var permissionDenials = 0
+    public var subagentStats: SubagentStats?
 
-    public var totalUsage: TokenUsage { modelUsage.values.reduce(.zero, +) }
+    public var totalUsage: TokenUsage { modelUsage.values.map(\.usage).reduce(.zero, +) }
+}
+
+public struct ModelUsage: Sendable, Equatable {
+    public var usage: TokenUsage
+    public var costUSD: Double?
+    public var contextWindow: Int?
+
+    public init(usage: TokenUsage, costUSD: Double? = nil, contextWindow: Int? = nil) {
+        self.usage = usage
+        self.costUSD = costUSD
+        self.contextWindow = contextWindow
+    }
+}
+
+public struct SubagentStats: Sendable, Equatable {
+    public var spawned: Int
+    public var completed: Int
+    public var failed: Int
+    public var killed: Int
+}
+
+public enum ModelName {
+    /// `claude-haiku-4-5-20251001` reads as "Haiku 4.5".
+    public static func display(_ id: String) -> String {
+        var parts = id.split(separator: "[").first.map(String.init)?.split(separator: "-").map(String.init) ?? []
+        if parts.first == "claude" { parts.removeFirst() }
+        if let last = parts.last, last.count == 8, last.allSatisfy(\.isNumber) { parts.removeLast() }
+        guard let family = parts.first else { return id }
+        let version = parts.dropFirst().joined(separator: ".")
+        return family.capitalized + (version.isEmpty ? "" : " \(version)")
+    }
 }

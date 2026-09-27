@@ -51,7 +51,7 @@ public enum OfficeEvent: Sendable, Equatable {
     case managerActive(Bool)
     case handoff(toolUseID: String, room: String, description: String?)
     case roomStarted(toolUseID: String, room: String)
-    case roomActivity(room: String, toolName: String)
+    case roomActivity(room: String, toolName: String, step: String?)
     case roomCaption(room: String, caption: String)
     case roomFinished(toolUseID: String, room: String, outcome: RoomOutcome)
     case handback(toolUseID: String, room: String, isError: Bool)
@@ -88,6 +88,30 @@ public struct Handoff: Sendable, Equatable {
     public var prompt: String?
     public var tools: [ToolCall] = []
     public var report: String?
+    public var model: String?
+    public var tokens: Int?
+    public var toolUses: Int?
+    /// What the room is doing now, such as "Reading README.md"; nil once it finishes.
+    public var step: String?
+    public var outcome: RoomOutcome?
+
+    public var toolCallCount: Int { max(tools.count, toolUses ?? 0) }
+}
+
+public struct RoomCounts: Sendable, Equatable {
+    public var working = 0
+    public var idle = 0
+    public var waiting = 0
+
+    public init(working: Int = 0, idle: Int = 0, waiting: Int = 0) {
+        self.working = working
+        self.idle = idle
+        self.waiting = waiting
+    }
+
+    public static func + (lhs: RoomCounts, rhs: RoomCounts) -> RoomCounts {
+        RoomCounts(working: lhs.working + rhs.working, idle: lhs.idle + rhs.idle, waiting: lhs.waiting + rhs.waiting)
+    }
 }
 
 public struct PendingRequest: Sendable, Equatable, Identifiable {
@@ -119,6 +143,37 @@ public struct OfficeState: Sendable, Equatable {
     public var skillsByRoom: [String: [String]] = [:]
     public var serviceCallsByServer: [String: Int] = [:]
     public var rateLimit: RateLimit?
+    /// Tokens in the manager's latest API message: its prompt plus its reply.
+    public var contextTokens = 0
+    public var mainModel: String?
+    public var contextWindows: [String: Int] = [:]
+    /// Live, one per API message in the main session, until a `result` gives the exact count.
+    public var turns = 0
+    /// Tokens are live; costs arrive only with a `result`.
+    public var models: [String: ModelUsage] = [:]
+    public var permissionDenials = 0
+    public var subagentStats: SubagentStats?
+
+    public func contextFraction(windows: [String: Int] = [:]) -> Double? {
+        guard let model = mainModel, let window = contextWindows[model] ?? windows[model], window > 0 else { return nil }
+        return Double(contextTokens) / Double(window)
+    }
+
+    /// Each room is counted once: waiting on you, working, or idle.
+    public func roomCounts(staff: [String]) -> RoomCounts {
+        let rooms = Set(["manager"] + staff + handoffs.values.map(\.room))
+        let waiting = Set(pendingRequests.map(\.room))
+        let working = workingRooms
+        return rooms.reduce(into: RoomCounts()) { counts, room in
+            if waiting.contains(room) {
+                counts.waiting += 1
+            } else if room == "manager" ? managerActive : working.contains(room) {
+                counts.working += 1
+            } else {
+                counts.idle += 1
+            }
+        }
+    }
 
     public func handoffs(in room: String) -> [Handoff] {
         handoffs.values.filter { $0.room == room }.sorted { $0.toolUseID < $1.toolUseID }
@@ -137,6 +192,10 @@ public struct OfficeReducer: Sendable {
     private var usageByMessage: [String: TokenUsage] = [:]
     /// Totals from the latest `result`; they are cumulative, so later turns add on top of them.
     private var usageBaseline: TokenUsage = .zero
+    private var modelBaseline: [String: ModelUsage] = [:]
+    private var modelByMessage: [String: String] = [:]
+    private var turnsBaseline = 0
+    private var mainMessages: Set<String> = []
     private var taskToToolUse: [String: String] = [:]
     private var cancelRequested = false
     private var authFailed = false
@@ -194,10 +253,23 @@ public struct OfficeReducer: Sendable {
             }
         case .assistant(let message):
             if message.error == "authentication_failed" { authFailed = true }
+            let model = message.model == "<synthetic>" ? nil : message.model
             if let id = message.messageID, let usage = message.usage, !state.tally.isFinal {
                 usageByMessage[id] = usage
+                if let model { modelByMessage[id] = model }
                 state.tally.usage = usageByMessage.values.reduce(usageBaseline, +)
+                state.models = liveModels()
                 out.append(.tallyChanged(state.tally))
+            }
+            if let parent = message.parentToolUseID {
+                if let model { state.handoffs[parent]?.model = model }
+            } else if let id = message.messageID {
+                mainMessages.insert(id)
+                state.turns = turnsBaseline + mainMessages.count
+                if let usage = message.usage {
+                    state.contextTokens = usage.total
+                    state.mainModel = model ?? state.mainModel
+                }
             }
             for case let .toolUse(id, name, _, _, input) in message.blocks {
                 let room = message.parentToolUseID.flatMap { state.handoffs[$0]?.room } ?? "manager"
@@ -246,8 +318,13 @@ public struct OfficeReducer: Sendable {
             out.append(.roomStarted(toolUseID: toolUseID, room: room))
         case .taskProgress(let progress):
             guard let toolUseID = progress.toolUseID ?? taskToToolUse[progress.taskID],
-                  let handoff = state.handoffs[toolUseID], let tool = progress.lastToolName else { break }
-            out.append(.roomActivity(room: handoff.room, toolName: tool))
+                  let handoff = state.handoffs[toolUseID] else { break }
+            if let tokens = progress.totalTokens { state.handoffs[toolUseID]?.tokens = tokens }
+            if let uses = progress.toolUses { state.handoffs[toolUseID]?.toolUses = uses }
+            if let step = progress.description, handoff.phase != .finished { state.handoffs[toolUseID]?.step = step }
+            if let tool = progress.lastToolName {
+                out.append(.roomActivity(room: handoff.room, toolName: tool, step: progress.description))
+            }
         case .taskUpdated(let taskID, let status), .taskNotification(let taskID, _, let status):
             if let status { out += finishRoom(taskID: taskID, status: status) }
         case .user(let message):
@@ -271,10 +348,11 @@ public struct OfficeReducer: Sendable {
             for result in message.toolResults {
                 guard let handoff = state.handoffs[result.toolUseID] else { continue }
                 state.handoffs[result.toolUseID]?.report = result.text.map(HandBack.clean)
+                if let tokens = message.agentReport?.totalTokens { state.handoffs[result.toolUseID]?.tokens = tokens }
                 if handoff.phase != .finished {
-                    state.handoffs[result.toolUseID]?.phase = .finished
-                    out.append(.roomFinished(toolUseID: handoff.toolUseID, room: handoff.room,
-                                             outcome: result.isError ? .failed("Tool error") : .completed))
+                    let outcome: RoomOutcome = result.isError ? .failed("Tool error") : .completed
+                    finish(result.toolUseID, outcome)
+                    out.append(.roomFinished(toolUseID: handoff.toolUseID, room: handoff.room, outcome: outcome))
                 }
                 out += handBack(result.toolUseID, isError: result.isError)
             }
@@ -286,7 +364,18 @@ public struct OfficeReducer: Sendable {
                 usageBaseline = result.totalUsage
                 usageByMessage = [:]
                 state.tally.usage = usageBaseline
+                modelBaseline = result.modelUsage
+                modelByMessage = [:]
+                state.models = modelBaseline
+                for (model, usage) in result.modelUsage {
+                    if let window = usage.contextWindow { state.contextWindows[model] = window }
+                }
             }
+            turnsBaseline += result.numTurns ?? mainMessages.count
+            mainMessages = []
+            state.turns = turnsBaseline
+            state.permissionDenials += result.permissionDenials
+            state.subagentStats = result.subagentStats ?? state.subagentStats
             state.tally.costUSD = result.totalCostUSD
             out.append(.tallyChanged(state.tally))
         case .permissionRequest(let request):
@@ -327,10 +416,23 @@ public struct OfficeReducer: Sendable {
         case "failed": outcome = .failed(status)
         default: return []
         }
-        state.handoffs[toolUseID]?.phase = .finished
+        finish(toolUseID, outcome)
         var out: [OfficeEvent] = [.roomFinished(toolUseID: toolUseID, room: handoff.room, outcome: outcome)]
         if handoff.isBackground { out += handBack(toolUseID, isError: outcome != .completed) }
         return out
+    }
+
+    private mutating func finish(_ toolUseID: String, _ outcome: RoomOutcome) {
+        state.handoffs[toolUseID]?.phase = .finished
+        state.handoffs[toolUseID]?.outcome = outcome
+        state.handoffs[toolUseID]?.step = nil
+    }
+
+    private func liveModels() -> [String: ModelUsage] {
+        usageByMessage.reduce(into: modelBaseline) { models, entry in
+            guard let model = modelByMessage[entry.key] else { return }
+            models[model, default: ModelUsage(usage: .zero)].usage = models[model, default: ModelUsage(usage: .zero)].usage + entry.value
+        }
     }
 
     private mutating func handBack(_ toolUseID: String, isError: Bool) -> [OfficeEvent] {
@@ -351,7 +453,7 @@ public struct OfficeReducer: Sendable {
         out += pendingServiceCalls.sorted { $0.key < $1.key }.map { .serviceCall(callID: $0.key, room: $0.value.room, server: $0.value.server, active: false) }
         pendingServiceCalls = [:]
         for (id, handoff) in state.handoffs.sorted(by: { $0.key < $1.key }) where handoff.phase != .finished {
-            state.handoffs[id]?.phase = .finished
+            finish(id, .killed)
             out.append(.roomFinished(toolUseID: id, room: handoff.room, outcome: .killed))
         }
         state.phase = .ended(outcome)

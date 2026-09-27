@@ -141,24 +141,35 @@ enum PreviewStage {
                                                      background: DayCycle.now.sky(dark: dark).cgColor)
             return try OffscreenRenderer.writePNG(image, to: URL(fileURLWithPath: path))
         }
+        buildings[0].floors = [
+            .init(name: "Feature: login", hires: ["research", "build", "review"], budgetUSD: 1),
+            .init(name: "Security review", hires: ["research", "review"], budgetUSD: 2),
+            .init(name: "Docs", hires: ["design", "build"], budgetUSD: 1, lastOutcome: "completed"),
+        ]
+        buildings[1].floors = [.init(name: "Landing page", hires: ["research", "build"], budgetUSD: 1)]
+        let seeded = seedStatus(buildings, workspace: workspace, dark: dark)
+        let building = buildings[0]
+        let sessions = building.floors.compactMap { floor in seeded[floor.id].map { (floor.id, $0) } }
         if arguments.contains("-city") {
             let city = CityScene()
             city.build(buildings, dark: dark)
             city.fit(size)
             for _ in 0..<30 { city.update(1.0 / 60) }
-            let image = try OffscreenRenderer.render(root: city.root, camera: city.camera.entity, width: 1600, height: 1000,
+            city.refresh()
+            var image = try OffscreenRenderer.render(root: city.root, camera: city.camera.entity, width: 1600, height: 1000,
                                                      environment: ModelLibrary.environment("sky"), exposure: CityScene.skyExposure(.now),
                                                      background: DayCycle.now.sky(dark: dark).cgColor)
+            if arguments.contains("-hud") {
+                let store = CityStore.shared
+                image = try overlay(image, dark: dark, alignment: .topTrailing) {
+                    VStack(alignment: .trailing, spacing: 12) {
+                        VitalsStrip(city: store, scope: .city(buildings))
+                        LedgerView(city: store, scope: .city(buildings)).glass(padding: 16)
+                    }
+                }
+            }
             return try OffscreenRenderer.writePNG(image, to: URL(fileURLWithPath: path))
         }
-        buildings[0].floors = [
-            .init(name: "Feature: login", hires: ["research", "build", "review"], budgetUSD: 1),
-            .init(name: "Security review", hires: ["research", "review"], budgetUSD: 2),
-            .init(name: "Docs", hires: ["design", "build"], budgetUSD: 1),
-        ]
-        let building = buildings[0]
-        let sessions = building.floors.map { floor in (floor.id, RunController(building: building, floor: floor)) }
-        sessions[1].1.scene.apply([.runStarted, .roomStarted(toolUseID: "a", room: "review"), .roomActivity(room: "review", toolName: "Grep")])
         if let seconds = RunController.launchArgument("-world").flatMap(Double.init) {
             let world = World()
             world.city.build(buildings, dark: dark)
@@ -193,9 +204,112 @@ enum PreviewStage {
             }
         }
         for _ in 0..<240 { tower.update(1.0 / 60) }
-        let image = try OffscreenRenderer.render(root: tower.root, camera: tower.camera.entity, width: 1600, height: 1000,
+        var image = try OffscreenRenderer.render(root: tower.root, camera: tower.camera.entity, width: 1600, height: 1000,
                                                  environment: ModelLibrary.environment("studio"), exposure: OfficeScene.studioExposure(.now),
                                                  background: DayCycle.now.sky(dark: dark).cgColor)
+        if arguments.contains("-hud") {
+            let store = CityStore.shared
+            image = try overlay(image, dark: dark, alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 12) {
+                    VitalsStrip(city: store, scope: .building(building))
+                    LedgerView(city: store, scope: .building(building)).glass(padding: 16)
+                }
+            }
+        }
+        try OffscreenRenderer.writePNG(image, to: URL(fileURLWithPath: path))
+    }
+
+    private static var clock = Date.now.addingTimeInterval(-600)
+
+    static func play(_ controller: RunController, _ name: String, lines: Int, workspace: URL, dark: Bool) {
+        RunController.now = { clock }
+        let url = workspace.deletingLastPathComponent().appendingPathComponent("fixtures").appendingPathComponent(name)
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+        controller.beginScript(servers: [], dark: dark)
+        for line in text.split(separator: "\n").prefix(lines) {
+            controller.feed(String(line))
+            clock += 6
+        }
+    }
+
+    static func seedStatus(_ buildings: [CityStore.Building], workspace: URL, dark: Bool) -> [UUID: RunController] {
+        func play(_ controller: RunController, _ name: String, lines: Int) { Self.play(controller, name, lines: lines, workspace: workspace, dark: dark) }
+        var sessions: [UUID: RunController] = [:]
+        for building in buildings {
+            for floor in building.floors { sessions[floor.id] = RunController(building: building, floor: floor) }
+        }
+        let floors = buildings.flatMap(\.floors)
+        if floors.count > 3 {
+            sessions[floors[0].id].map { play($0, "three-rooms.jsonl", lines: 25) }
+            sessions[floors[1].id].map { play($0, "approval-requests.jsonl", lines: 12) }
+            sessions[floors[3].id].map { play($0, "three-rooms.jsonl", lines: 10) }
+        }
+        let requests = ["Add a sign-in page", "Fix the flaky auth test", "Write the README intro", "Review the payment flow"]
+        var jobs: [JobRecord] = []
+        for (index, floor) in floors.enumerated() {
+            for job in 0..<max(6 - index, 1) {
+                let daysAgo = Double((job * 29 + index * 7) % 7)
+                let outcome = job == 3 ? "failed" : job == 5 ? "cancelled" : "completed"
+                jobs.append(JobRecord(id: UUID(), date: Date.now.addingTimeInterval(-daysAgo * 86_400 - Double(job * 600)),
+                                      request: requests[job % requests.count], workingDirectory: workspace.path, hires: [],
+                                      costUSD: 0.08 + Double(job) * 0.07, budgetUSD: 1, duration: Double(90 + job * 41 % 200),
+                                      files: [], sessionID: nil, outcome: outcome, buildingID: nil, floorID: floor.id, tokens: 18_000 + job * 9_500))
+            }
+        }
+        CityStore.shared.seedPreview(sessions: sessions, journal: jobs)
+        return sessions
+    }
+
+    static func overlay(_ base: CGImage, dark: Bool, alignment: Alignment, @ViewBuilder content: () -> some View) throws -> CGImage {
+        let hud = content()
+            .padding(20)
+            .frame(width: CGFloat(base.width), height: CGFloat(base.height), alignment: alignment)
+            .foregroundStyle(Color(Palette.text))
+            .environment(\.colorScheme, dark ? .dark : .light)
+        let renderer = ImageRenderer(content: hud)
+        renderer.scale = 1
+        let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height)
+        guard let card = renderer.cgImage,
+              let context = CGContext(data: nil, width: base.width, height: base.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        else { throw CocoaError(.fileWriteUnknown) }
+        context.draw(base, in: bounds)
+        context.draw(card, in: bounds)
+        guard let result = context.makeImage() else { throw CocoaError(.fileWriteUnknown) }
+        return result
+    }
+
+    static func renderOfficeStatus(to path: String, room: String, dark: Bool) throws {
+        let workspace = URL(fileURLWithPath: RunController.launchArgument("-workspace") ?? FileManager.default.currentDirectoryPath)
+        let building = CityStore.Building(name: "theCity", path: workspace.path, style: 0)
+        let floor = CityStore.Floor(name: "Feature: login", hires: ["research", "build", "review"], budgetUSD: 1)
+        let controller = RunController(building: building, floor: floor)
+        play(controller, "three-rooms.jsonl", lines: 25, workspace: workspace, dark: dark)
+        controller.request = "Write hello.txt with a friendly greeting, then review it"
+        CityStore.shared.seedPreview(sessions: [floor.id: controller], journal: [])
+        let scene = controller.scene
+        scene.sunEnabled = true
+        scene.fit(CGSize(width: 1600, height: 1000))
+        scene.focus(room: room)
+        for _ in 0..<240 { scene.update(1.0 / 60) }
+        var image = try OffscreenRenderer.render(root: scene.root, camera: scene.camera.entity, width: 1600, height: 1000,
+                                                 environment: ModelLibrary.environment("studio"), exposure: OfficeScene.studioExposure(.now),
+                                                 background: DayCycle.now.sky(dark: dark).cgColor)
+        image = try overlay(image, dark: dark, alignment: .topTrailing) {
+            VStack(alignment: .trailing, spacing: 10) {
+                CounterCard(controller: controller)
+                FloorStats(controller: controller, expanded: true)
+            }
+        }
+        image = try overlay(image, dark: dark, alignment: .bottom) {
+            StepBar(steps: controller.steps, raised: ["review"]) { _ in }
+        }
+        if let start = scene.cardPoint(of: room) {
+            let card = AgentCard(controller: controller, room: room).foregroundStyle(Color(Palette.text))
+                .environment(\.colorScheme, dark ? .dark : .light)
+            image = try OffscreenRenderer.composite(image, overlay: card, leadingAt: start)
+        }
         try OffscreenRenderer.writePNG(image, to: URL(fileURLWithPath: path))
     }
 
@@ -288,6 +402,9 @@ enum PreviewStage {
                 print("face written, image: \(renderer.cgImage.map { "\($0.width)x\($0.height)" } ?? "nil")")
                 exit(0)
             }
+            if arguments.contains("-hud"), let room = RunController.launchArgument("-focus") {
+                return try renderOfficeStatus(to: path, room: room, dark: dark)
+            }
             let scene = OfficeScene()
             let hired = ["research", "build", "review"].map { Department(name: $0, description: "") }
             let colours = ["research": Palette.departments[2], "build": Palette.departments[0], "review": Palette.departments[3]]
@@ -297,8 +414,8 @@ enum PreviewStage {
             let question = PermissionRequest.preview(question: "Which tone should the greeting use?")
             scene.apply([.runStarted, .managerActive(false),
                          .handoff(toolUseID: "a", room: "build", description: nil), .roomStarted(toolUseID: "a", room: "build"),
-                         .roomActivity(room: "build", toolName: "Write"), .roomCaption(room: "build", caption: "writing hello.txt"),
-                         .roomStarted(toolUseID: "b", room: "research"), .roomActivity(room: "research", toolName: "Read"),
+                         .roomActivity(room: "build", toolName: "Write", step: nil), .roomCaption(room: "build", caption: "writing hello.txt"),
+                         .roomStarted(toolUseID: "b", room: "research"), .roomActivity(room: "research", toolName: "Read", step: nil),
                          .roomCaption(room: "research", caption: "reading README.md"),
                          .skillLoaded(room: "research", skill: "office-house-style"),
                          .handRaised(question, room: "review")])
@@ -323,7 +440,7 @@ enum PreviewStage {
                                                      environment: ModelLibrary.environment("studio"), exposure: OfficeScene.studioExposure(.now),
                                                      background: DayCycle.now.sky(dark: dark).cgColor)
             if let kind = RunController.launchArgument("-card"), let room = RunController.launchArgument("-focus"),
-               let head = scene.screenPoint(of: room) {
+               let start = scene.cardPoint(of: room) {
                 let workspace = CityStore.Building(name: "theCity", path: RunController.launchArgument("-workspace") ?? "", style: 0)
                 let controller = RunController(building: workspace, floor: .init(name: "Preview", hires: ["research", "build", "review"], budgetUSD: 1))
                 let request = kind == "approval"
@@ -331,7 +448,7 @@ enum PreviewStage {
                     : PermissionRequest.preview(question: "Which tone should the greeting use?", header: "Tone", options: ["Friendly", "Formal", "Playful"])
                 let card = DeskCard(pending: PendingRequest(request: request, room: room), colour: colours[room] ?? Palette.muted, controller: controller)
                     .environment(\.colorScheme, dark ? .dark : .light)
-                image = try OffscreenRenderer.composite(image, overlay: card, leadingAt: CGPoint(x: head.x + 40, y: head.y))
+                image = try OffscreenRenderer.composite(image, overlay: card, leadingAt: start)
             }
             try OffscreenRenderer.writePNG(image, to: URL(fileURLWithPath: path))
             print("preview written to \(path)")

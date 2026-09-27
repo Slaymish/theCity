@@ -59,6 +59,7 @@ final class CityStore {
     var routing: Set<UUID> = []
     private(set) var hiringHeadless: [UUID: RunController] = [:]
     private(set) var journal: [JobRecord] = JobJournal.load()
+    private(set) var totals: [UUID: JobTotals] = [:]
 
     static var fileURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -66,6 +67,7 @@ final class CityStore {
     }
 
     private init() {
+        totals = JobTotals.load(seed: journal)
         if let data = try? Data(contentsOf: Self.fileURL) {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
@@ -376,6 +378,57 @@ final class CityStore {
         return status.waiting > 0 ? "Needs you" : status.working > 0 ? "\(status.working) working" : building.floors.isEmpty ? floors : "\(floors) · all quiet"
     }
 
+    /// Spend and tokens of the jobs running now, and every room on these floors by what it's doing.
+    func live(on floors: [Floor]) -> (spendUSD: Double, tokens: Int, rooms: RoomCounts) {
+        floors.reduce((0, 0, RoomCounts())) { total, floor in
+            guard let session = sessions[floor.id] else { return (total.0, total.1, total.2 + RoomCounts(idle: floor.hires.count + 1)) }
+            let running = session.isRunning
+            return (total.0 + (running ? session.state.tally.costUSD ?? 0 : 0), total.1 + (running ? session.state.tally.total : 0),
+                    total.2 + session.roomCounts)
+        }
+    }
+
+    func jobSummary(on floors: [Floor]) -> JobSummary {
+        let ids = Set(floors.map(\.id))
+        let today = journal.filter { job in job.floorID.map(ids.contains) == true && Calendar.current.isDateInToday(job.date) }
+        return JobSummary(today: today.count, todaySpendUSD: today.compactMap(\.costUSD).reduce(0, +),
+                          todayTokens: today.compactMap(\.tokens).reduce(0, +),
+                          totals: floors.compactMap { totals[$0.id] }.reduce(JobTotals(), +))
+    }
+
+    var allFloors: [Floor] { buildings.flatMap(\.floors) }
+
+    func vitals(on floors: [Floor]) -> Vitals {
+        let live = live(on: floors)
+        return Vitals(rooms: live.rooms, running: floors.contains { sessions[$0.id]?.isRunning == true }, liveSpendUSD: live.spendUSD,
+                      liveTokens: live.tokens, summary: jobSummary(on: floors), onPlan: isOnPlan)
+    }
+
+    func jobsByDay(on floors: [Floor], days: Int = 7) -> [(day: Date, jobs: Int)] {
+        let ids = Set(floors.map(\.id)), calendar = Calendar.current, today = calendar.startOfDay(for: .now)
+        let counts = journal.reduce(into: [Date: Int]()) { counts, job in
+            if job.floorID.map(ids.contains) == true { counts[calendar.startOfDay(for: job.date), default: 0] += 1 }
+        }
+        return (0..<days).reversed().compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }.map { ($0, counts[$0] ?? 0) }
+    }
+
+    /// Offscreen renders only: sample sessions and jobs that are never saved.
+    func seedPreview(sessions seeded: [UUID: RunController], journal jobs: [JobRecord]) {
+        sessions.merge(seeded) { $1 }
+        journal += jobs
+        for job in jobs {
+            guard let floor = job.floorID else { continue }
+            totals[floor, default: JobTotals()].add(isNew: true, outcome: job.outcome, replacing: nil, costUSD: job.costUSD ?? 0,
+                                                    tokens: job.tokens ?? 0, duration: job.duration)
+        }
+    }
+
+    var isOnPlan: Bool {
+        StatusFormat.isOnPlan(allSessions.compactMap(\.state.rateLimit).first { !$0.windows.isEmpty }, configDirectory: Preferences.shared.configDirectory)
+    }
+
+    func dollars(_ amount: Double) -> String { StatusFormat.dollars(amount, onPlan: isOnPlan) }
+
     func session(forRequest requestID: String) -> RunController? {
         allSessions.first { $0.state.pendingRequests.contains { $0.id == requestID } }
     }
@@ -385,8 +438,6 @@ final class CityStore {
     }
 
     // MARK: Journal
-
-    var recentJobs: [JobRecord] { Array(journal.reversed().prefix(5)) }
 
     private var lastSeen: [String: Date] = UserDefaults.standard.dictionary(forKey: "lastSeen") as? [String: Date] ?? [:]
 
@@ -414,6 +465,12 @@ final class CityStore {
     func record(_ change: (inout [JobRecord]) -> Void) {
         change(&journal)
         JobJournal.save(journal)
+    }
+
+    func addToTotals(floor: UUID?, _ change: (inout JobTotals) -> Void) {
+        guard let floor else { return }
+        change(&totals[floor, default: JobTotals()])
+        JobTotals.save(totals)
     }
 
     // MARK: Persistence

@@ -68,7 +68,9 @@ public enum StreamParser {
                 toolUseID: json["tool_use_id"] as? String,
                 subagentType: json["subagent_type"] as? String,
                 lastToolName: json["last_tool_name"] as? String,
+                description: json["description"] as? String,
                 totalTokens: usage?["total_tokens"] as? Int,
+                toolUses: usage?["tool_uses"] as? Int,
                 durationMs: usage?["duration_ms"] as? Int
             )))
         case ("system", "task_updated"):
@@ -144,7 +146,10 @@ public enum StreamParser {
                 isUsingOverage: info?["isUsingOverage"] as? Bool ?? false
             )))
         case ("result", _):
-            let modelUsage = (json["modelUsage"] as? [String: [String: Any]] ?? [:]).mapValues(camelUsage)
+            let modelUsage = (json["modelUsage"] as? [String: [String: Any]] ?? [:]).mapValues { u in
+                ModelUsage(usage: camelUsage(u), costUSD: u["costUSD"] as? Double, contextWindow: u["contextWindow"] as? Int)
+            }
+            let stats = json["subagent_stats"] as? [String: Any]
             return .event(.result(RunResult(
                 subtype: subtype,
                 isError: json["is_error"] as? Bool ?? false,
@@ -154,7 +159,13 @@ public enum StreamParser {
                 durationMs: json["duration_ms"] as? Int,
                 numTurns: json["num_turns"] as? Int,
                 errors: json["errors"] as? [String] ?? [],
-                modelUsage: modelUsage
+                modelUsage: modelUsage,
+                permissionDenials: (json["permission_denials"] as? [Any])?.count ?? 0,
+                subagentStats: stats.map { stats in
+                    SubagentStats(spawned: stats["spawned"] as? Int ?? 0, completed: stats["completed"] as? Int ?? 0,
+                                  failed: stats["failed"] as? Int ?? 0,
+                                  killed: (stats["killed"] as? [String: Int] ?? [:]).values.reduce(0, +))
+                }
             )))
         default:
             return .event(.unknown(type: type, subtype: subtype))

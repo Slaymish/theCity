@@ -17,6 +17,7 @@ final class BuildingScene {
     private var building: CityStore.Building?
     private(set) var activeFloor: UUID?
     private var storeys: [(id: UUID, scene: OfficeScene, index: Int)] = []
+    private var sessions: [UUID: RunController] = [:]
     private var labels: [UUID: (entity: Entity, text: String)] = [:]
     private var crown: [Entity] = []
     private var fitOut: [Int: Entity] = [:]
@@ -58,6 +59,7 @@ final class BuildingScene {
         tower.children.removeAll()
         storeys = []
         labels = [:]
+        self.sessions = Dictionary(sessions, uniquingKeysWith: { $1 })
         for (index, (id, session)) in sessions.enumerated() {
             let scene = session.scene
             scene.adopt(camera: camera)
@@ -466,22 +468,24 @@ final class BuildingScene {
         guard let buildingID, let building = CityStore.shared.building(buildingID) ?? self.building else { return }
         for storey in storeys {
             guard let floor = building.floors.first(where: { $0.id == storey.id }) else { continue }
-            let session = CityStore.shared.sessions[storey.id]
+            let session = CityStore.shared.sessions[storey.id] ?? sessions[storey.id]
             let waiting = session?.state.pendingRequests.count ?? 0
             let (symbol, status): (String, String) =
                 waiting > 0 ? ("hand.raised.fill", "Needs you") :
                 session?.isRunning == true ? ("bolt.fill", "Working") :
                 floor.lastOutcome == "completed" ? ("checkmark.circle.fill", "Done") : ("moon.zzz.fill", "Quiet")
             let text = "\(floor.name) · \(status)"
-            if !force, labels[storey.id]?.text == text { continue }
+            let rooms = session?.roomCounts ?? RoomCounts()
+            let key = "\(text)|\(rooms.waiting)|\(rooms.working)"
+            if !force, labels[storey.id]?.text == key { continue }
             labels[storey.id]?.entity.removeFromParent()
             let colour = waiting > 0 ? Palette.manager : session?.isRunning == true ? Palette.primaryFill : Palette.muted
-            guard let label = Billboard.make(BubbleView(symbol: symbol, text: text, colour: colour), dark: dark) else { continue }
+            guard let label = Billboard.make(BubbleView(symbol: symbol, text: text, colour: colour, rooms: rooms), dark: dark) else { continue }
             label.position = [-OfficeScene.footprint.x / 2 - 1.2, Float(storey.index + 1) * Self.storeyHeight + 1.2, OfficeScene.footprint.y / 2 + 1.5]
             label.scale = [1.3, 1.3, 1.3]
             label.isEnabled = showsLabel(storey.index)
             tower.addChild(label)
-            labels[storey.id] = (label, text)
+            labels[storey.id] = (label, key)
         }
     }
 }

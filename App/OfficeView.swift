@@ -164,6 +164,7 @@ struct OfficeOverlay: View {
                         }
                     }
                     CounterCard(controller: controller)
+                    FloorStats(controller: controller)
                     UsageHUD(configDirectory: controller.configDirectory)
                         .frame(maxWidth: Self.panelWidth, alignment: .trailing)
                     if controller.showPanel {
@@ -183,7 +184,7 @@ struct OfficeOverlay: View {
                 Spacer()
                 VStack(spacing: 12) {
                     if controller.state.phase == .running {
-                        StepBar(steps: controller.steps) { controller.select(room: $0) }
+                        StepBar(steps: controller.steps, raised: Set(controller.state.pendingRequests.map(\.room))) { controller.select(room: $0) }
                     }
                     if case .ended(let outcome) = controller.state.phase {
                         EndCard(controller: controller, outcome: outcome, collapsed: $outboxCollapsed)
@@ -271,12 +272,14 @@ struct DeskRequestLayer: View {
         GeometryReader { geometry in
             if let room {
                 TimelineView(.animation) { _ in
-                    let head = scene.screenPoint(of: room) ?? CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                    let start = scene.cardPoint(of: room) ?? CGPoint(x: geometry.size.width / 2 + 40, y: geometry.size.height / 2)
                     let limit = geometry.size.width - (controller.showPanel ? OfficeView.panelWidth + 40 : 20)
                     VStack(alignment: .leading, spacing: 8) {
                         if let shown {
                             DeskCard(pending: shown, colour: controller.colour(for: shown.room), controller: controller)
                                 .id(shown.id)
+                        } else if room != "outbox" {
+                            AgentCard(controller: controller, room: room)
                         }
                         if shown != nil, pending.count > 1 {
                             Button("\(pending.count - 1) more waiting", systemImage: "chevron.forward") {
@@ -287,8 +290,8 @@ struct DeskRequestLayer: View {
                         }
                     }
                     .onGeometryChange(for: CGSize.self) { $0.size } action: { cardSize = $0 }
-                    .position(x: min(max(head.x + 40 + cardSize.width / 2, cardSize.width / 2 + 20), limit - cardSize.width / 2),
-                              y: min(max(head.y, cardSize.height / 2 + 20), max(cardSize.height / 2 + 20, geometry.size.height - bottomInset - cardSize.height / 2 - 20)))
+                    .position(x: min(max(start.x + cardSize.width / 2, cardSize.width / 2 + 20), limit - cardSize.width / 2),
+                              y: min(max(start.y, cardSize.height / 2 + 20), max(cardSize.height / 2 + 20, geometry.size.height - bottomInset - cardSize.height / 2 - 20)))
                 }
                 .transition(OfficeScene.reduceMotion ? .opacity : .scale(scale: 0.6, anchor: .leading).combined(with: .opacity))
             }
@@ -465,7 +468,7 @@ struct CounterCard: View {
                         .foregroundStyle(Color(tally.costUSD == nil ? Palette.muted : Palette.text))
                 }
                 Text(RunController.clock(elapsed(now: RunController.now())))
-                Text("\(Self.compact(tally.total)) tokens")
+                Text("\(StatusFormat.tokens(tally.total)) tokens")
                     .foregroundStyle(Color(Palette.muted))
             }
             .font(Typography.number)
@@ -494,15 +497,12 @@ struct CounterCard: View {
         return (controller.endedAt ?? now).timeIntervalSince(start)
     }
 
-    static func compact(_ tokens: Int) -> String {
-        tokens >= 1000 ? "\(tokens / 1000)k" : "\(tokens)"
-    }
-
     static func format(_ seconds: TimeInterval) -> String { RunController.clock(seconds) }
 }
 
 struct StepBar: View {
     let steps: [Step]
+    var raised: Set<String> = []
     let select: (String) -> Void
 
     var body: some View {
@@ -511,7 +511,7 @@ struct StepBar: View {
                 HStack(spacing: 4) {
                     ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
                         Button { select(step.room) } label: {
-                            StepPill(number: index + 1, step: step, now: RunController.now())
+                            StepPill(number: index + 1, step: step, now: RunController.now(), raised: raised.contains(step.room))
                         }
                         .buttonStyle(.plain)
                         .help("Inspect \(step.room.capitalized)")
@@ -527,10 +527,18 @@ struct StepPill: View {
     let number: Int
     let step: Step
     let now: Date
+    var raised = false
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(step.isContractor ? "+" : "\(number)")
+            Group {
+                if raised {
+                    Image(systemName: RoomState.waiting.symbol)
+                        .symbolEffect(.pulse, isActive: !OfficeScene.reduceMotion)
+                } else {
+                    Text(step.isContractor ? "+" : "\(number)")
+                }
+            }
                 .font(Typography.captionMedium)
                 .foregroundStyle(Color(Palette.textOn(step.colour)))
                 .frame(width: 22, height: 22)
@@ -549,7 +557,7 @@ struct StepPill: View {
         .background(Capsule().fill(step.status == .working ? Color(step.colour) : Color.clear))
         .contentShape(Capsule())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(step.isContractor ? "Contractor" : step.room.capitalized), \(statusText)")
+        .accessibilityLabel("\(step.isContractor ? "Contractor" : step.room.capitalized), \(raised ? "needs you, " : "")\(statusText)")
     }
 
     private var statusText: String {
@@ -663,7 +671,7 @@ struct RoomInspector: View {
                             .foregroundStyle(Color(Palette.muted))
                     }
                     ForEach(handoffs, id: \.toolUseID) { handoff in
-                        HandoffDetail(handoff: handoff, showRoom: room == "contractor", friendly: controller.friendly)
+                        HandoffDetail(handoff: handoff, showRoom: room == "contractor", friendly: controller.friendly, timing: controller.timings[handoff.toolUseID])
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -686,11 +694,15 @@ struct HandoffDetail: View {
     let handoff: Handoff
     let showRoom: Bool
     let friendly: (String) -> String
+    var timing: HandoffTiming?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(showRoom ? "\(handoff.room): \(handoff.brief ?? "")" : handoff.brief ?? "Brief").font(Typography.bodyMedium)
             Text(status).eyebrow()
+            if !figures.isEmpty {
+                Text(figures).font(Typography.caption).foregroundStyle(Color(Palette.muted))
+            }
             if let prompt = handoff.prompt {
                 Text(prompt).font(Typography.caption).foregroundStyle(Color(Palette.muted)).textSelection(.enabled)
                     .cappedScroll()
@@ -716,11 +728,21 @@ struct HandoffDetail: View {
     }
 
     private var status: String {
-        switch handoff.phase {
-        case .requested: "Handed over"
-        case .working: "Working"
-        case .finished: handoff.isBackground ? "Finished in the background" : "Finished"
+        switch (handoff.phase, handoff.outcome) {
+        case (.requested, _): "Handed over"
+        case (.working, _): "Working" + (handoff.step.map { " · \($0)" } ?? "")
+        case (.finished, .failed?): "Failed"
+        case (.finished, .killed?): "Stopped"
+        case (.finished, _): handoff.isBackground ? "Finished in the background" : "Finished"
         }
+    }
+
+    private var figures: String {
+        let worked = timing.map { $0.worked(now: RunController.now()) } ?? 0
+        return [handoff.model.map(ModelName.display), handoff.tokens.map { "\(StatusFormat.tokens($0)) tokens" },
+                handoff.toolCallCount > 0 ? "\(handoff.toolCallCount) tool\(handoff.toolCallCount == 1 ? "" : "s")" : nil,
+                worked >= 1 ? "worked \(RunController.clock(worked))" : nil]
+            .compactMap { $0 }.joined(separator: " · ")
     }
 }
 

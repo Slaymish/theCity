@@ -127,12 +127,16 @@ final class CameraRig {
         reset(to: anchor)
     }
 
+    private static func focal(_ size: CGSize) -> Float { Float(size.height) / 2 / tan(26 * .pi / 360) }
+
+    func pixels(_ metres: Float, atDepth depth: Float, in size: CGSize) -> Float { metres / depth * Self.focal(size) }
+
     func project(_ point: SIMD3<Float>, in size: CGSize) -> (SIMD2<Float>, Float)? {
         let eye = entity.position(relativeTo: nil)
         let forward = simd_normalize(current.target * frame.scale + frame.offset - eye)
         let right = simd_normalize(simd_cross(forward, [0, 1, 0]))
         let up = simd_cross(right, forward)
-        let focal = Float(size.height) / 2 / tan(26 * .pi / 360)
+        let focal = Self.focal(size)
         let d = point - eye
         let depth = simd_dot(d, forward)
         guard depth > 0 else { return nil }

@@ -970,7 +970,6 @@ final class Terminal {
         root.addChild(screen)
         if let label = Billboard.make(BubbleView(symbol: "antenna.radiowaves.left.and.right", text: name, colour: Palette.muted), dark: dark) {
             label.position = [0, 2.7, 0]
-            label.scale = [0.6, 0.6, 0.6]
             root.addChild(label)
             self.label = label
         }

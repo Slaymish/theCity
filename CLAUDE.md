@@ -33,6 +33,16 @@ A macOS 26 app (SwiftUI + RealityKit) that shows Claude Code runs as a city of r
 - `fixtures/`: recorded real CLI streams for tests and replay.
 - `Tools/Dev/`: live-window helpers and the README reel script.
 
+## Backlog
+
+Bugs and to-dos are GitHub Issues on `Slaymish/theCity`, not files in the repo. Labels are listed in `CONTRIBUTING.md`.
+
+- Read: `gh issue list [--label "area: office"]`, `gh issue view <n> --comments`.
+- When you find a bug or follow-up that's out of scope for the task, offer to file it rather than leaving a TODO comment. Include the type, `area:` and `priority:` labels.
+- Reference the issue in commits (`Fixes #n`) so it closes on merge.
+- People with write access can comment `@claude` on an issue or PR to hand it to Claude in GitHub Actions (`.github/workflows/claude.yml`).
+- The default `gh` account (`hamishburke`) can't label or close issues. Prefix those commands with `GH_TOKEN=$(gh auth token --user Slaymish)`.
+
 ## Detail lives elsewhere
 
 - App, theming and RealityKit traps: `.claude/rules/app.md`

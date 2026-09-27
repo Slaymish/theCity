@@ -42,6 +42,10 @@ def main():
     if code == 0 and log:
         lines.append("Recent: " + " | ".join(log.splitlines()))
 
+    code, issues = run("gh issue list --limit 100 --json number -q length", root, timeout=5)
+    if code == 0 and issues.isdigit():
+        lines.append("Open issues: %s (`gh issue list`)" % issues)
+
     commands = config.get("commands", {})
     if commands:
         lines.append("Commands: " + "  ".join(

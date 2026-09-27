@@ -1,0 +1,36 @@
+name: Idea or improvement
+description: Suggest a feature, or a change to something that already exists.
+labels: ["enhancement", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: Half-formed ideas are welcome. It's easier to shape one here than to guess what people want.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: The problem or the moment where the app got in your way.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How might it work?
+      description: Any idea of the solution, even a rough one. Sketches and screenshots welcome.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app?
+      options:
+        - City view
+        - Office and floors
+        - Reception and hiring
+        - Settings
+        - Installing and updates
+        - Not sure
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to work on this myself

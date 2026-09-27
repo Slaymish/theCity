@@ -46,6 +46,10 @@ Settings (⌘,) holds the defaults for new jobs (account, model, budget), the th
 
 The city is saved in `~/Library/Application Support/The City/`.
 
+## Bugs and ideas
+
+The backlog lives in [GitHub Issues](https://github.com/Slaymish/theCity/issues), so you can see what's planned and what's already known. If something breaks or you have an idea, [open an issue](https://github.com/Slaymish/theCity/issues/new/choose). Rough reports are fine. Issues labelled [good first issue](https://github.com/Slaymish/theCity/labels/good%20first%20issue) are a good place to start contributing. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
 ## Building from source
 
 Needs Xcode 27 and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).

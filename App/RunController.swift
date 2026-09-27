@@ -446,8 +446,20 @@ final class RunController {
 
     static func clock(_ seconds: TimeInterval) -> String {
         let whole = Int(seconds.rounded())
-        return whole < 60 ? "\(whole)s" : String(format: "%d:%02d", whole / 60, whole % 60)
+        return String(format: "%d:%02d", whole / 60, whole % 60)
     }
+
+    static func spoken(_ seconds: TimeInterval) -> String {
+        spokenFormatter.string(from: seconds.rounded()) ?? clock(seconds)
+    }
+
+    private static let spokenFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute, .second]
+        formatter.unitsStyle = .full
+        formatter.zeroFormattingBehavior = .dropAll
+        return formatter
+    }()
 
     private func recordJob(_ outcome: RunOutcome) {
         guard let workingDirectory else { return }

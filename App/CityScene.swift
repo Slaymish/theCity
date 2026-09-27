@@ -17,6 +17,7 @@ final class CityScene {
     private let lighting = Entity()
     private let sun = Entity()
     private var facades: [UUID: (entity: Entity, height: Float)] = [:]
+    private var props: [(entity: Entity, height: Float, radius: Float)] = []
     private var slides: [(entity: Entity, from: Float, to: Float, elapsed: Double, duration: Double)] = []
     private var labelsVisible = true
     private var hovered: UUID?
@@ -64,6 +65,7 @@ final class CityScene {
         let firstBuild = lots.isEmpty && facades.isEmpty && greeter == nil
         lots = [:]
         facades = [:]
+        props = []
         slides = []
         rises = []
         greeter = nil
@@ -137,7 +139,7 @@ final class CityScene {
             let bush = ModelLibrary.entity("bush")
             bush.position = position + offset
             bush.scale = [1.4, 1.4, 1.4]
-            root.addChild(bush)
+            addProp(bush)
         }
         if CityStore.shared.hasParcel(building) {
             let parcel = OfficeScene.makeFolder()
@@ -147,7 +149,7 @@ final class CityScene {
         }
         let light = ModelLibrary.entity("streetlight")
         light.position = position + [0.85, 0.1, -0.85]
-        root.addChild(light)
+        addProp(light)
         lot.root.isEnabled = false
         lots[building.id] = lot
     }
@@ -176,14 +178,31 @@ final class CityScene {
                 facade.entity.isEnabled = true
                 continue
             }
-            let centre = SIMD2(facade.entity.position.x, facade.entity.position.z)
-            let from = SIMD2(eye.x, eye.z), to = SIMD2(target.x, target.z)
-            let line = to - from
-            let along = simd_dot(centre - from, line) / max(simd_length_squared(line), 0.0001)
-            let nearest = from + line * min(max(along, 0), 1)
-            let blocks = along > -0.2 && along < 1 && simd_distance(centre, nearest) < Self.tile * 0.75 && eye.y < facade.height + 0.4
-            facade.entity.isEnabled = !blocks
+            facade.entity.isEnabled = !Self.blocks(facade.entity.position, radius: Self.tile * 0.75, height: facade.height, eye: eye, target: target)
         }
+        for prop in props {
+            guard let eye else {
+                prop.entity.isEnabled = true
+                continue
+            }
+            let beside = simd_distance(SIMD2(prop.entity.position.x, prop.entity.position.z), SIMD2(eye.x, eye.z)) < prop.radius + Self.tile * 0.3 && eye.y < prop.height + 0.4
+            prop.entity.isEnabled = !beside && !Self.blocks(prop.entity.position, radius: prop.radius + Self.tile * 0.15, height: prop.height, eye: eye, target: target)
+        }
+    }
+
+    private static func blocks(_ position: SIMD3<Float>, radius: Float, height: Float, eye: SIMD3<Float>, target: SIMD3<Float>) -> Bool {
+        let centre = SIMD2(position.x, position.z)
+        let from = SIMD2(eye.x, eye.z), to = SIMD2(target.x, target.z)
+        let line = to - from
+        let along = simd_dot(centre - from, line) / max(simd_length_squared(line), 0.0001)
+        let nearest = from + line * min(max(along, 0), 1)
+        return along > -0.2 && along < 1 && simd_distance(centre, nearest) < radius && eye.y < height + 0.4
+    }
+
+    private func addProp(_ entity: Entity) {
+        root.addChild(entity)
+        let bounds = entity.visualBounds(relativeTo: root)
+        props.append((entity, bounds.max.y, max(bounds.extents.x, bounds.extents.z) / 2))
     }
 
     func setLabelsVisible(_ visible: Bool) {
@@ -252,7 +271,7 @@ final class CityScene {
             let angle = Float(index + seed) * 1.7
             bush.position = position + [cos(angle) * 0.55, 0.1, sin(angle) * 0.55]
             bush.scale = [2, 2, 2]
-            root.addChild(bush)
+            addProp(bush)
         }
         let bench = ModelLibrary.entity("bench")
         bench.position = position + [0, 0.1, 0]
@@ -286,7 +305,7 @@ final class CityScene {
                 tree.position = [edge.x + jitter.x, Self.groundLevel, edge.y + jitter.y]
                 tree.scale = SIMD3(repeating: Float.random(in: 3.2...4.4, using: &generator))
                 tree.orientation = simd_quatf(angle: Float.random(in: 0...(2 * .pi), using: &generator), axis: [0, 1, 0])
-                root.addChild(tree)
+                addProp(tree)
             }
         }
     }

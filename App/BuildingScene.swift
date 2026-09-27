@@ -22,7 +22,12 @@ final class BuildingScene {
     private var lobby: Pod?
     private var liftButtons: [ModelEntity] = []
     private var scaffold: Entity?
-    private(set) var lobbyFocused = false
+    private(set) var lobbyFocused = false {
+        didSet { if !lobbyFocused { storeysHidden = false } }
+    }
+    private var storeysHidden = false {
+        didSet { if storeysHidden != oldValue { hideStoreysForLobby() } }
+    }
     private var liftSpot: SIMD3<Float> = .zero
     private var lobbyParts: [Entity] = []
     private let lobbyLight = Entity()
@@ -42,7 +47,10 @@ final class BuildingScene {
         self.dark = dark
         buildingID = building.id
         self.building = building
-        for storey in storeys where !sessions.contains(where: { $0.0 == storey.id }) { storey.scene.root.removeFromParent() }
+        for storey in storeys where !sessions.contains(where: { $0.0 == storey.id }) {
+            storey.scene.root.removeFromParent()
+            storey.scene.root.components.remove(OpacityComponent.self)
+        }
         tower.children.removeAll()
         storeys = []
         labels = [:]
@@ -101,6 +109,7 @@ final class BuildingScene {
         camera.overview = overviewPose()
         if activeFloor == nil || !storeys.contains(where: { $0.id == activeFloor }) {
             activeFloor = nil
+            lobbyFocused = false
             camera.reset(to: camera.overview, animated: false)
         }
     }
@@ -237,6 +246,24 @@ final class BuildingScene {
         camera.focus(on: [0, 1.6, 0.5], facing: 0.3, distance: 13, pitch: 0.28)
     }
 
+    // Opacity rather than isEnabled, so storey 0's sun keeps lighting the lobby.
+    private func hideStoreysForLobby() {
+        guard !storeys.isEmpty else { return }
+        for storey in storeys {
+            if storeysHidden {
+                storey.scene.root.components.set(OpacityComponent(opacity: 0))
+            } else {
+                storey.scene.root.components.remove(OpacityComponent.self)
+            }
+            labels[storey.id]?.entity.isEnabled = showsLabel(storey.index)
+        }
+        crown.forEach { $0.isEnabled = !storeysHidden && activeFloor == nil }
+    }
+
+    private func showsLabel(_ index: Int) -> Bool {
+        !storeysHidden && (activeFloor.flatMap { id in storeys.first { $0.id == id }?.index }.map { index < $0 } ?? true)
+    }
+
     func leaveLobby() {
         guard lobbyFocused else { return }
         lobbyFocused = false
@@ -317,6 +344,7 @@ final class BuildingScene {
     }
 
     func floor(of entity: Entity) -> UUID? {
+        guard !storeysHidden else { return nil }
         var node: Entity? = entity
         while let current = node {
             if let storey = storeys.first(where: { $0.scene.root === current }) { return storey.id }
@@ -330,6 +358,7 @@ final class BuildingScene {
     func update(_ dt: Double) {
         camera.smoothTime = OfficeScene.reduceMotion ? 0.12 : 0.5
         camera.update(Float(dt))
+        if lobbyFocused { storeysHidden = camera.entity.position(relativeTo: tower).y > Self.storeyHeight - OfficeScene.floorThickness }
         if let current = rise {
             let elapsed = current.elapsed + dt
             let t = Float(min(elapsed / World.slide, 1))
@@ -363,7 +392,7 @@ final class BuildingScene {
             guard let label = Billboard.make(BubbleView(symbol: symbol, text: text, colour: colour), dark: dark) else { continue }
             label.position = [-OfficeScene.footprint.x / 2 - 1.2, Float(storey.index + 1) * Self.storeyHeight + 1.2, OfficeScene.footprint.y / 2 + 1.5]
             label.scale = [1.3, 1.3, 1.3]
-            label.isEnabled = activeFloor.flatMap { id in storeys.first { $0.id == id }?.index }.map { storey.index < $0 } ?? true
+            label.isEnabled = showsLabel(storey.index)
             tower.addChild(label)
             labels[storey.id] = (label, text)
         }

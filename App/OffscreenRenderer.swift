@@ -91,7 +91,7 @@ enum OffscreenRenderer {
     }
 }
 
-/// `TheCity -render-preview <out.png> [-focus <room>] [-theme light] [-city | -building [-floor n | -lobby]]`: real scenes with sample data.
+/// `TheCity -render-preview <out.png> [-focus <room>] [-theme light] [-city | -building [-floor n | -lobby] | -building -world <s> [-lobby <s>]]`: real scenes with sample data.
 @MainActor
 enum PreviewStage {
     static func renderCityOrBuilding(to path: String, dark: Bool, arguments: [String]) throws {
@@ -147,6 +147,10 @@ enum PreviewStage {
             world.building.show(building, sessions: sessions, dark: dark)
             world.enter(building.id, animated: true)
             for _ in 0..<Int(seconds * 60) { world.update(1.0 / 60) }
+            if arguments.contains("-lobby") {
+                world.building.focusLobby()
+                for _ in 0..<Int((RunController.launchArgument("-lobby").flatMap(Double.init) ?? 4) * 60) { world.update(1.0 / 60) }
+            }
             if let back = RunController.launchArgument("-leave").flatMap(Double.init) {
                 world.leave(animated: false)
                 for _ in 0..<Int(back * 60) { world.update(1.0 / 60) }

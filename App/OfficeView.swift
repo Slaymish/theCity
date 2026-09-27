@@ -103,7 +103,7 @@ struct OfficeOverlay: View {
                 .accessibilityLabel("Office floor")
                 .accessibilityChildren {
                     ForEach(controller.steps) { step in
-                        Button("\(step.room.capitalized), \(step.status == .working ? "working" : step.status == .done ? "done" : "waiting")") {
+                        Button("\(step.room.capitalized), \(step.status == .working ? "working" : step.status == .done ? "done" : "waiting")\(step.status == .waiting ? "" : ", " + RunController.spoken(StepPill.worked(step, now: RunController.now())))") {
                             controller.select(room: step.room)
                         }
                     }
@@ -531,7 +531,9 @@ struct StepPill: View {
         }
     }
 
-    private var worked: TimeInterval {
+    private var worked: TimeInterval { Self.worked(step, now: now) }
+
+    static func worked(_ step: Step, now: Date) -> TimeInterval {
         step.workedFor + (step.startedAt.map { now.timeIntervalSince($0) } ?? 0)
     }
 }

@@ -532,8 +532,5 @@ struct FileRow: View {
         .help(exists ? "Double-click to open, Space for Quick Look" : path)
     }
 
-    private var relativePath: String {
-        guard let base = workingDirectory?.standardizedFileURL.path, path.hasPrefix(base + "/") else { return path }
-        return String(path.dropFirst(base.count + 1))
-    }
+    private var relativePath: String { ProjectPath.relative(path, to: workingDirectory) }
 }

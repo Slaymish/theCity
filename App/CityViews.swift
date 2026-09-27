@@ -458,6 +458,7 @@ struct ReceptionComposer: View {
                     Text("The receptionist is checking which floor fits…").font(Typography.caption).foregroundStyle(Color(Palette.muted))
                 }
                 suggestionView(RoutingSuggestion(floorID: nil, newFloorName: CityStore.floorName(for: text, existing: building.floors.map(\.name)), reason: ""))
+                    .disabled(true)
             } else if let suggestion {
                 suggestionView(suggestion)
             }
@@ -512,6 +513,7 @@ struct ReceptionComposer: View {
         if let match {
             Button("New job on \(match.name)", systemImage: "arrow.up.circle.fill") { send(to: match.id) }
                 .buttonStyle(PillButtonStyle())
+                .keyboardShortcut(.return, modifiers: .command)
             if city.canContinue(match) {
                 Button("Continue \(match.name)’s last job") { send(to: match.id, continuing: true) }
                     .buttonStyle(PillButtonStyle(kind: .secondary))
@@ -519,6 +521,7 @@ struct ReceptionComposer: View {
         } else {
             Button("Set up “\(suggestion.newFloorName)”", systemImage: "plus.circle.fill") { newFloor(suggestion.newFloorName) }
                 .buttonStyle(PillButtonStyle())
+                .keyboardShortcut(.return, modifiers: .command)
         }
     }
 

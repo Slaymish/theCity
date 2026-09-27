@@ -914,7 +914,9 @@ final class RunController {
     }
 
     private func remember(_ kind: HistoryEntry.Kind, title: String? = nil, _ text: String) {
-        guard let floorID, !isReplay, !isDemo else { return }
+        // A cancelled job can end after its floor is removed; don't write the history back.
+        guard let floorID, let buildingID, !isReplay, !isDemo,
+              CityStore.shared.floor(floorID, in: buildingID) != nil else { return }
         let job = kind == .request ? UUID() : history.last?.job ?? UUID()
         history.append(HistoryEntry(date: .now, job: job, kind: kind, title: title, text: text))
         FloorHistory.save(history, for: floorID)

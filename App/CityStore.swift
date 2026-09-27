@@ -114,7 +114,7 @@ final class CityStore {
 
     func removeBuilding(_ id: UUID) {
         guard let building = building(id), !building.floors.contains(where: { sessions[$0.id]?.isRunning == true }) else { return }
-        building.floors.forEach { sessions[$0.id]?.kiosk.end(); sessions[$0.id] = nil }
+        building.floors.forEach { sessions[$0.id]?.kiosk.end(); sessions[$0.id] = nil; FloorHistory.delete($0.id) }
         hiringHeadless[id] = nil
         buildings.removeAll { $0.id == id }
         if case .building(id) = route { route = .city }
@@ -128,6 +128,7 @@ final class CityStore {
         if route == .floor(building: buildingID, floor: id) { route = .building(buildingID) }
         buildings[index].floors.removeAll { $0.id == id }
         sessions[id] = nil
+        FloorHistory.delete(id)
         save()
     }
 
@@ -344,7 +345,7 @@ final class CityStore {
         demoID = nil
         demoEntered = false
         if draft?.buildingID == id { draft = nil }
-        building(id)?.floors.forEach { sessions[$0.id]?.cancel(); sessions[$0.id]?.kiosk.end(); sessions[$0.id] = nil }
+        building(id)?.floors.forEach { sessions[$0.id]?.cancel(); sessions[$0.id]?.kiosk.end(); sessions[$0.id] = nil; FloorHistory.delete($0.id) }
         buildings.removeAll { $0.id == id }
         if buildings.isEmpty { route = .welcome }
     }

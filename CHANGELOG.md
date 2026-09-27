@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0
+
+- The menu bar lists permission requests under Waiting for you, where you can allow, always allow in the project, allow and switch the job to Auto, or deny without opening the window; questions open their floor.
+- Typing / in Reception, a floor's prompt or a follow-up suggests the project's skills and commands with their descriptions and arguments.
+- Reception picks a floor for a slash command by its arguments, and asks you to choose a floor when the command has none.
+- Tapping a building on the city map no longer stutters partway through the camera flight, and going back into a building you've already visited is quicker.
+
 ## 0.8.1
 
 - The city and floors do less work each frame and for each stream event, so The City uses less CPU while it's open and while jobs run.

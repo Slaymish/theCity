@@ -5,6 +5,7 @@ import SwiftUI
 struct ReceptionView: View {
     @Bindable var controller: RunController
     var onCancel: (() -> Void)?
+    @State private var branches: Git.Branches?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -80,6 +81,7 @@ struct ReceptionView: View {
                     .fixedSize()
                     .help("The most this job may spend before it stops")
                     PermissionModeMenu(controller: controller)
+                    if let branches { BranchMenu(branches: branches, selection: $controller.pendingPlace) }
                     Spacer(minLength: 0)
                     Button("Hire staff") { controller.beginHiring() }
                         .buttonStyle(PillButtonStyle())
@@ -94,6 +96,7 @@ struct ReceptionView: View {
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .scrollableIfNeeded()
+        .task(id: controller.workingDirectory) { branches = if let folder = controller.workingDirectory { await Git.branches(in: folder) } else { nil } }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             controller.checkReadiness()
             controller.clearLimitNoticeIfExpired()

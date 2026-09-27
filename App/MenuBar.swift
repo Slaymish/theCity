@@ -138,7 +138,7 @@ struct MenuBarMenu: View {
 
     private func floorLine(_ floor: CityStore.Floor) -> (text: String, symbol: String) {
         let session = city.sessions[floor.id]
-        if session?.state.pendingRequests.isEmpty == false { return ("\(floor.name) is waiting for you", "hand.raised.fill") }
+        if city.needsYou(floor) > 0 { return ("\(floor.name) is waiting for you", "hand.raised.fill") }
         if let session, session.isRunning { return ("\(floor.name) · \(session.currentStep ?? "Working")", "bolt.fill") }
         return (floor.name, "square.stack.3d.up")
     }

@@ -82,7 +82,7 @@ struct NeedsYouList: View {
     var body: some View {
         let waiting = city.buildings.flatMap { building in
             building.floors.compactMap { floor -> (CityStore.Building, CityStore.Floor, Int)? in
-                let count = city.sessions[floor.id]?.state.pendingRequests.count ?? 0
+                let count = city.needsYou(floor)
                 return count > 0 ? (building, floor, count) : nil
             }
         }
@@ -430,7 +430,7 @@ struct FloorList: View {
                 Button {
                     city.route = .floor(building: building.id, floor: floor.id)
                 } label: {
-                    Label(floor.name, systemImage: (session?.state.pendingRequests.isEmpty == false) ? "hand.raised.fill" : session?.isRunning == true ? "bolt.fill" : "square.stack.3d.up")
+                    Label(floor.name, systemImage: city.needsYou(floor) > 0 ? "hand.raised.fill" : session?.isRunning == true ? "bolt.fill" : "square.stack.3d.up")
                 }
                 .buttonStyle(PillButtonStyle(kind: .secondary))
                 .help(floorStatus(floor, session: session))
@@ -460,8 +460,8 @@ struct FloorList: View {
 
     private func floorStatus(_ floor: CityStore.Floor, session: RunController?) -> String {
         let rooms = city.live(on: [floor]).rooms.spoken
+        if city.needsYou(floor) > 0 { return "Needs you. \(rooms)." }
         guard let session else { return "Quiet. \(rooms)." }
-        if !session.state.pendingRequests.isEmpty { return "Needs you. \(rooms)." }
         guard session.isRunning else { return "Quiet. \(rooms)." }
         return "Working\(session.currentStep.map { ": \($0)" } ?? ""). \(rooms)."
     }
@@ -477,12 +477,15 @@ struct ReceptionComposer: View {
     @State private var thinking = false
     @State private var asked = ""
     @State private var routing: Task<Void, Never>?
+    @State private var place: JobPlace?
+    @State private var branches: Git.Branches?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             PromptEditor(address: [building.name, "Reception", "picks the right floor"],
                          placeholder: "What do you need done in \(building.name)?",
                          directory: building.url, text: $text, canSend: canAsk, commands: commands, send: ask) { withImages in
+                if let branches { BranchMenu(branches: branches, selection: $place) }
                 Button("Ask reception", action: withImages(ask))
                     .buttonStyle(PillButtonStyle())
                     .disabled(!canAsk)
@@ -504,6 +507,7 @@ struct ReceptionComposer: View {
         .frame(width: 620, alignment: .leading)
         .glass(padding: 16)
         .task(id: building.id) { city.loadCommands(for: building) }
+        .task(id: building.path) { branches = await Git.branches(in: building.url) }
         .onChange(of: text) { if text != asked { suggestion = nil } }
         .onChange(of: text.isEmpty) {
             if !text.isEmpty { scene?.focusLobby(); ReceptionDesk.prewarm(floors: building.floors) } else if suggestion == nil { scene?.leaveLobby() }
@@ -619,7 +623,7 @@ struct ReceptionComposer: View {
 
     private func send(to floorID: UUID, continuing: Bool = false) {
         stopRouting()
-        city.send(text, toFloor: floorID, in: building.id, continuing: continuing)
+        city.send(text, toFloor: floorID, in: building.id, continuing: continuing, place: place)
         text = ""
         suggestion = nil
         scene?.leaveLobby()
@@ -627,7 +631,7 @@ struct ReceptionComposer: View {
 
     private func newFloor(_ chosen: RoutingSuggestion) {
         stopRouting()
-        city.startNewFloor(in: building.id, request: text, name: chosen.newFloorName, preset: FloorPreset.named(chosen.presetID))
+        city.startNewFloor(in: building.id, request: text, name: chosen.newFloorName, preset: FloorPreset.named(chosen.presetID), place: place)
         text = ""
         suggestion = nil
     }

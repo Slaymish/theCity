@@ -488,7 +488,7 @@ final class BuildingScene {
         for storey in storeys {
             guard let floor = building.floors.first(where: { $0.id == storey.id }) else { continue }
             let session = CityStore.shared.sessions[storey.id] ?? sessions[storey.id]
-            let waiting = session?.state.pendingRequests.count ?? 0
+            let waiting = CityStore.shared.needsYou(floor)
             let (symbol, status): (String, String) =
                 waiting > 0 ? ("hand.raised.fill", "Needs you") :
                 session?.isRunning == true ? ("bolt.fill", "Working") :

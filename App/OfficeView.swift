@@ -329,6 +329,8 @@ struct FloorComposer: View {
     let controller: RunController
     let compact: Bool
     @State private var text = ""
+    @State private var place: JobPlace?
+    @State private var branches: Git.Branches?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -342,6 +344,7 @@ struct FloorComposer: View {
                          directory: controller.workingDirectory, text: $text,
                          canSend: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && controller.readiness == .ready,
                          commands: controller.kit?.commands ?? [], send: continues ? continueLast : startNew) { withImages in
+                if let branches { BranchMenu(branches: branches, selection: $place, usual: controller.branch) }
                 if continues {
                     Button("Start a new job", action: withImages(startNew))
                         .buttonStyle(PillButtonStyle(kind: .secondary))
@@ -359,6 +362,7 @@ struct FloorComposer: View {
         }
         .frame(width: 620, alignment: .leading)
         .glass(padding: 16)
+        .task(id: controller.workingDirectory) { branches = if let folder = controller.workingDirectory { await Git.branches(in: folder) } else { nil } }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             guard controller.readiness != .ready || controller.limitNotice != nil else { return }
             controller.checkReadiness()
@@ -374,7 +378,7 @@ struct FloorComposer: View {
     }
 
     private func startNew() {
-        controller.newJobOnFloor(text)
+        controller.newJobOnFloor(text, place: place)
         text = ""
     }
 }
@@ -391,6 +395,13 @@ struct JobCard: View {
                 .help(controller.request)
                 .textSelection(.enabled)
                 .cappedScroll()
+            if let branch = controller.branch {
+                Label(branch, systemImage: "arrow.triangle.branch")
+                    .font(Typography.caption)
+                    .foregroundStyle(Color(Palette.muted))
+                    .lineLimit(1)
+                    .help("Worked on in \(controller.jobDirectory?.path ?? "the project folder")")
+            }
             ForEach(Array(controller.followUps.enumerated()), id: \.offset) { _, text in
                 Text("Then: \(text)")
                     .font(Typography.caption)

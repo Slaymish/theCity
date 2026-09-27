@@ -58,7 +58,8 @@ final class RunController {
     var pendingFloorName: String?
     var pendingPreset: FloorPreset?
     var opensWhenHired = false
-    private(set) var queued: [(text: String, continues: Bool)] = []
+    var pendingPlace: JobPlace?
+    private(set) var queued: [(text: String, continues: Bool, place: JobPlace?)] = []
     let scene = OfficeScene()
     let kiosk = KioskSession()
 
@@ -121,6 +122,9 @@ final class RunController {
     private(set) var history: [HistoryEntry] = []
     var showHistory = false
     private(set) var resumeSession: String?
+    /// Where this floor's session runs, which may be a worktree; follow-ups must resume there.
+    private(set) var jobDirectory: URL?
+    private(set) var branch: String?
     private(set) var currentJob: UUID?
     private(set) var timings: [String: HandoffTiming] = [:]
     /// Context windows seen on this floor, so a follow-up's gauge shows before its first `result`.
@@ -151,6 +155,8 @@ final class RunController {
         if let servers = floor.allowedServers { allowedServers = Set(servers) }
         if let skills = floor.allowedSkills { allowedSkills = Set(skills) }
         resumeSession = floor.sessionID
+        jobDirectory = floor.jobDirectory.flatMap { FileManager.default.fileExists(atPath: $0) ? URL(fileURLWithPath: $0) : nil }
+        branch = floor.branch
         request = floor.lastRequest ?? ""
         screen = .office
         buildScene()
@@ -479,25 +485,25 @@ final class RunController {
         buildScene()
         if floorID == nil { floorID = CityStore.shared.floorOpened(self) }
         guard floorID != nil || !opensWhenHired else { return }
-        start(message: request, resume: nil)
+        start(message: request, resume: nil, place: pendingPlace)
     }
 
     /// A job that arrives while the floor is busy waits its turn.
-    func queue(_ text: String, continuing: Bool = false) {
-        queued.append((text, continuing))
+    func queue(_ text: String, continuing: Bool = false, place: JobPlace? = nil) {
+        queued.append((text, continuing, place))
         appLog("Queued \(continuing ? "follow-up" : "job") for when this floor is free: \(text)")
     }
 
     /// A fresh job for this floor's existing team.
-    func newJobOnFloor(_ text: String) {
+    func newJobOnFloor(_ text: String, place: JobPlace? = nil) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isRunning, !text.isEmpty else { return }
-        guard !kiosk.isAlive else { return queue(text) }
+        guard !kiosk.isAlive else { return queue(text, place: place) }
         request = text
         jobFiles = []
         followUps = []
         currentJob = nil
-        start(message: text, resume: nil)
+        start(message: text, resume: nil, place: place)
     }
 
     var recordLine: String? {
@@ -586,7 +592,7 @@ final class RunController {
         guard !isRunning, !text.isEmpty, let session = state.sessionID ?? resumeSession else { return }
         guard !kiosk.isAlive else { return queue(text, continuing: true) }
         followUps.append(text)
-        start(message: text, resume: session)
+        start(message: text, resume: session, place: nil)
     }
 
     var canTakeOver: Bool { kiosk.isAlive || (!isRunning && !isDemo && workingDirectory != nil) }
@@ -596,7 +602,7 @@ final class RunController {
         guard canTakeOver, let workingDirectory else { return }
         if !kiosk.isAlive {
             let resume = state.sessionID ?? resumeSession
-            kiosk.start(directory: workingDirectory, resume: resume, model: model, configDirectory: configDirectory) { [weak self] in self?.kioskEnded() }
+            kiosk.start(directory: resume == nil ? workingDirectory : jobDirectory ?? workingDirectory, resume: resume, model: model, configDirectory: configDirectory) { [weak self] in self?.kioskEnded() }
             scene.setKioskLive(true)
             appLog(resume.map { "Terminal opened on session \($0)" } ?? "Terminal opened")
         }
@@ -609,14 +615,14 @@ final class RunController {
         appLog("Terminal session ended")
         guard !queued.isEmpty else { return }
         let next = queued.removeFirst()
-        if next.continues { followUp(next.text) } else { newJobOnFloor(next.text) }
+        if next.continues { followUp(next.text) } else { newJobOnFloor(next.text, place: next.place) }
     }
 
     // MARK: Running
 
     var isDemo: Bool { workingDirectory?.path.hasPrefix(Bundle.main.bundlePath) == true }
 
-    private func start(message request: String, resume: String?) {
+    private func start(message request: String, resume: String?, place: JobPlace?) {
         guard !isRunning, let workingDirectory else { return }
         isReplay = false
         reset(keepLog: resume != nil)
@@ -638,8 +644,10 @@ final class RunController {
             resumeSessionID: resume,
             blockedTools: kit.map { Kit.blockRules(servers: $0.usableServers, allowedServers: allowedServers,
                                                    skills: $0.skills, allowedSkills: allowedSkills) } ?? [],
-            permissionMode: permissionMode
+            permissionMode: permissionMode,
+            createsWorktree: resume == nil && place == .newWorktree
         )
+        let lastDirectory = jobDirectory.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
         consumer = Task { [weak self] in
             guard let self else { return }
@@ -655,16 +663,24 @@ final class RunController {
                 return send(.launchFailed(.notLoggedIn))
             }
             guard !Task.isCancelled else { return }
+            var config = config
             do {
+                let directory: URL = switch (resume, place) {
+                case (.some, _), (nil, nil): lastDirectory ?? workingDirectory
+                case (nil, .newWorktree): workingDirectory
+                case (nil, .branch(let branch)): try await Git.directory(for: branch, in: workingDirectory)
+                }
+                guard !Task.isCancelled else { return }
+                config.workingDirectory = directory
                 let process = try ClaudeProcess(
                     executable: executable,
                     arguments: config.arguments,
                     environment: environment,
-                    workingDirectory: workingDirectory,
+                    workingDirectory: directory,
                     keepInputOpen: true
                 )
                 self.process = process
-                appLog("Launched in \(workingDirectory.path)")
+                appLog("Launched in \(directory.path)\(config.createsWorktree ? " (Claude makes a new worktree)" : "")")
                 if let brief = config.appendSystemPrompt { appLog("Hiring brief: \(brief)") }
                 appLog("Permission mode: \(config.permissionMode.title)")
                 if !config.blockedTools.isEmpty { appLog("Blocked for this job: \(config.blockedTools.joined(separator: ", "))") }
@@ -830,7 +846,8 @@ final class RunController {
         if state != reducer.state { state = reducer.state }
         // Replayed limits are old or made up, so they mustn't replace the account's saved reading.
         if case .wire(.rateLimit(let limit)) = input, !isReplay { UsageStore.shared.record(limit, configDirectory: configDirectory) }
-        Attention.shared.waiting(state.pendingRequests.count)
+        if case .wire(.sessionStarted(let info)) = input, !isReplay, let cwd = info.cwd { settle(in: URL(fileURLWithPath: cwd)) }
+        CityStore.shared.refreshBadge()
         if case .ended = state.phase, endedAt == nil { endedAt = Self.now() }
         if state.contextWindows.contains(where: { contextWindows[$0.key] != $0.value }) { contextWindows.merge(state.contextWindows) { $1 } }
         track(events)
@@ -891,17 +908,33 @@ final class RunController {
                 noteLimit(outcome)
                 if !isReplay {
                     recordJob(outcome)
+                    if case .cancelled = outcome {} else { CityStore.shared.resultReady(on: floorID, in: buildingID) }
                     remember(.outcome, title: Self.title(for: outcome), Self.message(for: outcome, budget: budgetUSD))
                 }
                 if !queued.isEmpty {
                     let next = queued.removeFirst()
                     Task { @MainActor [weak self] in
                         try? await Task.sleep(for: .seconds(1))
-                        if next.continues { self?.followUp(next.text) } else { self?.newJobOnFloor(next.text) }
+                        if next.continues { self?.followUp(next.text) } else { self?.newJobOnFloor(next.text, place: next.place) }
                     }
                 }
             default:
                 break
+            }
+        }
+    }
+
+    /// `init` reports where the session really runs, including a worktree `claude --worktree` just made.
+    private func settle(in directory: URL) {
+        jobDirectory = directory
+        Task {
+            let name = await Git.currentBranch(in: directory)
+            guard jobDirectory == directory else { return }
+            branch = name
+            guard let floorID, let buildingID else { return }
+            CityStore.shared.update(floor: floorID, in: buildingID) {
+                $0.jobDirectory = directory.path
+                $0.branch = name
             }
         }
     }

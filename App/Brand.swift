@@ -24,6 +24,15 @@ struct Brand: Codable, Identifiable, Equatable {
         var grass: String?
     }
 
+    /// Scene lighting that follows the clock rather than the appearance; optional so a brand can fall back to The City's.
+    struct Sky: Codable, Equatable {
+        var moonlight: String
+        var dusk: String
+        var streetlight: String
+        var nightSky: String
+        var duskSky: String
+    }
+
     struct Font: Codable, Equatable {
         var family: String
         var file: String?
@@ -36,6 +45,7 @@ struct Brand: Codable, Identifiable, Equatable {
     var font: Font?
     var light: Tokens
     var dark: Tokens?
+    var sky: Sky?
     var departments: [String]
     var manager: String
     var onAccent: String
@@ -45,7 +55,7 @@ struct Brand: Codable, Identifiable, Equatable {
     var folder: URL?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, wordmarkSymbol, logo, font, light, dark, departments, manager, onAccent, notes
+        case id, name, wordmarkSymbol, logo, font, light, dark, sky, departments, manager, onAccent, notes
     }
 
     var supportsDark: Bool { dark != nil }
@@ -57,6 +67,7 @@ struct Brand: Codable, Identifiable, Equatable {
     }
 
     static let defaultGrass = (light: "#BFE3A0", dark: "#5E7A4F")
+    static let defaultSky = Sky(moonlight: "#9DB4E8", dusk: "#FFB070", streetlight: "#FFC46B", nightSky: "#1A1F3D", duskSky: "#F2A88C")
 
     var logoImage: NSImage? {
         guard let logo, let folder else { return nil }
@@ -139,7 +150,7 @@ extension Brand {
                      primaryFill: "#F2C14E", primaryText: "#3B2F2A", floor: "#E8CFA8", walls: "#F6EEDF",
                      screen: "#2D3A36", screenPixels: "#B6F26B", robot: "#F5F2F8", desk: "#CC9E73", lamp: "#FFDB9E",
                      folder: "#FAC740", error: "#E54D4D", tray: "#4D5266", grass: "#BFE3A0"),
-        dark: nil, departments: ["#F2836B", "#7DBB5E", "#F2C14E", "#5A7BD8"], manager: "#C9557A", onAccent: "#3B2F2A",
+        dark: nil, sky: defaultSky, departments: ["#F2836B", "#7DBB5E", "#F2C14E", "#5A7BD8"], manager: "#C9557A", onAccent: "#3B2F2A",
         notes: nil, folder: nil)
 }
 

@@ -54,11 +54,19 @@ enum Facade {
         glass.baseColor = .init(tint: Palette.resolved(Palette.glazing, dark: dark))
         glass.roughness = 0.12
         glass.metallic = 0.35
-        if dark {
-            glass.emissiveColor = .init(color: Palette.resolved(Palette.lamp, dark: dark))
-            glass.emissiveIntensity = 0.25
-        }
+        glass.emissiveColor = .init(color: Palette.resolved(Palette.lamp, dark: dark))
+        glass.emissiveIntensity = 0
         return [OfficeScene.material(Palette.resolved(body, dark: dark)), glass, OfficeScene.material(Palette.resolved(trim, dark: dark))]
+    }
+
+    /// Sets how brightly the windows glow; the glass is every module's second material.
+    static func light(_ tower: Entity, glow: Float) {
+        for case let module as ModelEntity in tower.descendants {
+            guard var model = module.model, model.materials.count == 3, var glass = model.materials[1] as? PhysicallyBasedMaterial else { continue }
+            glass.emissiveIntensity = glow
+            model.materials[1] = glass
+            module.model = model
+        }
     }
 
     private static func mesh(_ style: Style, _ part: Part) -> MeshResource {

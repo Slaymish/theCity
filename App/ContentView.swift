@@ -8,7 +8,9 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            Color(Palette.background).ignoresSafeArea()
+            TimelineView(.periodic(from: .now, by: DayCycle.tick)) { _ in
+                Color(DayCycle.now.sky(dark: colorScheme == .dark)).ignoresSafeArea()
+            }
             switch city.route {
             case .welcome, .city, .building, .floor, .newFloor:
                 WorldView(city: city)

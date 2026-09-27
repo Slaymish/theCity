@@ -35,6 +35,12 @@ enum Palette {
     static var error: NSColor { token(\.error) }
     static var tray: NSColor { token(\.tray) }
     static var grass: NSColor { token { $0.grass ?? Brand.defaultGrass.light } }
+    private static var sky: Brand.Sky { brand.sky ?? Brand.defaultSky }
+    static var moonlight: NSColor { NSColor(hex: sky.moonlight) }
+    static var dusk: NSColor { NSColor(hex: sky.dusk) }
+    static var streetlight: NSColor { NSColor(hex: sky.streetlight) }
+    static var nightSky: NSColor { NSColor(hex: sky.nightSky) }
+    static var duskSky: NSColor { NSColor(hex: sky.duskSky) }
     static var facadeBrick: NSColor { pair(light: "#B5654A", dark: "#7A4434") }
     static var facadeStone: NSColor { pair(light: "#E6DFD2", dark: "#8F897E") }
     static var facadeConcrete: NSColor { pair(light: "#C9C7C2", dark: "#6E6D6A") }

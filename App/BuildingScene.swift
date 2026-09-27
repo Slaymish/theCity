@@ -32,6 +32,8 @@ final class BuildingScene {
     private var lobbyParts: [Entity] = []
     private let lobbyLight = Entity()
     private let groundLight = Entity()
+    private let emptySun = Entity()
+    private var daylightClock: Double = 0
     private var viewSize = CGSize(width: 1000, height: 700)
     private var labelClock: Double = 0
     private var dark = false
@@ -67,9 +69,6 @@ final class BuildingScene {
         }
         lobbyParts = buildLobby(width: OfficeScene.footprint.x, depth: OfficeScene.footprint.y, floors: sessions.count)
         lobbyParts.forEach { $0.isEnabled = true }
-        if let environment = ModelLibrary.environment("studio") {
-            lobbyLight.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: dark ? 0.2 : 0.9))
-        }
         tower.addChild(lobbyLight)
         let receiver = ImageBasedLightReceiverComponent(imageBasedLight: lobbyLight)
         for entity in lobbyParts.flatMap({ [$0] + $0.descendants }) where entity.components.has(ModelComponent.self) {
@@ -78,22 +77,15 @@ final class BuildingScene {
         }
         let ground = CityScene.ground(dark: dark)
         ground.position.y = -0.36
-        if let environment = ModelLibrary.environment("sky") {
-            groundLight.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: dark ? -0.5 : 0.6))
-        }
         tower.addChild(groundLight)
         ground.components.set(ImageBasedLightReceiverComponent(imageBasedLight: groundLight))
         ground.isEnabled = showsGround
         tower.addChild(ground)
         if sessions.isEmpty {
-            let sun = Entity()
-            var light = DirectionalLightComponent(color: .white, intensity: dark ? 1400 : 2400)
-            light.isRealWorldProxy = false
-            sun.components.set(light)
-            sun.components.set(DirectionalLightComponent.Shadow(maximumDistance: 30, depthBias: 2))
-            sun.look(at: .zero, from: OfficeScene.daylight([-8, 12, 6]), relativeTo: nil)
-            tower.addChild(sun)
+            emptySun.components.set(DirectionalLightComponent.Shadow(maximumDistance: 30, depthBias: 2))
+            tower.addChild(emptySun)
         }
+        applyDaylight()
         let height = Float(sessions.count + 1) * Self.storeyHeight
         let roof = ModelEntity(mesh: .generateBox(width: OfficeScene.footprint.x + 0.8, height: Self.roofThickness, depth: OfficeScene.footprint.y + 0.8, cornerRadius: 0.2),
                                materials: [OfficeScene.material(Palette.resolved(Palette.walls, dark: dark))])
@@ -164,10 +156,27 @@ final class BuildingScene {
         let doorZ = depth / 2 - (depth / Float(max(Int(depth / 6), 2)) - 1.2) / 2
         parts.append(prop("couch_pillows", [-width / 2 + 2.2, 0, doorZ - 4.2], yaw: .pi / 2))
         parts.append(prop("cactus_medium_A", [-width / 2 + 1.2, 0, doorZ - 2], scale: 1.1))
-        parts.append(prop("lamp_standing", [-width / 2 + 1.1, 0, doorZ - 6.3], scale: 0.75))
+        let lamp = prop("lamp_standing", [-width / 2 + 1.1, 0, doorZ - 6.3], scale: 0.75)
+        OfficeScene.addLampLight(to: lamp, standing: true)
+        parts.append(lamp)
         parts.append(prop("cactus_small_B", [shaft.x - 2.4, 0, shaft.z + 0.4]))
         parts.forEach { tower.addChild($0) }
         return parts
+    }
+
+    private func applyDaylight() {
+        let cycle = DayCycle.now
+        if let environment = ModelLibrary.environment("studio") {
+            lobbyLight.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: OfficeScene.studioExposure(cycle)))
+        }
+        if let environment = ModelLibrary.environment("sky") {
+            groundLight.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: CityScene.skyExposure(cycle)))
+        }
+        var light = DirectionalLightComponent(color: cycle.sunColour, intensity: cycle.mix(day: 2400, night: 600))
+        light.isRealWorldProxy = false
+        emptySun.components.set(light)
+        emptySun.look(at: .zero, from: cycle.sun([-8, 12, 6]), relativeTo: nil)
+        for part in lobbyParts { NightLight.apply(cycle, under: part) }
     }
 
     private var towerHeight: Float { Float(storeys.count + 1) * Self.storeyHeight }
@@ -369,6 +378,11 @@ final class BuildingScene {
         }
         for storey in storeys where storey.scene.root.isEnabled { storey.scene.update(dt) }
         lobby?.worker.update(dt, reduceMotion: OfficeScene.reduceMotion)
+        daylightClock += dt
+        if daylightClock > DayCycle.tick {
+            daylightClock = 0
+            applyDaylight()
+        }
         labelClock += dt
         if labelClock > 1 {
             labelClock = 0

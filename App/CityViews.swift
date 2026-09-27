@@ -161,6 +161,7 @@ struct WorldView: View {
                 RealityView { content in
                     content.add(world.root)
                     content.renderingEffects.antialiasing = .multisample4X
+                    if RunController.launchArgument("-depth-of-field") == "on" { content.renderingEffects.depthOfField = .enabled }
                     world.updates = content.subscribe(to: SceneEvents.Update.self) { [world] event in world.update(event.deltaTime) }
                 }
                 .realityViewCameraControls(.none)

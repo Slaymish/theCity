@@ -50,7 +50,6 @@ final class OfficeScene {
     private var viewSize = CGSize(width: 1000, height: 700)
     private let lighting = Entity()
     private let sun = Entity()
-    private var sunBase: SIMD3<Float> = [-16, 14, -18]
     private var daylightClock: Double = 0
     private var idleClock: Double = 0
     private var nextStroll = Double.random(in: 18...35)
@@ -286,18 +285,32 @@ final class OfficeScene {
     }
 
     private func setUpLighting() {
+        root.addChild(lighting)
+        sun.components.set(DirectionalLightComponent.Shadow(maximumDistance: 60, depthBias: 2))
+        root.addChild(sun)
+        applyDaylight()
+    }
+
+    static func studioExposure(_ cycle: DayCycle) -> Float { cycle.mix(day: 0.9, night: -1.6) }
+
+    private func applyDaylight() {
+        let cycle = DayCycle.now
         lighting.components.removeAll()
         if let environment = ModelLibrary.environment("studio") {
-            lighting.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: dark ? 0.2 : 0.9))
+            lighting.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: Self.studioExposure(cycle)))
         }
-        root.addChild(lighting)
-        var light = DirectionalLightComponent(color: dark ? Palette.lamp : .white, intensity: dark ? 1600 : 2600)
+        var light = DirectionalLightComponent(color: cycle.sunColour, intensity: cycle.mix(day: 2600, night: 700))
         light.isRealWorldProxy = false
         sun.components.set(light)
-        sun.components.set(DirectionalLightComponent.Shadow(maximumDistance: 60, depthBias: 2))
-        sun.look(at: .zero, from: Self.daylight([-16, 14, -18]), relativeTo: nil)
-        sunBase = [-16, 14, -18]
-        root.addChild(sun)
+        sun.look(at: .zero, from: cycle.sun([-16, 14, -18]), relativeTo: nil)
+        NightLight.apply(cycle, under: root)
+        SceneGrade.update(cycle)
+    }
+
+    /// A warm glow under a lamp's shade, in the lamp model's own units.
+    static func addLampLight(to lamp: Entity, standing: Bool) {
+        NightLight.add(to: lamp, at: [0, standing ? 2.15 : 0.8, 0], colour: Palette.resolved(Palette.lamp, dark: false), intensity: standing ? 9000 : 5000,
+                       radius: standing ? 5 : 3, bulb: 0.08)
     }
 
     private func applyReceivers() {
@@ -420,20 +433,12 @@ final class OfficeScene {
         advanceFlights(dt)
         carry()
         daylightClock += dt
-        if daylightClock > 60 {
+        if daylightClock > DayCycle.tick {
             daylightClock = 0
-            sun.look(at: .zero, from: Self.daylight(sunBase), relativeTo: nil)
+            applyDaylight()
         }
         strollIfIdle(dt)
         Sound.setPatter(isActive && root.isEnabled && pods.values.contains { $0.worker.mood == .working }, for: self)
-    }
-
-    static func daylight(_ midday: SIMD3<Float>) -> SIMD3<Float> {
-        let parts = Calendar.current.dateComponents([.hour, .minute], from: .now)
-        let hour = RunController.launchArgument("-hour").flatMap(Double.init) ?? Double(parts.hour ?? 13) + Double(parts.minute ?? 0) / 60
-        let u = Float((min(max(hour, 8), 18) - 13) / 5)
-        let turned = simd_quatf(angle: u * .pi / 3, axis: [0, 1, 0]).act(midday)
-        return [turned.x, turned.y * (1 - 0.45 * u * u), turned.z]
     }
 
     private func strollIfIdle(_ dt: Double) {
@@ -872,6 +877,7 @@ final class Pod {
         _ = place("table_medium_long", [0.3, 0, 0], yaw: .pi / 2)
         let top: Float = 1.08
         deskTop = position + [0.3, top, 0]
+        NightLight.add(to: base, at: [0.3, 2.2, 0.4], colour: Palette.resolved(Palette.lamp, dark: false), intensity: 150000, radius: 4, bulb: 0)
         let monitor = place("monitor", [0.65, top - 0.08, 0.1], yaw: -.pi / 2, scale: 1.7)
         _ = place("keyboard", [0.15, top - 0.08, 0.1], yaw: -.pi / 2, scale: 1.6)
         _ = place("mug", [0.2, top - 0.08, 0.95], scale: 1.6)
@@ -891,7 +897,7 @@ final class Pod {
             _ = place("cactus_medium_A", [-1.9, 0, -1.8], scale: 0.9)
             _ = place("shelf_B_small_decorated", [1.4, 0, -2.0], scale: 1.1)
         case 1:
-            _ = place("lamp_standing", [-2.0, 0, -1.7], scale: 0.75)
+            OfficeScene.addLampLight(to: place("lamp_standing", [-2.0, 0, -1.7], scale: 0.75), standing: true)
             _ = place("book_set", [0.7, top - 0.08 + 0.25, -1.05], yaw: .pi / 2, scale: 0.8)
             _ = place("cactus_small_B", [2.0, 0, 1.9])
         case 2:
@@ -899,7 +905,7 @@ final class Pod {
             _ = place("pictureframe_standing_A", [0.7, top - 0.08, -1.0], yaw: .pi / 2)
         default:
             _ = place("armchair_pillows", [1.8, 0, -1.6], yaw: -.pi / 4, scale: 0.8)
-            _ = place("lamp_table", [0.7, top - 0.08, -1.0], scale: 0.6)
+            OfficeScene.addLampLight(to: place("lamp_table", [0.7, top - 0.08, -1.0], scale: 0.6), standing: false)
         }
     }
 

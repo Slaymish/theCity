@@ -10,7 +10,7 @@ mkdir -p Docs/Media
 
 typeset -A fps=(city 12 office 15)
 for reel in city office; do
-  "$app" -render-reel "$reel" "$frames/$reel" -fps 20 -theme light -workspace "$PWD/SampleWorkspace"
+  "$app" -render-reel "$reel" "$frames/$reel" -fps 20 -theme light -hour 13 -workspace "$PWD/SampleWorkspace"
   ffmpeg -v error -y -framerate 20 -i "$frames/$reel/frame-%05d.png" \
     -vf "fps=${fps[$reel]},scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" \
     -loop 0 "$frames/$reel.gif"

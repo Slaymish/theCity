@@ -13,6 +13,7 @@ final class CityScene {
     private var viewSize = CGSize(width: 1000, height: 700)
     private var extent: Float = 10
     private var clock: Double = 0
+    private var daylightClock: Double = 0
     private var dark = false
     private let lighting = Entity()
     private let sun = Entity()
@@ -22,6 +23,7 @@ final class CityScene {
     private var labelsVisible = true
     private var hovered: UUID?
     private var cars: [(entity: Entity, along: Float)] = []
+    private var cover: [String: [simd_float4x4]] = [:]
     private var loop: (origin: Float, length: Float) = (0, 1)
     static let carSpeed: Float = 0.5
     var hostsCamera = true
@@ -69,6 +71,7 @@ final class CityScene {
         slides = []
         rises = []
         greeter = nil
+        cover = [:]
 
         let plots = buildings.count + 1
         let blocks = max(Int(ceil(sqrt(Double(plots)))), 2)
@@ -105,6 +108,10 @@ final class CityScene {
         }
         addCars(origin: origin, cells: cells)
         addTreeRing(halfWidth: extent / 2)
+        addCountryside(halfWidth: extent / 2)
+        for (name, placements) in cover {
+            root.addChild(Foliage.instanced(name, placements, casts: !["grass_tuft", "flowers_A", "flowers_B", "pebbles"].contains(name)))
+        }
         setUpLighting()
         camera.overview = overviewPose()
         if firstBuild { camera.reset(to: titleMode ? titlePose() : camera.overview, animated: false) }
@@ -147,9 +154,7 @@ final class CityScene {
             parcel.position = position + [0, 0.14, 0.85]
             root.addChild(parcel)
         }
-        let light = ModelLibrary.entity("streetlight")
-        light.position = position + [0.85, 0.1, -0.85]
-        addProp(light)
+        addStreetlight(at: position)
         lot.root.isEnabled = false
         lots[building.id] = lot
     }
@@ -220,6 +225,7 @@ final class CityScene {
 
     private func addEmptyLot(at position: SIMD3<Float>) {
         emptyLot = position
+        addStreetlight(at: position)
         let pad = ModelEntity(mesh: .generateBox(width: 1.6, height: 0.04, depth: 1.6, cornerRadius: 0.2),
                               materials: [OfficeScene.material(Palette.resolved(Palette.sceneFloor, dark: dark))])
         pad.position = position + [0, 0.12, 0]
@@ -276,6 +282,21 @@ final class CityScene {
         let bench = ModelLibrary.entity("bench")
         bench.position = position + [0, 0.1, 0]
         root.addChild(bench)
+        var generator = SeededGenerator(seed: UInt64(seed))
+        for index in 0..<36 {
+            let angle = Float.random(in: 0...(2 * .pi), using: &generator), reach = Float.random(in: 0.3...0.78, using: &generator)
+            let spot = position + [cos(angle) * reach, 0.1, sin(angle) * reach]
+            let name = index % 6 == 0 ? (index % 12 == 0 ? "flowers_A" : "flowers_B") : "grass_tuft"
+            cover[name, default: []].append(Foliage.placement(spot, yaw: angle * 3, scale: Float.random(in: 1.3...1.8, using: &generator)))
+        }
+        addStreetlight(at: position)
+    }
+
+    private func addStreetlight(at position: SIMD3<Float>) {
+        let light = ModelLibrary.entity("streetlight")
+        light.position = position + [0.85, 0.1, -0.85]
+        NightLight.add(to: light, at: [-0.21, 0.87, 0], colour: Palette.streetlight, intensity: 40000, radius: 2.4, bulb: 0.03)
+        addProp(light)
     }
 
     static func ground(dark: Bool) -> ModelEntity {
@@ -310,6 +331,30 @@ final class CityScene {
         }
     }
 
+    /// Meadow, woodland and rocks beyond the tree ring, thinning out towards the horizon.
+    private func addCountryside(halfWidth: Float) {
+        var generator = SeededGenerator(seed: 11)
+        let reach = halfWidth + 20
+        func scatter(_ names: [String], tries: Int, from inner: Float, falloff: Float, scale: ClosedRange<Float>) {
+            for _ in 0..<tries {
+                let point = SIMD2<Float>(Float.random(in: -reach...reach, using: &generator), Float.random(in: -reach...reach, using: &generator))
+                let beyond = max(abs(point.x), abs(point.y)) - inner
+                guard beyond > 0, Float.random(in: 0...1, using: &generator) < exp(-beyond / falloff) else { continue }
+                let name = names[Int.random(in: 0..<names.count, using: &generator)]
+                cover[name, default: []].append(Foliage.placement([point.x, Self.groundLevel, point.y],
+                                                                  yaw: Float.random(in: 0...(2 * .pi), using: &generator),
+                                                                  scale: Float.random(in: scale, using: &generator)))
+            }
+        }
+        scatter(["grass_tuft"], tries: 16000, from: halfWidth + 0.2, falloff: 8, scale: 1.2...1.8)
+        scatter(["flowers_A", "flowers_B"], tries: 1600, from: halfWidth + 0.4, falloff: 5, scale: 1.4...1.9)
+        scatter(["pebbles"], tries: 900, from: halfWidth + 0.2, falloff: 6, scale: 1.2...2)
+        scatter(["rock_single_A", "rock_single_B", "rock_single_C", "rock_single_D", "rock_single_E"], tries: 500,
+                from: halfWidth + 0.6, falloff: 8, scale: 0.8...2)
+        scatter(["tree_single_A", "tree_single_B"], tries: 900, from: halfWidth + 4, falloff: 7, scale: 1.5...2.1)
+        scatter(["trees_A_small", "trees_B_small", "trees_A_medium", "trees_B_medium"], tries: 700, from: halfWidth + 4.5, falloff: 9, scale: 1.3...1.8)
+    }
+
     private func addCars(origin: Float, cells: Int) {
         let models = ["car_taxi", "car_sedan", "car_hatchback"]
         cars = []
@@ -317,6 +362,7 @@ final class CityScene {
         let count = min(max(cells / 2, 3), 4)
         for index in 0..<count {
             let car = ModelLibrary.entity(models[index % models.count])
+            NightLight.add(to: car, at: [0, 0.15, 0.6], colour: Palette.streetlight, intensity: 8000, radius: 1.2, bulb: 0)
             root.addChild(car)
             cars.append((car, Float(index) / Float(count) * loop.length * 4))
         }
@@ -363,23 +409,38 @@ final class CityScene {
     }
 
     private func setUpLighting() {
-        if let environment = ModelLibrary.environment("sky") {
-            lighting.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: dark ? -0.5 : 0.6))
-        }
         root.addChild(lighting)
-        var light = DirectionalLightComponent(color: dark ? Palette.lamp : .white, intensity: dark ? 900 : 2800)
+        sun.components.set(DirectionalLightComponent.Shadow(maximumDistance: 40, depthBias: 1.5))
+        root.addChild(sun)
+        applyDaylight()
+    }
+
+    static func skyExposure(_ cycle: DayCycle) -> Float { cycle.mix(day: 0.2, night: -3) }
+
+    private func applyDaylight() {
+        let cycle = DayCycle.now
+        if let environment = ModelLibrary.environment("sky") {
+            lighting.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: Self.skyExposure(cycle)))
+        }
+        var light = DirectionalLightComponent(color: cycle.sunColour, intensity: cycle.mix(day: 2800, night: 1100))
         light.isRealWorldProxy = false
         sun.components.set(light)
-        sun.components.set(DirectionalLightComponent.Shadow(maximumDistance: 40, depthBias: 1.5))
-        sun.look(at: .zero, from: OfficeScene.daylight([-8, 14, 6]), relativeTo: nil)
-        root.addChild(sun)
+        sun.look(at: .zero, from: cycle.sun([-8, 14, 6]), relativeTo: nil)
+        for facade in facades.values { Facade.light(facade.entity, glow: 0.6 * cycle.lamps) }
+        for lot in lots.values where lot.working { lot.glow.components.set(lotGlow(cycle)) }
+        NightLight.apply(cycle, under: root)
+        SceneGrade.update(cycle)
+    }
+
+    private func lotGlow(_ cycle: DayCycle) -> PointLightComponent {
+        PointLightComponent(color: Palette.resolved(Palette.lamp, dark: dark), intensity: cycle.mix(day: 5000, night: 9000), attenuationRadius: 2.2)
     }
 
     private func applyReceivers() {
         let receiver = ImageBasedLightReceiverComponent(imageBasedLight: lighting)
         for entity in root.descendants where entity.components.has(ModelComponent.self) {
             entity.components.set(receiver)
-            if !entity.components.has(BillboardComponent.self) {
+            if !entity.components.has(BillboardComponent.self), !entity.components.has(MeshInstancesComponent.self) {
                 entity.components.set(GroundingShadowComponent(castsShadow: true, receivesShadow: true))
             }
         }
@@ -445,6 +506,11 @@ final class CityScene {
             lot.beacon.position.y = lot.root.position.y - 0.3 + (still ? 0 : sin(Float(clock) * 2) * 0.06)
         }
         advanceCars(still ? 0 : dt)
+        daylightClock += dt
+        if daylightClock > DayCycle.tick {
+            daylightClock = 0
+            applyDaylight()
+        }
         if clock.truncatingRemainder(dividingBy: 1) < dt { refresh() }
     }
 
@@ -463,8 +529,7 @@ final class CityScene {
             if lot.working != (status.working > 0) {
                 lot.working = status.working > 0
                 if lot.working {
-                    lot.glow.components.set(PointLightComponent(color: Palette.resolved(Palette.lamp, dark: dark), intensity: dark ? 9000 : 5000,
-                                                                attenuationRadius: 2.2))
+                    lot.glow.components.set(lotGlow(.now))
                 } else {
                     lot.glow.components.remove(PointLightComponent.self)
                 }

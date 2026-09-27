@@ -3,6 +3,7 @@ import RealityKit
 import simd
 
 /// A spring-damped orbit camera: every input moves a goal, and the camera glides towards it.
+/// Big moves fly instead: a timed arc that pulls back and up on the way, then settles on the goal.
 @MainActor
 final class CameraRig {
     struct Pose: Equatable {
@@ -17,6 +18,7 @@ final class CameraRig {
     private(set) var goal: Pose
     private var anchor: Pose
     private var velocity = Pose(target: .zero, yaw: 0, pitch: 0, distance: 0)
+    private var flight: Flight?
     var overview: Pose
     var smoothTime: Float = 0.45
     var frame: (scale: Float, offset: SIMD3<Float>) = (1, .zero) {
@@ -24,6 +26,16 @@ final class CameraRig {
     }
     static let pitchRange: ClosedRange<Float> = 0.12...1.35
     static let distanceRange: ClosedRange<Float> = 4...80
+    static let flightTime: ClosedRange<Float> = 0.9...2.2
+
+    private struct Flight {
+        var from: Pose
+        var to: Pose
+        var launch: Pose
+        var elapsed: Float = 0
+        let duration: Float
+        let lift: Float
+    }
 
     init(overview: Pose) {
         self.overview = overview
@@ -41,23 +53,56 @@ final class CameraRig {
     func reset(to pose: Pose, animated: Bool = true) {
         goal = pose
         anchor = pose
-        if !animated {
+        guard animated else {
+            flight = nil
             current = pose
             velocity = Pose(target: .zero, yaw: 0, pitch: 0, distance: 0)
             apply()
+            return
+        }
+        if flight != nil, Self.span(from: flight!.to, to: pose) < 0.25 {
+            flight!.to = pose
+        } else if Self.span(from: current, to: pose) > 0.25, !OfficeScene.reduceMotion {
+            let travel = simd_distance(current.target, pose.target) / max(current.distance, pose.distance)
+            flight = Flight(from: current, to: pose, launch: velocity,
+                            duration: (0.9 + Self.span(from: current, to: pose) * 0.45).clamped(to: Self.flightTime),
+                            lift: min(travel, 1.2) * 0.3)
+        } else {
+            flight = nil
         }
     }
 
+    /// How big a move is, in units where 1 is a jump of one viewing distance.
+    private static func span(from: Pose, to: Pose) -> Float {
+        let travel = simd_distance(from.target, to.target) / max(from.distance, to.distance, 0.001)
+        let zoom = abs(log(max(to.distance, 0.001) / max(from.distance, 0.001)))
+        return max(travel, zoom * 0.6, abs(turn(from.yaw, to.yaw)) * 0.5)
+    }
+
+    private static func turn(_ from: Float, _ to: Float) -> Float {
+        remainder(to - from, 2 * .pi)
+    }
+
+    /// Hands control back to the springs from wherever a flight has got to.
+    private func land() {
+        guard flight != nil else { return }
+        flight = nil
+        goal = current
+    }
+
     func orbit(dx: Float, dy: Float) {
+        land()
         goal.yaw -= dx * 0.006
         goal.pitch = (goal.pitch + dy * 0.004).clamped(to: Self.pitchRange)
     }
 
     func zoom(by factor: Float) {
+        land()
         goal.distance = (goal.distance * factor).clamped(to: Self.distanceRange)
     }
 
     func pan(dx: Float, dy: Float) {
+        land()
         let right = SIMD3<Float>(cos(current.yaw), 0, -sin(current.yaw))
         let forward = SIMD3<Float>(sin(current.yaw), 0, cos(current.yaw))
         let scale = current.distance * 0.0016
@@ -73,12 +118,13 @@ final class CameraRig {
     }
 
     func lift(to height: Float) {
+        land()
         goal.target.y = height
         anchor.target.y = height
     }
 
     func recentre() {
-        goal = anchor
+        reset(to: anchor)
     }
 
     func project(_ point: SIMD3<Float>, in size: CGSize) -> (SIMD2<Float>, Float)? {
@@ -95,11 +141,38 @@ final class CameraRig {
     }
 
     func update(_ dt: Float) {
+        if var trip = flight {
+            trip.elapsed += dt
+            fly(trip, dt: dt)
+            flight = trip.elapsed < trip.duration ? trip : nil
+            if flight == nil { velocity = Pose(target: .zero, yaw: 0, pitch: 0, distance: 0) }
+            apply()
+            return
+        }
         current.target = Self.damp(current.target, goal.target, &velocity.target, smoothTime, dt)
         current.yaw = Self.damp(current.yaw, goal.yaw, &velocity.yaw, smoothTime, dt)
         current.pitch = Self.damp(current.pitch, goal.pitch, &velocity.pitch, smoothTime, dt)
         current.distance = Self.damp(current.distance, goal.distance, &velocity.distance, smoothTime, dt)
         apply()
+    }
+
+    /// Cubic Hermite from the launch velocity to rest, with the pull-back riding on top as a sine bump.
+    private func fly(_ trip: Flight, dt: Float) {
+        let t = min(trip.elapsed / trip.duration, 1), time = trip.duration
+        let ease = t * t * (3 - 2 * t), push = (t * t * t - 2 * t * t + t) * time
+        let bump = sin(.pi * ease) * trip.lift
+        let previous = current
+        let yaw = trip.from.yaw + Self.turn(trip.from.yaw, trip.to.yaw)
+        current.target = trip.from.target + (trip.to.target - trip.from.target) * ease + trip.launch.target * push
+        current.yaw = trip.from.yaw + (yaw - trip.from.yaw) * ease + trip.launch.yaw * push
+        current.pitch = (trip.from.pitch + (trip.to.pitch - trip.from.pitch) * ease + trip.launch.pitch * push + bump * 0.35)
+            .clamped(to: Self.pitchRange)
+        let logFrom = log(trip.from.distance), logTo = log(trip.to.distance)
+        current.distance = exp(logFrom + (logTo - logFrom) * ease) * (1 + bump) + trip.launch.distance * push
+        if t >= 1 { current = trip.to }
+        guard dt > 0 else { return }
+        velocity = Pose(target: (current.target - previous.target) / dt, yaw: (current.yaw - previous.yaw) / dt,
+                        pitch: (current.pitch - previous.pitch) / dt, distance: (current.distance - previous.distance) / dt)
     }
 
     private func apply() {

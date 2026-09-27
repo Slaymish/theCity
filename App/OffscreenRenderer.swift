@@ -9,6 +9,9 @@ import SwiftUI
 final class FrameRecorder {
     private let renderer: RealityRenderer
     private let texture: MTLTexture
+    private let graded: MTLTexture
+    private let queue: MTLCommandQueue
+    private let grader: Grader?
     private let output: RealityRenderer.CameraOutput
     let width: Int
     let height: Int
@@ -28,8 +31,15 @@ final class FrameRecorder {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm_srgb, width: width, height: height, mipmapped: false)
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .shared
-        guard let texture = device.makeTexture(descriptor: descriptor) else { throw CocoaError(.featureUnsupported) }
+        let gradedDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false)
+        gradedDescriptor.usage = [.shaderRead, .shaderWrite]
+        gradedDescriptor.storageMode = .shared
+        guard let texture = device.makeTexture(descriptor: descriptor), let graded = device.makeTexture(descriptor: gradedDescriptor),
+              let queue = device.makeCommandQueue() else { throw CocoaError(.featureUnsupported) }
         self.texture = texture
+        self.graded = graded
+        self.queue = queue
+        grader = Grader(device: device)
         output = try RealityRenderer.CameraOutput(.singleProjection(colorTexture: texture))
         self.width = width
         self.height = height
@@ -44,11 +54,22 @@ final class FrameRecorder {
         let done = DispatchSemaphore(value: 0)
         try renderer.updateAndRender(deltaTime: 1.0 / 60, cameraOutput: output, onComplete: { _ in done.signal() })
         guard done.wait(timeout: .now() + 20) == .success else { throw CocoaError(.fileWriteUnknown) }
+        var settings = SceneGrade.settings.withLock { $0 }
+        settings.encodeSRGB = 1
+        var output = texture
+        if let grader, ProcessInfo.processInfo.arguments.contains("-grade"),
+           let buffer = queue.makeCommandBuffer() {
+            grader.encode(source: texture, target: graded, into: buffer, settings: settings)
+            buffer.commit()
+            buffer.waitUntilCompleted()
+            output = graded
+        }
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
-        texture.getBytes(&bytes, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+        output.getBytes(&bytes, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+        let layout = output === graded ? CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            : CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         return CGContext(data: &bytes, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-                         space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                         bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!.makeImage()!
+                         space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layout)!.makeImage()!
     }
 }
 
@@ -116,8 +137,8 @@ enum PreviewStage {
                 for _ in 0..<60 { city.update(1.0 / 60) }
             }
             let image = try OffscreenRenderer.render(root: city.root, camera: city.camera.entity, width: 1600, height: 1000,
-                                                     environment: ModelLibrary.environment("sky"), exposure: dark ? -0.5 : 0.6,
-                                                     background: Palette.resolved(Palette.background, dark: dark).cgColor)
+                                                     environment: ModelLibrary.environment("sky"), exposure: CityScene.skyExposure(.now),
+                                                     background: DayCycle.now.sky(dark: dark).cgColor)
             return try OffscreenRenderer.writePNG(image, to: URL(fileURLWithPath: path))
         }
         if arguments.contains("-city") {
@@ -126,8 +147,8 @@ enum PreviewStage {
             city.fit(size)
             for _ in 0..<30 { city.update(1.0 / 60) }
             let image = try OffscreenRenderer.render(root: city.root, camera: city.camera.entity, width: 1600, height: 1000,
-                                                     environment: ModelLibrary.environment("sky"), exposure: dark ? -0.5 : 0.6,
-                                                     background: Palette.resolved(Palette.background, dark: dark).cgColor)
+                                                     environment: ModelLibrary.environment("sky"), exposure: CityScene.skyExposure(.now),
+                                                     background: DayCycle.now.sky(dark: dark).cgColor)
             return try OffscreenRenderer.writePNG(image, to: URL(fileURLWithPath: path))
         }
         buildings[0].floors = [
@@ -156,8 +177,8 @@ enum PreviewStage {
                 for _ in 0..<Int(back * 60) { world.update(1.0 / 60) }
             }
             let image = try OffscreenRenderer.render(root: world.root, camera: world.camera.entity, width: 1600, height: 1000,
-                                                     environment: ModelLibrary.environment("sky"), exposure: dark ? -0.5 : 0.6,
-                                                     background: Palette.resolved(Palette.background, dark: dark).cgColor)
+                                                     environment: ModelLibrary.environment("sky"), exposure: CityScene.skyExposure(.now),
+                                                     background: DayCycle.now.sky(dark: dark).cgColor)
             return try OffscreenRenderer.writePNG(image, to: URL(fileURLWithPath: path))
         }
         let tower = BuildingScene()
@@ -173,8 +194,8 @@ enum PreviewStage {
         }
         for _ in 0..<240 { tower.update(1.0 / 60) }
         let image = try OffscreenRenderer.render(root: tower.root, camera: tower.camera.entity, width: 1600, height: 1000,
-                                                 environment: ModelLibrary.environment("studio"), exposure: dark ? 0.2 : 0.9,
-                                                 background: Palette.resolved(Palette.background, dark: dark).cgColor)
+                                                 environment: ModelLibrary.environment("studio"), exposure: OfficeScene.studioExposure(.now),
+                                                 background: DayCycle.now.sky(dark: dark).cgColor)
         try OffscreenRenderer.writePNG(image, to: URL(fileURLWithPath: path))
     }
 
@@ -296,8 +317,8 @@ enum PreviewStage {
                 }
             }
             var image = try OffscreenRenderer.render(root: scene.root, camera: scene.camera.entity, width: 1600, height: 1000,
-                                                     environment: ModelLibrary.environment("studio"), exposure: dark ? 0.2 : 0.9,
-                                                     background: Palette.resolved(Palette.background, dark: dark).cgColor)
+                                                     environment: ModelLibrary.environment("studio"), exposure: OfficeScene.studioExposure(.now),
+                                                     background: DayCycle.now.sky(dark: dark).cgColor)
             if let kind = RunController.launchArgument("-card"), let room = RunController.launchArgument("-focus"),
                let head = scene.screenPoint(of: room) {
                 let workspace = CityStore.Building(name: "theCity", path: RunController.launchArgument("-workspace") ?? "", style: 0)

@@ -15,6 +15,7 @@
     "screen": "#2D3A36", "screenPixels": "#B6F26B",
     "robot": "#F5F2F8", "desk": "#CC9E73", "lamp": "#FFDB9E", "folder": "#FAC740", "error": "#E54D4D", "tray": "#4D5266", "grass": "#5E7A4F"
   },
+  "sky": { "moonlight": "#9DB4E8", "dusk": "#FFB070", "streetlight": "#FFC46B", "nightSky": "#1A1F3D", "duskSky": "#F2A88C" },
   "departments": ["#F2836B", "#7DBB5E", "#F2C14E", "#5A7BD8"],
   "manager": "#C9557A",
   "onAccent": "#3B2F2A"

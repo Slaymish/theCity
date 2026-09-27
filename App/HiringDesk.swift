@@ -155,6 +155,16 @@ enum ReceptionDesk {
         }
     }
 
+    /// "@Floor name request" skips routing; the longest matching floor name wins.
+    static func directFloor(in text: String, floors: [CityStore.Floor]) -> (CityStore.Floor, String)? {
+        guard text.hasPrefix("@") else { return nil }
+        let body = text.dropFirst()
+        let match = floors
+            .filter { body.lowercased().hasPrefix($0.name.lowercased()) }
+            .max { $0.name.count < $1.name.count }
+        return match.map { ($0, body.dropFirst($0.name.count).trimmingCharacters(in: .whitespacesAndNewlines)) }
+    }
+
     /// A preset's existing floor takes the work instead of a new one: always for one-off jobs, and for long ones when it has done related work.
     private static func newFloor(for request: String, preset: FloorPreset?, proposed: String, floors: [CityStore.Floor], reason: String) -> RoutingSuggestion {
         let fallbackName = CityStore.floorName(for: request, existing: floors.map(\.name))

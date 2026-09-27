@@ -25,33 +25,46 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
         NSApp.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
     }
 
-    func needsInput(from room: String, request: PermissionRequest, place: String) {
+    func needsInput(from room: String, request: PermissionRequest, place: String, building: UUID?, floor: UUID?) {
         let who = room == "manager" ? "The manager" : room.capitalized
+        let location = Self.location(building: building, floor: floor)
         switch request.kind {
         case .question(let questions):
-            post(title: "\(who) has a question", subtitle: place, body: questions.first?.question ?? "")
+            post(title: "\(who) has a question", subtitle: place, body: questions.first?.question ?? "", info: location)
         case .approval(let summary):
             post(title: "\(who) asks to use \(McpNaming.friendly(request.toolName, servers: []))", subtitle: place, body: summary,
-                 category: Self.approvalCategory, info: ["request": request.requestID])
+                 category: Self.approvalCategory, info: location.merging(["request": request.requestID]) { $1 })
         }
     }
 
-    func finished(_ outcome: RunOutcome, files: [String], place: String) {
+    func finished(_ outcome: RunOutcome, files: [String], place: String, building: UUID?, floor: UUID?) {
+        let location = Self.location(building: building, floor: floor)
         switch outcome {
         case .completed:
             let name = files.first.map { URL(fileURLWithPath: $0).lastPathComponent }
             post(title: name.map { "\($0) is ready" } ?? "The job is done", subtitle: place, body: files.count > 1 ? "And \(files.count - 1) more in the outbox." : "Open the floor to see the result.",
-                 category: Self.finishedCategory, info: files.first.map { ["file": $0] } ?? [:])
+                 category: Self.finishedCategory, info: location.merging(files.first.map { ["file": $0] } ?? [:]) { $1 })
         case .cancelled: break
-        case .failed: post(title: "The job stopped", subtitle: place, body: "Open the floor to see why.")
+        case .failed: post(title: "The job stopped", subtitle: place, body: "Open the floor to see why.", info: location)
         }
+    }
+
+    func needsTeam(for floor: String, place: String, building: UUID, drafted: Bool) {
+        post(title: "Reception needs you to pick a team for \(floor)", subtitle: place, body: "Open The City to choose its departments.",
+             info: ["building": building.uuidString, "newFloor": drafted ? "yes" : "no"])
+    }
+
+    private static func location(building: UUID?, floor: UUID?) -> [String: String] {
+        guard let building, let floor else { return [:] }
+        return ["building": building.uuidString, "floor": floor.uuidString]
     }
 
     static let finishedCategory = "finished"
     static let approvalCategory = "approval"
 
     private func post(title: String, subtitle: String, body: String, category: String? = nil, info: [String: String] = [:]) {
-        guard !NSApp.isActive, Preferences.shared.notifications else { return }
+        // An accessory app stays active after the menu bar's Ask Reception alert, with no window to show the request.
+        guard !NSApp.isActive || !MainWindow.shared.isOpen, Preferences.shared.notifications else { return }
         NSApp.requestUserAttention(.informationalRequest)
         let center = UNUserNotificationCenter.current()
         Task {
@@ -75,6 +88,9 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
         let info = response.notification.request.content.userInfo
         let file = info["file"] as? String
         let requestID = info["request"] as? String
+        let building = (info["building"] as? String).flatMap(UUID.init(uuidString:))
+        let floor = (info["floor"] as? String).flatMap(UUID.init(uuidString:))
+        let newFloor = info["newFloor"] as? String
         await MainActor.run {
             let controller = requestID.flatMap { CityStore.shared.session(forRequest: $0) }
             switch action {
@@ -84,14 +100,17 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
                 guard let pending = controller?.state.pendingRequests.first(where: { $0.id == requestID }) else { break }
                 controller?.deny(pending)
             default:
-                NSApp.activate()
-                NSApp.windows.first { $0.canBecomeMain }?.makeKeyAndOrderFront(nil)
+                let city = CityStore.shared
+                let route: CityStore.Route? = if let building, let floor, city.floor(floor, in: building) != nil { .floor(building: building, floor: floor) }
+                    else if let building, newFloor != nil, city.building(building) != nil { newFloor == "yes" && city.draft?.buildingID == building ? .newFloor(building) : .building(building) }
+                    else { nil }
+                MainWindow.shared.show(route: route)
             }
         }
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        []
+        await MainActor.run { MainWindow.shared.isOpen } ? [] : [.banner, .list, .sound]
     }
 }
 
@@ -105,6 +124,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if !DEBUG
         _ = Updater.shared
         #endif
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    @MainActor func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !MainWindow.shared.isOpen { MainWindow.shared.show(route: nil) }
+        return true
     }
 
     @MainActor func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
@@ -126,8 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let value = item.representedObject as? String else { return }
         let parts = value.split(separator: "|").compactMap { UUID(uuidString: String($0)) }
         guard parts.count == 2 else { return }
-        NSApp.activate()
-        CityStore.shared.route = .floor(building: parts[0], floor: parts[1])
+        MainWindow.shared.show(route: .floor(building: parts[0], floor: parts[1]))
     }
 
     /// Quitting mid-run would otherwise leave `claude` running, since closing its stdin doesn't stop a turn.

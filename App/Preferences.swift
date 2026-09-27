@@ -25,6 +25,17 @@ final class Preferences {
         }
     }
 
+    enum MenuBarIcon: String, CaseIterable, Identifiable {
+        case whenWindowClosed, always
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .whenWindowClosed: "When the window is closed"
+            case .always: "Always"
+            }
+        }
+    }
+
     static let shared = Preferences()
     private let defaults = UserDefaults.standard
 
@@ -64,6 +75,9 @@ final class Preferences {
     var dictationModel: String? {
         didSet { defaults.set(dictationModel, forKey: "dictationModel") }
     }
+    var menuBarIcon: MenuBarIcon {
+        didSet { defaults.set(menuBarIcon.rawValue, forKey: "menuBarIcon") }
+    }
 
     private init() {
         configDirectory = defaults.string(forKey: "configDirectory").map { URL(fileURLWithPath: $0) }
@@ -79,6 +93,7 @@ final class Preferences {
         editorPath = defaults.string(forKey: "editorPath")
         hiddenAccounts = Set(defaults.stringArray(forKey: "hiddenAccounts") ?? [])
         dictationModel = defaults.string(forKey: "dictationModel")
+        menuBarIcon = MenuBarIcon(rawValue: defaults.string(forKey: "menuBarIcon") ?? "") ?? .whenWindowClosed
     }
 
     var isDark: Bool {
@@ -217,6 +232,16 @@ struct SettingsView: View {
                             }
                         }
                     }
+                }
+                Section {
+                    Picker("Show in menu bar", selection: $preferences.menuBarIcon) {
+                        ForEach(Preferences.MenuBarIcon.allCases) { option in Text(option.title).tag(option) }
+                    }
+                } header: {
+                    Text("Menu bar")
+                } footer: {
+                    Text("When you close the window, The City keeps running from the menu bar and leaves the Dock.")
+                        .font(.caption).foregroundStyle(Color(Palette.muted))
                 }
             }
             .tabItem { Label("General", systemImage: "gearshape") }

@@ -576,9 +576,7 @@ final class CityScene {
             let status = city.status(of: building)
             let colour = status.waiting > 0 ? Palette.manager : status.working > 0 ? Palette.primaryFill : Palette.muted
             let symbol = status.waiting > 0 ? "hand.raised.fill" : status.working > 0 ? "bolt.fill" : "building.2.fill"
-            let floors = building.floors.isEmpty ? "Empty lot" : "\(building.floors.count) floor\(building.floors.count == 1 ? "" : "s")"
-            let detail = status.waiting > 0 ? "Needs you" : status.working > 0 ? "\(status.working) working" : building.floors.isEmpty ? floors : "\(floors) · all quiet"
-            let text = "\(building.name) · \(detail)"
+            let text = "\(building.name) · \(city.statusLine(for: building))"
             lot.waiting = status.waiting > 0
             lot.beacon.isEnabled = labelsVisible && lot.waiting
             if lot.working != (status.working > 0) {

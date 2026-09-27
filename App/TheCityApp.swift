@@ -7,12 +7,14 @@ struct TheCityApp: App {
     @State private var city: CityStore
     @State private var preferences: Preferences
     @State private var brands: BrandStore
+    @State private var mainWindow: MainWindow
 
     init() {
         LegacyData.migrate()
         _city = State(initialValue: .shared)
         _preferences = State(initialValue: .shared)
         _brands = State(initialValue: .shared)
+        _mainWindow = State(initialValue: .shared)
     }
 
     var body: some Scene {
@@ -40,6 +42,48 @@ struct TheCityApp: App {
             SettingsView(city: city)
                 .preferredColorScheme(preferences.colorScheme)
         }
+
+        let inMenuBar = !MainWindow.offscreen && (preferences.menuBarIcon == .always || !mainWindow.isOpen)
+        MenuBarExtra("The City", systemImage: city.pendingCount > 0 ? "hand.raised.fill" : "building.2",
+                     isInserted: Binding(get: { inMenuBar }, set: { _ in })) {
+            MenuBarMenu(city: city)
+        }
+        .menuBarExtraStyle(.menu)
+    }
+}
+
+@MainActor
+@Observable
+final class MainWindow {
+    static let shared = MainWindow()
+    static let offscreen = ["-render-preview", "-render-icon", "-render-reel"].contains { RunController.launchArgument($0) != nil }
+
+    private(set) var isOpen = true
+    @ObservationIgnored private var openWindow: OpenWindowAction?
+    @ObservationIgnored private var appearances = 0
+
+    func appeared(_ openWindow: OpenWindowAction) {
+        self.openWindow = openWindow
+        appearances += 1
+        isOpen = true
+        NSApp.setActivationPolicy(.regular)
+    }
+
+    func disappeared() {
+        appearances = max(appearances - 1, 0)
+        // Deferred so a brand change, which rebuilds the window's view, doesn't flash the Dock icon.
+        DispatchQueue.main.async { [self] in
+            guard appearances == 0 else { return }
+            isOpen = false
+            if !Self.offscreen { NSApp.setActivationPolicy(.accessory) }
+        }
+    }
+
+    func show(route: CityStore.Route?) {
+        if let route { CityStore.shared.route = route }
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate()
+        openWindow?(id: "office")
     }
 }
 

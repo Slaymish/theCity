@@ -567,7 +567,7 @@ struct ReceptionComposer: View {
 
     private func ask() {
         guard canAsk else { return }
-        if let (floor, rest) = directFloor(), !rest.isEmpty {
+        if let (floor, rest) = ReceptionDesk.directFloor(in: text, floors: building.floors), !rest.isEmpty {
             text = rest
             return send(to: floor.id)
         }
@@ -589,16 +589,6 @@ struct ReceptionComposer: View {
         routing = nil
         thinking = false
         asked = ""
-    }
-
-    /// "@Floor name request" skips routing; the longest matching floor name wins.
-    private func directFloor() -> (CityStore.Floor, String)? {
-        guard text.hasPrefix("@") else { return nil }
-        let body = text.dropFirst()
-        let match = building.floors
-            .filter { body.lowercased().hasPrefix($0.name.lowercased()) }
-            .max { $0.name.count < $1.name.count }
-        return match.map { ($0, body.dropFirst($0.name.count).trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
 
     private func send(to floorID: UUID, continuing: Bool = false) {

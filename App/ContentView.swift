@@ -5,6 +5,7 @@ import SwiftUI
 struct ContentView: View {
     let city: CityStore
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         ZStack {
@@ -18,8 +19,10 @@ struct ContentView: View {
         }
         .foregroundStyle(Color(Palette.text))
         .onAppear {
+            MainWindow.shared.appeared(openWindow)
             if let path = RunController.launchArgument("-replay") { city.startReplay(URL(fileURLWithPath: path)) }
         }
+        .onDisappear { MainWindow.shared.disappeared() }
         .onChange(of: colorScheme) {
             for session in city.allSessions { session.scene.setDark(colorScheme == .dark) }
         }

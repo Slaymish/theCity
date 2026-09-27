@@ -42,6 +42,7 @@ final class RunController {
     private(set) var floorID: UUID?
     var pendingFloorName: String?
     var pendingPreset: FloorPreset?
+    var opensWhenHired = false
     private(set) var queued: [(text: String, continues: Bool)] = []
     let scene = OfficeScene()
     let kiosk = KioskSession()
@@ -114,8 +115,8 @@ final class RunController {
     @ObservationIgnored private var process: ClaudeProcess?
     @ObservationIgnored private var consumer: Task<Void, Never>?
     @ObservationIgnored private var isReplay = false
-
     @ObservationIgnored private var builtFor: (hires: [String], servers: [String], dark: Bool)?
+
     static let budgets: [Double] = [0.5, 1, 2, 5, 10]
 
     init(building: CityStore.Building?, floor: CityStore.Floor?) {
@@ -350,6 +351,7 @@ final class RunController {
         guard !catalogue.isEmpty else {
             isHiring = false
             hiringNote = "No departments found in \(workingDirectory.lastPathComponent)/.claude/agents. Add agent files there to hire them."
+            if opensWhenHired { CityStore.shared.headlessHiringDone(self) }
             return
         }
         let request = request
@@ -374,6 +376,7 @@ final class RunController {
                 hiringNote = note
             }
             isHiring = false
+            if opensWhenHired { CityStore.shared.headlessHiringDone(self) }
         }
     }
 
@@ -422,6 +425,7 @@ final class RunController {
         panelTab = .requests
         buildScene()
         if floorID == nil { floorID = CityStore.shared.floorOpened(self) }
+        guard floorID != nil || !opensWhenHired else { return }
         start(message: request, resume: nil)
     }
 
@@ -811,11 +815,11 @@ final class RunController {
                 steps[i].status = .done
             case .handRaised(let request, let room):
                 panelTab = .requests
-                if !isReplay { Attention.shared.needsInput(from: room, request: request, place: placeName) }
+                if !isReplay { Attention.shared.needsInput(from: room, request: request, place: placeName, building: buildingID, floor: floorID) }
                 let who = room == "manager" ? "The manager" : room.capitalized
                 AccessibilityNotification.Announcement("\(who) needs you").post()
             case .runEnded(let outcome):
-                if !isReplay { Attention.shared.finished(outcome, files: state.outputFiles, place: placeName) }
+                if !isReplay { Attention.shared.finished(outcome, files: state.outputFiles, place: placeName, building: buildingID, floor: floorID) }
                 noteLimit(outcome)
                 if !isReplay {
                     recordJob(outcome)

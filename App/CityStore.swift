@@ -56,6 +56,8 @@ final class CityStore {
     private(set) var sessions: [UUID: RunController] = [:]
     private(set) var draft: RunController?
     var cancelledRequests: [UUID: String] = [:]
+    var routing: Set<UUID> = []
+    private(set) var hiringHeadless: [UUID: RunController] = [:]
     private(set) var journal: [JobRecord] = JobJournal.load()
 
     static var fileURL: URL {
@@ -111,6 +113,7 @@ final class CityStore {
     func removeBuilding(_ id: UUID) {
         guard let building = building(id), !building.floors.contains(where: { sessions[$0.id]?.isRunning == true }) else { return }
         building.floors.forEach { sessions[$0.id]?.kiosk.end(); sessions[$0.id] = nil }
+        hiringHeadless[id] = nil
         buildings.removeAll { $0.id == id }
         if case .building(id) = route { route = .city }
         save()
@@ -189,6 +192,37 @@ final class CityStore {
         }
     }
 
+    func hireNewFloor(in buildingID: UUID, request: String, name: String?, preset: FloorPreset?) {
+        guard let building = building(buildingID), hiringHeadless[buildingID] == nil else { return }
+        let session = RunController(building: building, floor: nil)
+        session.pendingFloorName = name
+        session.pendingPreset = preset
+        session.request = request
+        session.opensWhenHired = true
+        hiringHeadless[buildingID] = session
+        session.beginHiring()
+    }
+
+    func headlessHiringDone(_ session: RunController) {
+        guard let buildingID = session.buildingID, hiringHeadless[buildingID] === session else { return }
+        if session.candidates.contains(where: \.hired) { return session.openOffice() }
+        hiringHeadless[buildingID] = nil
+        let name = session.displayTitle
+        let place = building(buildingID)?.name ?? name
+        guard draft == nil else {
+            return Attention.shared.needsTeam(for: name, place: place, building: buildingID, drafted: false)
+        }
+        session.opensWhenHired = false
+        draft = session
+        if MainWindow.shared.isOpen && NSApp.isActive {
+            route = .newFloor(buildingID)
+        } else {
+            Attention.shared.needsTeam(for: name, place: place, building: buildingID, drafted: true)
+        }
+    }
+
+    func isBusy(_ buildingID: UUID) -> Bool { routing.contains(buildingID) || hiringHeadless[buildingID] != nil }
+
     func cancelNewFloor() {
         guard case .newFloor(let id) = route else { return }
         if let request = draft?.request, !request.isEmpty { cancelledRequests[id] = request }
@@ -197,9 +231,9 @@ final class CityStore {
     }
 
     /// Reception hands a request to an existing floor's team, as a fresh job or as a follow-up on its last one.
-    func send(_ request: String, toFloor floorID: UUID, in buildingID: UUID, continuing: Bool = false) {
+    func send(_ request: String, toFloor floorID: UUID, in buildingID: UUID, continuing: Bool = false, navigate: Bool = true) {
         guard let session = session(for: floorID, in: buildingID) else { return }
-        route = .floor(building: buildingID, floor: floorID)
+        if navigate { route = .floor(building: buildingID, floor: floorID) }
         if session.isRunning {
             session.queue(request, continuing: continuing)
         } else if continuing {
@@ -229,8 +263,9 @@ final class CityStore {
         buildings[index].floors.append(floor)
         sessions[floor.id] = session
         if draft === session { draft = nil }
+        if hiringHeadless[buildingID] === session { hiringHeadless[buildingID] = nil }
         save()
-        route = .floor(building: buildingID, floor: floor.id)
+        if !session.opensWhenHired { route = .floor(building: buildingID, floor: floor.id) }
         if session.pendingPreset?.session != .fresh { relabel(floor.id, in: buildingID, for: session.request) }
         return floor.id
     }
@@ -322,7 +357,7 @@ final class CityStore {
 
     // MARK: Across floors
 
-    var allSessions: [RunController] { Array(sessions.values) + (draft.map { [$0] } ?? []) }
+    var allSessions: [RunController] { Array(sessions.values) + Array(hiringHeadless.values) + (draft.map { [$0] } ?? []) }
 
     var pendingCount: Int { allSessions.reduce(0) { $0 + $1.state.pendingRequests.count } }
 
@@ -333,6 +368,12 @@ final class CityStore {
             guard let session = sessions[floor.id] else { return total }
             return (total.0 + (session.isRunning ? 1 : 0), total.1 + session.state.pendingRequests.count)
         }
+    }
+
+    func statusLine(for building: Building) -> String {
+        let status = status(of: building)
+        let floors = building.floors.isEmpty ? "Empty lot" : "\(building.floors.count) floor\(building.floors.count == 1 ? "" : "s")"
+        return status.waiting > 0 ? "Needs you" : status.working > 0 ? "\(status.working) working" : building.floors.isEmpty ? floors : "\(floors) · all quiet"
     }
 
     func session(forRequest requestID: String) -> RunController? {

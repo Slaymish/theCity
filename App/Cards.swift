@@ -289,6 +289,7 @@ struct EndCard: View {
     @Binding var collapsed: Bool
     @State private var followUp = ""
     @State private var reading = false
+    @FocusState private var focused: Bool
 
     var body: some View {
         Group {
@@ -312,6 +313,14 @@ struct EndCard: View {
                 expanded
             }
         }
+        .focusable()
+        .focusEffectDisabled()
+        .focused($focused)
+        .onKeyPress(.space) {
+            collapsed.toggle()
+            return .handled
+        }
+        .onAppear { focused = true }
     }
 
     private var expanded: some View {
@@ -325,7 +334,7 @@ struct EndCard: View {
                 Button { collapsed = true } label: { Image(systemName: "chevron.down") }
                     .buttonStyle(.plain)
                     .foregroundStyle(Color(Palette.muted))
-                    .help("Collapse")
+                    .help("Collapse (Space)")
                     .accessibilityLabel("Collapse the outbox")
             }
             ViewThatFits(in: .vertical) {

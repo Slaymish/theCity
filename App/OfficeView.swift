@@ -185,7 +185,7 @@ struct OfficeOverlay: View {
                     .padding(.trailing, controller.showPanel ? Self.panelWidth + 20 : 0)
             }
         }
-        .onChange(of: controller.startedAt) { outboxCollapsed = false }
+        .onChange(of: controller.startedAt) { previous, _ in outboxCollapsed = previous != nil }
         .onChange(of: controller.showPanel, initial: true) {
             scene.trailingInset = controller.showPanel ? Self.panelWidth + 20 : 0
             if let room = controller.selectedRoom { scene.focus(room: room) }

@@ -71,6 +71,8 @@ In Claude Code, `/release` does the whole thing: it checks `main` is clean and g
 
 ## Credits
 
+The initial concept and visual design were inspired by [AI Office](https://sael.net/ai-office). I wanted to flesh it out into something that fits my own workflow and taste.
+
 3D models are KayKit (CC0), sounds are Kenney (CC0) and lighting uses Poly Haven HDRIs (CC0). Fredoka and Lexend are under the SIL Open Font Licence. See the credit files in `App/`.
 
 ## Licence

@@ -115,6 +115,7 @@ final class RunController {
     @ObservationIgnored private var consumer: Task<Void, Never>?
     @ObservationIgnored private var isReplay = false
 
+    @ObservationIgnored private var builtFor: (hires: [String], servers: [String], dark: Bool)?
     static let budgets: [Double] = [0.5, 1, 2, 5, 10]
 
     init(building: CityStore.Building?, floor: CityStore.Floor?) {
@@ -141,7 +142,9 @@ final class RunController {
 
     /// The floor's own office, built from its team and the services it may use.
     func buildScene(dark: Bool = Preferences.shared.isDark) {
-        scene.build(hired: hired, servers: (kit?.usableServers ?? []).filter { allowedServers.contains($0.name) },
+        let servers = (kit?.usableServers ?? []).filter { allowedServers.contains($0.name) }
+        builtFor = (hired.map(\.name), servers.map(\.name), dark)
+        scene.build(hired: hired, servers: servers,
                     colour: { [weak self] in self?.colour(for: $0) ?? Palette.muted }, dark: dark)
         showRecords()
     }
@@ -182,7 +185,8 @@ final class RunController {
             allowedSkills = floor?.allowedSkills.map(Set.init) ?? Set(loaded.skills.map(\.name))
             kitReasons = [:]
             isLoadingKit = false
-            if screen == .office && !isRunning { buildScene() }
+            let servers = loaded.usableServers.filter { allowedServers.contains($0.name) }.map(\.name)
+            if screen == .office && !isRunning, builtFor.map({ $0 != (hired.map(\.name), servers, Preferences.shared.isDark) }) ?? true { buildScene() }
         }
     }
 

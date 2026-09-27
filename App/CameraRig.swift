@@ -142,6 +142,7 @@ final class CameraRig {
 
     func update(_ dt: Float) {
         if var trip = flight {
+            let dt = min(dt, 1 / 30)
             trip.elapsed += dt
             fly(trip, dt: dt)
             flight = trip.elapsed < trip.duration ? trip : nil

@@ -18,6 +18,20 @@ enum ModelLibrary {
         return loaded.clone(recursive: true)
     }
 
+    static let officeModels = ["table_medium_long", "monitor", "keyboard", "mug", "chair_C", "robot", "cactus_medium_A", "cactus_small_B",
+                               "shelf_B_small_decorated", "lamp_standing", "lamp_table", "book_set", "pictureframe_standing_A", "armchair_pillows",
+                               "couch_pillows", "cabinet_small_decorated", "tie", "glasses", "hardhat", "magnifier", "beret", "cap"]
+
+    /// Loads models off the main thread ahead of use, so later calls only clone.
+    static func warm(_ names: [String]) async {
+        for name in names where cache[name] == nil {
+            guard let url = Bundle.main.url(forResource: name, withExtension: "usdz", subdirectory: nil)
+                    ?? Bundle.main.url(forResource: (name as NSString).lastPathComponent, withExtension: "usdz"),
+                  let loaded = try? await Entity(contentsOf: url), cache[name] == nil else { continue }
+            cache[name] = loaded
+        }
+    }
+
     static func environment(_ name: String) -> EnvironmentResource? {
         if let cached = environments[name] { return cached }
         guard let url = Bundle.main.url(forResource: name, withExtension: "hdr"),

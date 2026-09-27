@@ -182,6 +182,7 @@ struct WorldView: View {
                     world.city.build(city.buildings, dark: dark)
                     world.fit(geometry.size)
                     sync(animated: false)
+                    prewarm(city.buildings.map(\.id))
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { note in
                     guard let window = note.object as? NSWindow, window.identifier?.rawValue.hasPrefix("office") == true else { return }
@@ -243,6 +244,7 @@ struct WorldView: View {
         guard let target = CityScene.target(of: entity) else { return }
         if target == "lot:new" { return ProjectPicker.addProject() }
         guard let id = UUID(uuidString: String(target.dropFirst("building:".count))), id != buildingID else { return }
+        prewarm([id])
         if world.inBuilding == nil {
             world.city.flyTowards(id)
             Task { @MainActor in
@@ -251,6 +253,21 @@ struct WorldView: View {
             }
         } else {
             city.route = .building(id)
+        }
+    }
+
+    /// Builds each floor's session and office ahead of entry, a floor at a time, so the tap path only reuses them.
+    private func prewarm(_ ids: [UUID]) {
+        Task { @MainActor in
+            await ModelLibrary.warm(ModelLibrary.officeModels)
+            _ = ModelLibrary.environment("studio")
+            _ = ModelLibrary.environment("sky")
+            for id in ids {
+                for floor in city.building(id)?.floors ?? [] where city.sessions[floor.id] == nil {
+                    _ = city.session(for: floor.id, in: id)
+                    try? await Task.sleep(for: .milliseconds(30))
+                }
+            }
         }
     }
 

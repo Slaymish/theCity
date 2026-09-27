@@ -189,7 +189,7 @@ struct WorldView: View {
                 }
                 .onChange(of: geometry.size) { world.fit(geometry.size) }
                 .onReceive(NotificationCenter.default.publisher(for: .resetView)) { _ in world.camera.recentre() }
-                .onChange(of: city.buildings.map(\.id)) {
+                .onChange(of: city.buildings.map { [$0.id] + $0.floors.map(\.id) }) {
                     if city.groundBreaking != nil { world.city.titleMode = false }
                     world.city.build(city.buildings, dark: dark)
                     world.cityRebuilt()

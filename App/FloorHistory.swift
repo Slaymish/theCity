@@ -32,4 +32,8 @@ enum FloorHistory {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: url, options: .atomic)
     }
+
+    static func delete(_ floorID: UUID) {
+        try? FileManager.default.removeItem(at: url(for: floorID))
+    }
 }

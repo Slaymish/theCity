@@ -57,6 +57,17 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
              info: ["building": building.uuidString, "newFloor": drafted ? "yes" : "no"])
     }
 
+    func notReady(_ readiness: RunController.Readiness, place: String, building: UUID) {
+        let title = switch readiness {
+        case .cliMissing: "Claude Code isn’t installed"
+        case .notLoggedIn: "You’re not signed in to Claude Code"
+        case .cliOutdated(let version): "Claude Code \(version) needs updating"
+        case .checking, .ready: "Claude Code didn’t respond"
+        }
+        post(title: title, subtitle: place, body: "Reception didn’t set up a floor. Fix this, then ask again.",
+             info: ["building": building.uuidString, "newFloor": "no"])
+    }
+
     private static func location(building: UUID?, floor: UUID?) -> [String: String] {
         guard let building, let floor else { return [:] }
         return ["building": building.uuidString, "floor": floor.uuidString]

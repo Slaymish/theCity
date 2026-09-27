@@ -289,6 +289,16 @@ final class RunController {
         }
     }
 
+    /// Waits for a readiness check in progress to finish, giving up after 30 seconds.
+    func settledReadiness() async -> Readiness {
+        var waited = 0
+        while readiness == .checking, waited < 300 {
+            try? await Task.sleep(for: .milliseconds(100))
+            waited += 1
+        }
+        return readiness
+    }
+
     func signIn() { Self.signIn(configDirectory: configDirectory) }
 
     /// The inventory run costs nothing, so Settings can list models before any floor exists.
@@ -915,7 +925,9 @@ final class RunController {
     }
 
     private func remember(_ kind: HistoryEntry.Kind, title: String? = nil, _ text: String) {
-        guard let floorID, !isReplay, !isDemo else { return }
+        // A cancelled job can end after its floor is removed; don't write the history back.
+        guard let floorID, let buildingID, !isReplay, !isDemo,
+              CityStore.shared.floor(floorID, in: buildingID) != nil else { return }
         let job = kind == .request ? UUID() : history.last?.job ?? UUID()
         history.append(HistoryEntry(date: .now, job: job, kind: kind, title: title, text: text))
         FloorHistory.save(history, for: floorID)

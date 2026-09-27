@@ -66,7 +66,7 @@ final class Preferences {
         configDirectory = defaults.string(forKey: "configDirectory").map { URL(fileURLWithPath: $0) }
             ?? ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
         model = defaults.string(forKey: "model")
-        budgetUSD = defaults.object(forKey: "budgetUSD") as? Double ?? 1.0
+        budgetUSD = defaults.object(forKey: "budgetUSD") as? Double ?? 5.0
         permissionMode = PermissionMode(rawValue: defaults.string(forKey: "permissionMode") ?? "") ?? .manual
         theme = Theme(rawValue: defaults.string(forKey: "theme") ?? "") ?? .system
         notifications = defaults.object(forKey: "notifications") as? Bool ?? true
@@ -109,6 +109,33 @@ final class Preferences {
                        set: { if $0 { self.hiddenAccounts.remove(id) } else { self.hiddenAccounts.insert(id) } })
     }
 
+    static func addAccount() {
+        let alert = NSAlert()
+        alert.messageText = "Add a Claude Account"
+        alert.informativeText = "Name the account, for example Work. Terminal opens so you can sign in, then the account appears here."
+        let field = NSTextField(string: "")
+        field.placeholderString = "Work"
+        field.sizeToFit()
+        field.frame.size.width = 240
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Sign In…")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let slug = field.stringValue.lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .joined(separator: "-")
+        guard !slug.isEmpty else { return }
+        let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude-\(slug)")
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            NSAlert(error: error).runModal()
+            return
+        }
+        RunController.signIn(configDirectory: directory)
+    }
+
     static func accountName(_ directory: URL?) -> String {
         guard let name = directory?.lastPathComponent, name.hasPrefix(".claude-") else { return "Default" }
         return name.dropFirst(".claude-".count).split(separator: "-").map { $0.capitalized }.joined(separator: " ")
@@ -119,6 +146,7 @@ struct SettingsView: View {
     @Bindable var preferences = Preferences.shared
     @Bindable var brands = BrandStore.shared
     let city: CityStore
+    @State private var accountsRefresh = 0
 
     private func importBrand() {
         let panel = NSOpenPanel()
@@ -178,30 +206,35 @@ struct SettingsView: View {
                 }
             }
             .tabItem { Label("General", systemImage: "gearshape") }
-            if Preferences.allAccounts.count > 1 {
-                page {
-                    Section {
-                        ForEach(Preferences.allAccounts, id: \.self) { url in
-                            let starts = url == preferences.configDirectory
-                            Toggle(isOn: starts ? .constant(true) : preferences.isShown(url)) {
-                                Text(Preferences.accountName(url))
-                                Text(((url?.path ?? "~/.claude") as NSString).abbreviatingWithTildeInPath)
-                                    .font(.caption).foregroundStyle(Color(Palette.muted))
-                                if starts {
-                                    Text("Starts new jobs, so it stays shown.").font(.caption).foregroundStyle(Color(Palette.muted))
-                                }
+            page {
+                let _ = accountsRefresh
+                Section {
+                    ForEach(Preferences.allAccounts, id: \.self) { url in
+                        let starts = url == preferences.configDirectory
+                        Toggle(isOn: starts ? .constant(true) : preferences.isShown(url)) {
+                            Text(Preferences.accountName(url))
+                            Text(((url?.path ?? "~/.claude") as NSString).abbreviatingWithTildeInPath)
+                                .font(.caption).foregroundStyle(Color(Palette.muted))
+                            if starts {
+                                Text("Starts new jobs, so it stays shown.").font(.caption).foregroundStyle(Color(Palette.muted))
                             }
-                            .disabled(starts)
                         }
-                    } header: {
-                        Text("Accounts")
-                    } footer: {
-                        Text("Hidden accounts don’t appear in the usage gauges or the Account menu, and aren’t refreshed.")
-                            .font(.caption).foregroundStyle(Color(Palette.muted))
+                        .disabled(starts)
                     }
+                } header: {
+                    Text("Accounts")
+                } footer: {
+                    Text("Hidden accounts don’t appear in the usage gauges or the Account menu, and aren’t refreshed.")
+                        .font(.caption).foregroundStyle(Color(Palette.muted))
                 }
-                .tabItem { Label("Accounts", systemImage: "person.2") }
+                Section {
+                    Button("Add Account…") { Preferences.addAccount() }
+                }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                accountsRefresh += 1
+            }
+            .tabItem { Label("Accounts", systemImage: "person.2") }
             page {
                 Section("Branding") {
                     Picker("Brand", selection: $brands.selectedID) {

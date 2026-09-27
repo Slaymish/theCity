@@ -4,6 +4,8 @@
 
 A macOS app that shows Claude Code runs as a city of robot-staffed offices. Every project folder is a building, every building has floors of robots, and every animation comes from a real event in the `claude` CLI's stream.
 
+The City starts its own Claude Code runs using the `claude` you already have installed, and they count towards your plan as usual. It doesn't show sessions you started in a terminal.
+
 ![Breaking ground on a new project, then walking into its building and up to a floor where the robots are working](Docs/Media/city.gif)
 
 ## Requirements
@@ -16,7 +18,7 @@ A macOS app that shows Claude Code runs as a city of robot-staffed offices. Ever
 
 1. Download the latest `.dmg` or `.zip` from [Releases](https://github.com/Slaymish/theCity/releases).
 2. Drag **TheCity.app** into Applications.
-3. The build is not notarised, so macOS blocks the first launch. Either right-click the app and choose **Open**, or run:
+3. The build is not notarised, so macOS blocks the first launch with "Apple could not verify…". Click **Done**, then open **System Settings › Privacy & Security**, scroll down and click **Open Anyway**. Or run:
 
    ```sh
    xattr -dr com.apple.quarantine /Applications/TheCity.app

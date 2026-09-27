@@ -168,6 +168,10 @@ struct WorldView: View {
                     world.fit(geometry.size)
                     sync(animated: false)
                 }
+                .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { note in
+                    guard let window = note.object as? NSWindow, window.identifier?.rawValue.hasPrefix("office") == true else { return }
+                    world.paused = !window.occlusionState.contains(.visible)
+                }
                 .onChange(of: geometry.size) { world.fit(geometry.size) }
                 .onChange(of: city.buildings.map(\.id)) {
                     if city.groundBreaking != nil { world.city.titleMode = false }

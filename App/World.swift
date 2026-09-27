@@ -23,7 +23,12 @@ final class World {
 
     var camera: CameraRig { inBuilding == nil ? city.camera : building.camera }
 
+    var paused = false {
+        didSet { root.isEnabled = !paused }
+    }
+
     func update(_ dt: Double) {
+        guard !paused else { return }
         city.update(dt)
         guard building.root.isEnabled else { return }
         building.update(dt)

@@ -246,18 +246,20 @@ final class RunController {
         }
     }
 
-    func signIn() {
+    func signIn() { Self.signIn(configDirectory: configDirectory) }
+
+    static func signIn(configDirectory: URL?) {
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
-        guard let executable = Self.cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment) else { return }
+        guard let executable = cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment) else { return }
         let script = FileManager.default.temporaryDirectory.appendingPathComponent("The City sign-in.command")
-        let config = configDirectory.map { "export CLAUDE_CONFIG_DIR=\(Self.shellQuoted($0.path))\n" } ?? ""
-        let body = "#!/bin/zsh\n\(config)\(Self.shellQuoted(executable.path)) auth login\necho\necho 'You can close this window and return to The City.'\n"
+        let config = configDirectory.map { "export CLAUDE_CONFIG_DIR=\(shellQuoted($0.path))\n" } ?? ""
+        let body = "#!/bin/zsh\n\(config)\(shellQuoted(executable.path)) auth login\necho\necho 'You can close this window and return to The City.'\n"
         do {
             try body.write(to: script, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
             NSWorkspace.shared.open(script)
         } catch {
-            appLog("Couldn’t open Terminal to sign in: \(error.localizedDescription)")
+            NSAlert(error: error).runModal()
         }
     }
 

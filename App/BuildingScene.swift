@@ -14,6 +14,7 @@ final class BuildingScene {
     let camera = CameraRig(overview: .init(target: [0, 6, 0], yaw: 0.62, pitch: 0.2, distance: 60))
     var updates: EventSubscription?
     private(set) var buildingID: UUID?
+    private var builtShell: String?
     private var building: CityStore.Building?
     private(set) var activeFloor: UUID?
     private var storeys: [(id: UUID, scene: OfficeScene, index: Int)] = []
@@ -48,30 +49,51 @@ final class BuildingScene {
         root.addChild(tower)
     }
 
+    /// Rebuilding the shell (lobby, glazing, roof, sign and floor labels) is the slow part of entering a building,
+    /// so it's kept while the building's floors, names, theme and brand stay the same, and only the offices are re-slotted.
     func show(_ building: CityStore.Building, sessions: [(UUID, RunController)], dark: Bool) {
+        let shell = "\(building.id)|\(building.name)|\(building.title ?? "")|\(sessions.map(\.0))|\(dark)|\(BrandStore.shared.selectedID)"
+        let rebuild = shell != builtShell
         self.dark = dark
         buildingID = building.id
         self.building = building
-        for storey in storeys where !sessions.contains(where: { $0.0 == storey.id }) {
+        for storey in storeys where !sessions.contains(where: { $0.1.scene === storey.scene }) {
             storey.scene.root.removeFromParent()
             storey.scene.root.components.remove(OpacityComponent.self)
         }
-        tower.children.removeAll()
+        if rebuild {
+            tower.children.removeAll()
+            labels = [:]
+        }
         storeys = []
-        labels = [:]
         self.sessions = Dictionary(sessions, uniquingKeysWith: { $1 })
         for (index, (id, session)) in sessions.enumerated() {
             let scene = session.scene
             scene.adopt(camera: camera)
-            scene.root.removeFromParent()
+            if scene.root.parent !== tower {
+                scene.root.removeFromParent()
+                tower.addChild(scene.root)
+            }
             scene.root.position = [0, Float(index + 1) * Self.storeyHeight, 0]
             scene.isActive = false
             scene.fit(viewSize)
             scene.sunEnabled = index == 0
-            tower.addChild(scene.root)
             storeys.append((id, scene, index))
         }
-        lobbyParts = buildLobby(width: OfficeScene.footprint.x, depth: OfficeScene.footprint.y, floors: sessions.count)
+        if rebuild {
+            buildShell(building, floors: sessions.count)
+            builtShell = shell
+        }
+        camera.overview = overviewPose()
+        if activeFloor == nil || !storeys.contains(where: { $0.id == activeFloor }) {
+            activeFloor = nil
+            lobbyFocused = false
+            camera.reset(to: camera.overview, animated: false)
+        }
+    }
+
+    private func buildShell(_ building: CityStore.Building, floors: Int) {
+        lobbyParts = buildLobby(width: OfficeScene.footprint.x, depth: OfficeScene.footprint.y, floors: floors)
         lobbyParts.forEach { $0.isEnabled = true }
         tower.addChild(lobbyLight)
         let receiver = ImageBasedLightReceiverComponent(imageBasedLight: lobbyLight)
@@ -86,25 +108,28 @@ final class BuildingScene {
         ground.isEnabled = showsGround
         tower.addChild(ground)
         if showsGround { tower.addChild(haze) }
-        if sessions.isEmpty {
+        if floors == 0 {
             emptySun.components.set(DirectionalLightComponent.Shadow(maximumDistance: 30, depthBias: 2))
             tower.addChild(emptySun)
         }
         fitOut = [:]
-        for level in 0...sessions.count {
-            let storey = fitOut(level: level, doorway: level == 0)
+        for level in 0...floors {
+            // Every upper storey's fit-out is the same, so storeys above the first clone it and share its meshes.
+            let storey = level > 1 ? fitOut[0]!.clone(recursive: true) : fitOut(level: level, doorway: level == 0)
             storey.position.y = Float(level) * Self.storeyHeight
-            storey.components.set(receiver)
-            storey.descendants.forEach { $0.components.set(receiver) }
+            if level <= 1 {
+                storey.components.set(receiver)
+                storey.descendants.forEach { $0.components.set(receiver) }
+            }
             tower.addChild(storey)
             if level == 0 { lobbyParts.append(storey) } else { fitOut[level - 1] = storey }
         }
         applyDaylight()
-        let height = Float(sessions.count + 1) * Self.storeyHeight
+        let height = Float(floors + 1) * Self.storeyHeight
         let roof = ModelEntity(mesh: .generateBox(width: OfficeScene.footprint.x + 0.8, height: Self.roofThickness, depth: OfficeScene.footprint.y + 0.8, cornerRadius: 0.2),
                                materials: [OfficeScene.material(Palette.resolved(Palette.walls, dark: dark))])
         roof.position = [0, roofTop - Self.roofThickness / 2, 0]
-        roof.isEnabled = !sessions.isEmpty
+        roof.isEnabled = floors > 0
         tower.addChild(roof)
         crown = [roof]
         if let sign = Billboard.make(ProjectBillboardView(title: building.title ?? building.name, folder: building.name), dark: dark) {
@@ -113,12 +138,6 @@ final class BuildingScene {
             crown.append(sign)
         }
         refreshLabels(force: true)
-        camera.overview = overviewPose()
-        if activeFloor == nil || !storeys.contains(where: { $0.id == activeFloor }) {
-            activeFloor = nil
-            lobbyFocused = false
-            camera.reset(to: camera.overview, animated: false)
-        }
     }
 
     private func buildLobby(width: Float, depth: Float, floors: Int) -> [Entity] {

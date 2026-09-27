@@ -45,7 +45,11 @@ final class CityStore {
     static let shared = CityStore()
 
     private(set) var buildings: [Building] = []
-    var route: Route = .welcome
+    var route: Route = .welcome {
+        didSet { endDemoIfLeft() }
+    }
+    private(set) var demoID: UUID?
+    private var demoEntered = false
     private(set) var sessions: [UUID: RunController] = [:]
     private(set) var draft: RunController?
     private(set) var journal: [JobRecord] = JobJournal.load()
@@ -251,6 +255,46 @@ final class CityStore {
         session.replay(url)
     }
 
+    func startDemo() {
+        guard demoID == nil,
+              let workspace = Bundle.main.url(forResource: "SampleWorkspace", withExtension: nil),
+              let recording = Bundle.main.url(forResource: "three-rooms", withExtension: "jsonl") else { return }
+        let floor = Floor(name: "Demo", hires: AgentCatalogue.load(workingDirectory: workspace).filter { !$0.isBuiltIn }.map(\.name),
+                          budgetUSD: Preferences.shared.budgetUSD,
+                          lastRequest: "Write hello.txt with a one-line greeting.", nameIsCustom: true)
+        let building = Building(name: "Demo", path: workspace.path, style: buildings.count % 8, floors: [floor], title: "Demo")
+        buildings.append(building)
+        demoID = building.id
+        route = .city
+        Task { @MainActor in
+            // Entering the floor before the building has finished rising leaves the camera outside it.
+            try? await Task.sleep(for: .milliseconds(100))
+            guard demoID == building.id else { return }
+            route = .building(building.id)
+            try? await Task.sleep(for: .seconds(OfficeScene.reduceMotion ? 0.1 : World.slide + 0.2))
+            guard demoID == building.id, route == .building(building.id) else { return }
+            route = .floor(building: building.id, floor: floor.id)
+            session(for: floor.id, in: building.id)?.replay(recording)
+        }
+    }
+
+    private func endDemoIfLeft() {
+        guard let id = demoID else { return }
+        switch route {
+        case .building(id), .floor(id, _), .newFloor(id):
+            demoEntered = true
+            return
+        default:
+            guard demoEntered else { return }
+        }
+        demoID = nil
+        demoEntered = false
+        if draft?.buildingID == id { draft = nil }
+        building(id)?.floors.forEach { sessions[$0.id]?.cancel(); sessions[$0.id] = nil }
+        buildings.removeAll { $0.id == id }
+        if buildings.isEmpty { route = .welcome }
+    }
+
     var activeSession: RunController? {
         switch route {
         case .floor(let building, let floor): session(for: floor, in: building)
@@ -320,7 +364,7 @@ final class CityStore {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(buildings) else { return }
+        guard let data = try? encoder.encode(buildings.filter { $0.id != demoID }) else { return }
         try? FileManager.default.createDirectory(at: Self.fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: Self.fileURL, options: .atomic)
     }

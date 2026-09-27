@@ -40,6 +40,13 @@ struct TitleHUD: View {
                 .buttonStyle(PillButtonStyle())
                 .keyboardShortcut(.defaultAction)
                 .disabled(city.groundBreaking != nil)
+            Button("Watch a Demo") { city.startDemo() }
+                .buttonStyle(PillButtonStyle())
+                .disabled(city.groundBreaking != nil)
+
+            Text("Replays a recording — no tokens used.")
+                .font(Typography.body)
+                .foregroundStyle(Color(Palette.muted))
             Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)

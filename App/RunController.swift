@@ -63,7 +63,7 @@ final class RunController {
     private(set) var hiringIsSlow = false
     var workingDirectory: URL? {
         didSet {
-            UserDefaults.standard.set(workingDirectory?.path, forKey: "workingDirectory")
+            if !isDemo { UserDefaults.standard.set(workingDirectory?.path, forKey: "workingDirectory") }
             loadKit()
             refreshCatalogue()
         }
@@ -487,10 +487,16 @@ final class RunController {
 
     // MARK: Running
 
+    var isDemo: Bool { workingDirectory?.path.hasPrefix(Bundle.main.bundlePath) == true }
+
     private func start(message request: String, resume: String?) {
         guard !isRunning, let workingDirectory else { return }
         isReplay = false
         reset(keepLog: resume != nil)
+        guard !isDemo else {
+            send(.launchFailed(.couldNotStart("The demo only replays a recording. Break ground on one of your own projects to run a real job.")))
+            return
+        }
         CityStore.shared.jobStarted(on: floorID, in: buildingID, request: request)
         if let resume { appLog("Follow-up in session \(resume): \(request)") }
         let config = RunConfig(
@@ -547,7 +553,7 @@ final class RunController {
 
     func replay(_ url: URL) {
         guard !isRunning else { return }
-        if let workingDirectory { hired = AgentCatalogue.load(workingDirectory: workingDirectory) }
+        if hired.isEmpty, let workingDirectory { hired = AgentCatalogue.load(workingDirectory: workingDirectory) }
         screen = .office
         jobFiles = []
         followUps = []
@@ -555,7 +561,7 @@ final class RunController {
         reset(keepLog: false)
         do {
             isReplay = true
-            let stream = try FixtureReplay.stream(contentsOf: url)
+            let stream = try FixtureReplay.stream(contentsOf: url, workingDirectory: workingDirectory)
             appLog("Replaying \(url.lastPathComponent)")
             send(.launched)
             consumer = Task { [weak self] in await self?.consume(stream) }

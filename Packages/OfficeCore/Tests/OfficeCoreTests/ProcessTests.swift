@@ -131,4 +131,13 @@ struct ProcessTests {
         #expect(count == 39)
         #expect(exited)
     }
+
+    @Test func replayMovesRecordedPathsToTheWorkingDirectory() throws {
+        let text = try String(contentsOf: Fixture.url("three-rooms.jsonl"), encoding: .utf8)
+        let lines = FixtureReplay.relocated(text, to: URL(fileURLWithPath: "/tmp/Demo"))
+        #expect(lines.count == 39)
+        #expect(!lines.contains { $0.contains("/theOffice/SampleWorkspace") })
+        #expect(lines.contains { $0.contains("/tmp/Demo/hello.txt") })
+        #expect(FixtureReplay.relocated(text, to: nil).joined(separator: "\n") == text.trimmingCharacters(in: .newlines))
+    }
 }

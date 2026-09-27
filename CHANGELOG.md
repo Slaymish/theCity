@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0
+
+- Settings › Accounts has an Add Account… button that names a new Claude account and opens Terminal so you can sign in to it.
+- Settings is split into General, Accounts, Appearance and Alerts tabs, so it fits on smaller screens.
+- New jobs now default to a US$5 budget instead of US$1, unless you've already picked one in Settings.
+- The city stops rendering while its window is minimised or fully covered, so it uses far less CPU in the background.
+- If Terminal can't be opened to sign in, The City now shows an error instead of doing nothing.
+
 ## 0.1.1
 
 - New app icon: a city block with its robot out front.

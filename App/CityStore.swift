@@ -255,10 +255,12 @@ final class CityStore {
         session.replay(url)
     }
 
+    static var demoRecording: URL? { Bundle.main.url(forResource: "three-rooms", withExtension: "jsonl") }
+
     func startDemo() {
         guard demoID == nil,
               let workspace = Bundle.main.url(forResource: "SampleWorkspace", withExtension: nil),
-              let recording = Bundle.main.url(forResource: "three-rooms", withExtension: "jsonl") else { return }
+              let recording = Self.demoRecording else { return }
         let floor = Floor(name: "Demo", hires: AgentCatalogue.load(workingDirectory: workspace).filter { !$0.isBuiltIn }.map(\.name),
                           budgetUSD: Preferences.shared.budgetUSD,
                           lastRequest: "Write hello.txt with a one-line greeting.", nameIsCustom: true)

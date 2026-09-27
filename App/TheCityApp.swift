@@ -46,6 +46,12 @@ struct TheCityApp: App {
 struct OfficeCommands: Commands {
     let city: CityStore
     @Environment(\.openWindow) private var openWindow
+    static let helpPage = URL(string: "https://github.com/Slaymish/theCity#how-it-works")!
+
+    /// Question cards answer with ⌘1–⌘9, so floor jumping steps aside while one is up.
+    private var questionShowing: Bool {
+        city.activeSession?.state.pendingRequests.contains { if case .question = $0.request.kind { true } else { false } } == true
+    }
 
     var body: some Commands {
         #if !DEBUG
@@ -76,6 +82,7 @@ struct OfficeCommands: Commands {
         CommandGroup(before: .toolbar) {
             Button("City") { city.route = city.buildings.isEmpty ? .welcome : .city }
                 .keyboardShortcut("0", modifiers: .command)
+            Button("Reset View") { NotificationCenter.default.post(name: .resetView, object: nil) }
             ForEach(1...9, id: \.self) { number in
                 Button("Floor \(number)") {
                     if let id = city.currentBuildingID, let floor = city.building(id)?.floors.dropFirst(number - 1).first {
@@ -83,7 +90,7 @@ struct OfficeCommands: Commands {
                     }
                 }
                 .keyboardShortcut(KeyEquivalent(Character(String(number))), modifiers: .command)
-                .disabled((city.currentBuildingID.flatMap { city.building($0)?.floors.count } ?? 0) < number)
+                .disabled((city.currentBuildingID.flatMap { city.building($0)?.floors.count } ?? 0) < number || questionShowing)
             }
             Button(city.activeSession?.showPanel ?? true ? "Hide Panel" : "Show Panel") { city.activeSession?.showPanel.toggle() }
                 .keyboardShortcut("\\", modifiers: .command)
@@ -97,7 +104,10 @@ struct OfficeCommands: Commands {
                 .keyboardShortcut(".", modifiers: .command)
                 .disabled(city.activeSession?.isRunning != true)
         }
-        CommandGroup(replacing: .help) {}
+        CommandGroup(replacing: .help) {
+            Button("The City Help") { NSWorkspace.shared.open(Self.helpPage) }
+                .keyboardShortcut("?", modifiers: .command)
+        }
         #if DEBUG
         CommandMenu("Debug") {
             Button("Replay Fixture…") { NotificationCenter.default.post(name: .replayFixture, object: nil) }

@@ -15,6 +15,7 @@ final class CameraRig {
     let entity = Entity()
     private(set) var current: Pose
     private(set) var goal: Pose
+    private var anchor: Pose
     private var velocity = Pose(target: .zero, yaw: 0, pitch: 0, distance: 0)
     var overview: Pose
     var smoothTime: Float = 0.45
@@ -28,6 +29,7 @@ final class CameraRig {
         self.overview = overview
         current = overview
         goal = overview
+        anchor = overview
         var lens = PerspectiveCameraComponent()
         lens.fieldOfViewInDegrees = 26
         lens.near = 0.1
@@ -38,6 +40,7 @@ final class CameraRig {
 
     func reset(to pose: Pose, animated: Bool = true) {
         goal = pose
+        anchor = pose
         if !animated {
             current = pose
             velocity = Pose(target: .zero, yaw: 0, pitch: 0, distance: 0)
@@ -59,10 +62,23 @@ final class CameraRig {
         let forward = SIMD3<Float>(sin(current.yaw), 0, cos(current.yaw))
         let scale = current.distance * 0.0016
         goal.target += (-right * dx + forward * -dy) * scale
+        var offset = goal.target - anchor.target
+        offset.y = 0
+        let limit = anchor.distance
+        if simd_length(offset) > limit { goal.target -= offset - simd_normalize(offset) * limit }
     }
 
     func focus(on point: SIMD3<Float>, facing yaw: Float, distance: Float = 7, pitch: Float = 0.32) {
-        goal = Pose(target: point, yaw: yaw, pitch: pitch, distance: distance)
+        reset(to: Pose(target: point, yaw: yaw, pitch: pitch, distance: distance))
+    }
+
+    func lift(to height: Float) {
+        goal.target.y = height
+        anchor.target.y = height
+    }
+
+    func recentre() {
+        goal = anchor
     }
 
     func project(_ point: SIMD3<Float>, in size: CGSize) -> (SIMD2<Float>, Float)? {

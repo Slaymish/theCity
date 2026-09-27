@@ -313,9 +313,7 @@ final class BuildingScene {
 
     /// Scrolling in the building view steps the camera up and down the tower, one storey at a time.
     func scroll(by delta: Float) {
-        var goal = camera.goal
-        goal.target.y = (goal.target.y + delta * 0.04).clamped(to: 1...max(towerHeight - 2, 1))
-        camera.reset(to: goal)
+        camera.lift(to: (camera.goal.target.y + delta * 0.04).clamped(to: 1...max(towerHeight - 2, 1)))
     }
 
     func floor(of entity: Entity) -> UUID? {

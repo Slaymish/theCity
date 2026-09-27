@@ -319,11 +319,13 @@ struct JobCard: View {
                 .font(Typography.caption)
                 .lineLimit(4)
                 .help(controller.request)
+                .textSelection(.enabled)
             ForEach(Array(controller.followUps.enumerated()), id: \.offset) { _, text in
                 Text("Then: \(text)")
                     .font(Typography.caption)
                     .foregroundStyle(Color(Palette.muted))
                     .lineLimit(2)
+                    .textSelection(.enabled)
             }
             PermissionModeMenu(controller: controller)
         }

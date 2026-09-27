@@ -208,10 +208,22 @@ final class CityStore {
 
     func headlessHiringDone(_ session: RunController) {
         guard let buildingID = session.buildingID, hiringHeadless[buildingID] === session else { return }
-        if session.candidates.contains(where: \.hired) { return session.openOffice() }
-        hiringHeadless[buildingID] = nil
         let name = session.displayTitle
         let place = building(buildingID)?.name ?? name
+        if session.candidates.contains(where: \.hired) {
+            // The menu bar can't show the readiness row, so don't set up a floor whose job can't start.
+            Task {
+                let readiness = await session.settledReadiness()
+                guard hiringHeadless[buildingID] === session else { return }
+                guard readiness == .ready else {
+                    hiringHeadless[buildingID] = nil
+                    return Attention.shared.notReady(readiness, place: place, building: buildingID)
+                }
+                session.openOffice()
+            }
+            return
+        }
+        hiringHeadless[buildingID] = nil
         guard draft == nil else {
             return Attention.shared.needsTeam(for: name, place: place, building: buildingID, drafted: false)
         }

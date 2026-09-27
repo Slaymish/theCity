@@ -289,6 +289,16 @@ final class RunController {
         }
     }
 
+    /// Waits for a readiness check in progress to finish, giving up after 30 seconds.
+    func settledReadiness() async -> Readiness {
+        var waited = 0
+        while readiness == .checking, waited < 300 {
+            try? await Task.sleep(for: .milliseconds(100))
+            waited += 1
+        }
+        return readiness
+    }
+
     func signIn() { Self.signIn(configDirectory: configDirectory) }
 
     /// The inventory run costs nothing, so Settings can list models before any floor exists.

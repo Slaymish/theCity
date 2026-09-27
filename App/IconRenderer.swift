@@ -1,8 +1,7 @@
 import AppKit
-import Metal
 import RealityKit
 
-/// Renders the app icon from the scene's own manager desk: `TheCity -render-icon <file.png>`.
+/// Renders the app icon from the city's own models: `TheCity -render-icon <file.png>`.
 @MainActor
 enum IconRenderer {
     static func run(to path: String) {
@@ -17,12 +16,25 @@ enum IconRenderer {
     }
 
     static func render(size: Int) throws -> CGImage {
-        guard let device = MTLCreateSystemDefaultDevice() else { throw CocoaError(.featureUnsupported) }
-        let renderer = try RealityRenderer()
         let root = Entity()
-        let pod = Pod(room: "manager", colour: Palette.manager, at: .zero, variant: 3, dark: true)
-        pod.worker.setMood(.idle)
-        root.addChild(pod.root)
+        let base = ModelLibrary.entity("base")
+        root.addChild(base)
+        var building = CityStore.Building(name: "icon", path: "", style: Facade.Style.brick.rawValue)
+        building.floors = [.init(name: "", hires: [], budgetUSD: 1), .init(name: "", hires: [], budgetUSD: 1)]
+        let tower = Facade.tower(building, dark: false)
+        tower.position = [0.05, 0.1, -0.1]
+        root.addChild(tower)
+        let bush = ModelLibrary.entity("bush")
+        bush.position = [0.78, 0.1, 0.72]
+        bush.scale = SIMD3(repeating: 1.6)
+        root.addChild(bush)
+        let robot = ModelLibrary.entity("robot")
+        robot.position = [-0.2, 0.1, 0.78]
+        robot.scale = SIMD3(repeating: 0.85)
+        robot.orientation = simd_quatf(angle: 0.78, axis: [0, 1, 0])
+        root.addChild(robot)
+        _ = Worker(robot: robot, screen: nil, colour: Palette.primaryFill, room: "reception")
+
         let sun = Entity()
         var light = DirectionalLightComponent(color: .white, intensity: 2600)
         light.isRealWorldProxy = false
@@ -31,33 +43,14 @@ enum IconRenderer {
         root.addChild(sun)
         let camera = Entity()
         var ortho = OrthographicCameraComponent()
-        ortho.scale = 3.4
+        ortho.scale = 1.9
         camera.components.set(ortho)
-        camera.look(at: [0, 1.2, 0], from: [9, 9.5, 9], relativeTo: nil)
+        camera.look(at: [0, 0.55, 0], from: [9, 8, 9], relativeTo: nil)
         root.addChild(camera)
-        renderer.entities.append(root)
-        renderer.activeCamera = camera
-        renderer.cameraSettings.colorBackground = .color(CGColor(gray: 0, alpha: 0))
-        if let environment = ModelLibrary.environment("studio") {
-            renderer.lighting.resource = environment
-            renderer.lighting.intensityExponent = 0.6
-        }
-
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm_srgb, width: size, height: size, mipmapped: false)
-        descriptor.usage = [.renderTarget, .shaderRead]
-        descriptor.storageMode = .shared
-        guard let texture = device.makeTexture(descriptor: descriptor) else { throw CocoaError(.featureUnsupported) }
-        let output = try RealityRenderer.CameraOutput(.singleProjection(colorTexture: texture))
-        let done = DispatchSemaphore(value: 0)
-        for _ in 0..<3 { try renderer.update(1.0 / 60) }
-        try renderer.updateAndRender(deltaTime: 1.0 / 60, cameraOutput: output, onComplete: { _ in done.signal() })
-        guard done.wait(timeout: .now() + 10) == .success else { throw CocoaError(.fileWriteUnknown) }
-
-        var bytes = [UInt8](repeating: 0, count: size * size * 4)
-        texture.getBytes(&bytes, bytesPerRow: size * 4, from: MTLRegionMake2D(0, 0, size, size), mipmapLevel: 0)
-        let scene = CGContext(data: &bytes, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4,
-                              space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                              bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!.makeImage()!
+        let recorder = try FrameRecorder(root: root, camera: camera, width: size, height: size,
+                                         environment: ModelLibrary.environment("sky"), exposure: 0.6)
+        try recorder.warmUp()
+        let scene = try recorder.capture()
 
         let canvas = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
@@ -65,7 +58,7 @@ enum IconRenderer {
         let shape = CGRect(x: inset, y: inset, width: CGFloat(size) - 2 * inset, height: CGFloat(size) - 2 * inset)
         let squircle = CGPath(roundedRect: shape, cornerWidth: shape.width * 0.225, cornerHeight: shape.width * 0.225, transform: nil)
         canvas.addPath(squircle)
-        canvas.setFillColor(Palette.resolved(Palette.background, dark: true).cgColor)
+        canvas.setFillColor(Palette.resolved(Palette.background, dark: false).cgColor)
         canvas.fillPath()
         canvas.addPath(squircle)
         canvas.clip()

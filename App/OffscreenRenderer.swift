@@ -4,13 +4,19 @@ import OfficeCore
 import RealityKit
 import SwiftUI
 
+/// One offscreen renderer kept across frames, so a sequence can be captured without rebuilding it each time.
 @MainActor
-enum OffscreenRenderer {
-    static func render(root: Entity, camera: Entity, width: Int, height: Int,
-                       environment: EnvironmentResource? = nil, exposure: Float = 0,
-                       background: CGColor = CGColor(gray: 0, alpha: 0)) throws -> CGImage {
+final class FrameRecorder {
+    private let renderer: RealityRenderer
+    private let texture: MTLTexture
+    private let output: RealityRenderer.CameraOutput
+    let width: Int
+    let height: Int
+
+    init(root: Entity, camera: Entity, width: Int, height: Int, environment: EnvironmentResource? = nil, exposure: Float = 0,
+         background: CGColor = CGColor(gray: 0, alpha: 0)) throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw CocoaError(.featureUnsupported) }
-        let renderer = try RealityRenderer()
+        renderer = try RealityRenderer()
         renderer.entities.append(root)
         if camera.parent == nil { renderer.entities.append(camera) }
         renderer.activeCamera = camera
@@ -23,8 +29,18 @@ enum OffscreenRenderer {
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .shared
         guard let texture = device.makeTexture(descriptor: descriptor) else { throw CocoaError(.featureUnsupported) }
-        let output = try RealityRenderer.CameraOutput(.singleProjection(colorTexture: texture))
+        self.texture = texture
+        output = try RealityRenderer.CameraOutput(.singleProjection(colorTexture: texture))
+        self.width = width
+        self.height = height
+    }
+
+    func warmUp() throws {
         for _ in 0..<3 { try renderer.update(1.0 / 60) }
+    }
+
+    func capture(camera: Entity? = nil) throws -> CGImage {
+        if let camera { renderer.activeCamera = camera }
         let done = DispatchSemaphore(value: 0)
         try renderer.updateAndRender(deltaTime: 1.0 / 60, cameraOutput: output, onComplete: { _ in done.signal() })
         guard done.wait(timeout: .now() + 20) == .success else { throw CocoaError(.fileWriteUnknown) }
@@ -34,12 +50,28 @@ enum OffscreenRenderer {
                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
                          bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!.makeImage()!
     }
+}
+
+@MainActor
+enum OffscreenRenderer {
+    static func render(root: Entity, camera: Entity, width: Int, height: Int,
+                       environment: EnvironmentResource? = nil, exposure: Float = 0,
+                       background: CGColor = CGColor(gray: 0, alpha: 0)) throws -> CGImage {
+        let recorder = try FrameRecorder(root: root, camera: camera, width: width, height: height,
+                                         environment: environment, exposure: exposure, background: background)
+        try recorder.warmUp()
+        return try recorder.capture()
+    }
 
     static func composite(_ base: CGImage, overlay: some View, leadingAt point: CGPoint) throws -> CGImage {
         let renderer = ImageRenderer(content: overlay)
         renderer.scale = 1
-        guard let card = renderer.cgImage,
-              let context = CGContext(data: nil, width: base.width, height: base.height, bitsPerComponent: 8, bytesPerRow: 0,
+        guard let card = renderer.cgImage else { throw CocoaError(.fileWriteUnknown) }
+        return try composite(base, card: card, leadingAt: point)
+    }
+
+    static func composite(_ base: CGImage, card: CGImage, leadingAt point: CGPoint) throws -> CGImage {
+        guard let context = CGContext(data: nil, width: base.width, height: base.height, bitsPerComponent: 8, bytesPerRow: 0,
                                       space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
         else { throw CocoaError(.fileWriteUnknown) }

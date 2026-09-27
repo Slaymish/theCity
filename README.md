@@ -1,6 +1,10 @@
+<p align="center"><img src="App/Assets.xcassets/AppIcon.appiconset/icon_128x128@2x.png" width="128" alt=""></p>
+
 # The City
 
 A macOS app that shows Claude Code runs as a city of robot-staffed offices. Every project folder is a building, every building has floors of robots, and every animation comes from a real event in the `claude` CLI's stream.
+
+![Breaking ground on a new project, then walking into its building and up to a floor where the robots are working](Docs/Media/city.gif)
 
 ## Requirements
 
@@ -23,6 +27,8 @@ A macOS app that shows Claude Code runs as a city of robot-staffed offices. Ever
 The app uses [Sparkle](https://sparkle-project.org) to check for new releases and install them. To check straight away, choose **The City › Check for Updates…**.
 
 ## How it works
+
+![A floor at work: the manager hands folders to each desk, a robot raises its hand for approval to run a command, then the finished job goes to the outbox](Docs/Media/office.gif)
 
 - **City:** each project folder is a building (File › New Project…, ⇧⌘N). Beacons show which buildings are working or need you, and a "Needs you" list jumps to the waiting floor. ⌘0 returns to the city.
 - **Reception:** tell the receptionist what you need. It sends the job to the floor whose team fits, taking into account work already running on other floors, or proposes a new floor. A busy floor queues the job.
@@ -55,6 +61,8 @@ make clean     # remove build output and the generated project
 CI runs the tests and builds the app on every push and pull request. Pushing a tag such as `v0.2.0` also builds a release with that version and publishes the `.dmg`, `.zip` and Sparkle `appcast.xml` to GitHub Releases, using the tag's section of `CHANGELOG.md` as the notes. Updates are signed with the EdDSA key in the `SPARKLE_ED_PRIVATE_KEY` repository secret, which must match `SUPublicEDKey` in `project.yml`.
 
 In Claude Code, `/release` does the whole thing: it checks `main` is clean and green, writes the CHANGELOG section from what changed since the last tag, then tags, pushes and checks the published release.
+
+`Tools/Dev/readme-gifs.sh` re-renders the GIFs in this README from scripted scenes (needs `make build`, ffmpeg and gifsicle). `TheCity -render-icon <file.png>` renders the app icon at 1024 px.
 
 `make project` regenerates `TheCity.xcodeproj` from `project.yml` on its own. In debug builds, **Debug › Replay Fixture…** (⇧⌘R) replays any saved stream.
 

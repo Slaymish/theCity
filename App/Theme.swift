@@ -49,7 +49,7 @@ enum Palette {
         fill.isEqual(muted) || resolved(fill, dark: false) == resolved(muted, dark: false) ? background : onAccent
     }
 
-    static func accent(forHireIndex index: Int) -> NSColor {
+    static func accent(forCatalogueIndex index: Int) -> NSColor {
         let colours = departments
         return colours[index % max(colours.count, 1)]
     }

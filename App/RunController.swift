@@ -112,7 +112,6 @@ final class RunController {
     @ObservationIgnored private var isReplay = false
 
     static let budgets: [Double] = [0.5, 1, 2, 5, 10]
-    static let models = ["sonnet", "haiku", "opus", "fable"]
 
     init(building: CityStore.Building?, floor: CityStore.Floor?) {
         buildingID = building?.id
@@ -217,12 +216,6 @@ final class RunController {
         return kit?.models.first { $0.value == value }?.displayName ?? value.capitalized
     }
 
-    var workspaceSummary: String? {
-        guard let workingDirectory else { return nil }
-        let count = catalogueNames.count
-        return "\(workingDirectory.lastPathComponent) · \(count == 0 ? "no" : "\(count)") department\(count == 1 ? "" : "s") on staff"
-    }
-
     func refreshCatalogue() {
         catalogueNames = workingDirectory.map { AgentCatalogue.load(workingDirectory: $0).map(\.name) } ?? []
     }
@@ -283,7 +276,7 @@ final class RunController {
 
     func colour(for room: String) -> NSColor {
         if room == "manager" { return Palette.manager }
-        if let index = catalogueNames.firstIndex(of: room) { return Palette.accent(forHireIndex: index) }
+        if let index = catalogueNames.firstIndex(of: room) { return Palette.accent(forCatalogueIndex: index) }
         return Palette.muted
     }
 

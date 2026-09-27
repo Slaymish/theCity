@@ -15,11 +15,6 @@ struct ReceptionView: View {
                     Button("Cancel", action: onCancel).buttonStyle(PillButtonStyle(kind: .secondary))
                 }
             }
-            if let summary = controller.workspaceSummary {
-                Text(summary)
-                    .font(Typography.caption)
-                    .foregroundStyle(Color(Palette.muted))
-            }
             VStack(alignment: .leading, spacing: 10) {
                 Text("The job").eyebrow()
                 TextField("Describe the job, for example: tidy the README and fix broken links", text: $controller.request, axis: .vertical)

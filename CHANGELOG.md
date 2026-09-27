@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1
+
+- The city and floors do less work each frame and for each stream event, so The City uses less CPU while it's open and while jobs run.
+- Settings › Dictation offers Download Again when the Whisper model fails to load, so a download that was cut short no longer means choosing None and starting over.
+- Fixed Ask Reception in the menu bar setting up a floor when Claude Code was missing, out of date or signed out; it now sends a notification instead.
+- Fixed a floor's history staying on disk after the floor or its project was removed.
+
 ## 0.8.0
 
 ### Added

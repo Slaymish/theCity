@@ -3,9 +3,9 @@ import RealityKit
 /// Woodland and ground cover drawn with GPU instancing: one entity per model, however many copies.
 @MainActor
 enum Foliage {
-    /// Every part of `name` drawn at each of `placements`; `casts` turns off shadows for low cover like grass.
+    /// Every part of `name` drawn at each of `placements`, without shadows.
     /// Instanced models must not get a `GroundingShadowComponent`: RealityKit's mesh shadow system crashes on them.
-    static func instanced(_ name: String, _ placements: [simd_float4x4], casts: Bool = true) -> Entity {
+    static func instanced(_ name: String, _ placements: [simd_float4x4]) -> Entity {
         let holder = Entity()
         guard !placements.isEmpty else { return holder }
         let source = ModelLibrary.entity(name)
@@ -21,7 +21,8 @@ enum Foliage {
             let copy = Entity()
             copy.components.set(model)
             copy.components.set(instances)
-            copy.components.set(DynamicLightShadowComponent(castsShadow: casts))
+            // Instances cast smeared shadows far from their trees, which reshape whenever the camera moves.
+            copy.components.set(DynamicLightShadowComponent(castsShadow: false))
             holder.addChild(copy)
         }
         return holder

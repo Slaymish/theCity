@@ -22,6 +22,7 @@ struct Brand: Codable, Identifiable, Equatable {
         var error: String
         var tray: String
         var grass: String?
+        var cloud: String?
     }
 
     /// Scene lighting that follows the clock rather than the appearance; optional so a brand can fall back to The City's.
@@ -63,10 +64,12 @@ struct Brand: Codable, Identifiable, Equatable {
     func tokens(dark wantsDark: Bool) -> Tokens {
         var tokens = wantsDark ? (dark ?? light) : light
         if tokens.grass == nil { tokens.grass = wantsDark && dark != nil ? Self.defaultGrass.dark : Self.defaultGrass.light }
+        if tokens.cloud == nil { tokens.cloud = wantsDark && dark != nil ? Self.defaultCloud.dark : Self.defaultCloud.light }
         return tokens
     }
 
     static let defaultGrass = (light: "#BFE3A0", dark: "#5E7A4F")
+    static let defaultCloud = (light: "#FFFFFF", dark: "#D9D4E6")
     static let defaultSky = Sky(moonlight: "#9DB4E8", dusk: "#FFB070", streetlight: "#FFC46B", nightSky: "#1A1F3D", duskSky: "#F2A88C")
 
     var logoImage: NSImage? {
@@ -149,7 +152,7 @@ extension Brand {
         light: .init(background: "#DCEEFB", panel: "#FFFDF7", panelEdge: "#EADFCB", text: "#3B2F2A", muted: "#7A6A60",
                      primaryFill: "#F2C14E", primaryText: "#3B2F2A", floor: "#E8CFA8", walls: "#F6EEDF",
                      screen: "#2D3A36", screenPixels: "#B6F26B", robot: "#F5F2F8", desk: "#CC9E73", lamp: "#FFDB9E",
-                     folder: "#FAC740", error: "#E54D4D", tray: "#4D5266", grass: "#BFE3A0"),
+                     folder: "#FAC740", error: "#E54D4D", tray: "#4D5266", grass: "#BFE3A0", cloud: "#FFFFFF"),
         dark: nil, sky: defaultSky, departments: ["#F2836B", "#7DBB5E", "#F2C14E", "#5A7BD8"], manager: "#C9557A", onAccent: "#3B2F2A",
         notes: nil, folder: nil)
 }

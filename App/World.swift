@@ -36,6 +36,7 @@ final class World {
             let eye = (building.camera.entity.position(relativeTo: nil) - frame.offset) / frame.scale
             let target = (building.camera.current.target - frame.offset) / frame.scale
             city.hideOccluders(eye: eye, target: target, keeping: id)
+            city.borrowedEye = (eye, target)
         }
     }
 
@@ -100,6 +101,7 @@ final class World {
             city.camera.entity.isEnabled = true
             applyCity(frame: (1, .zero))
             city.hideOccluders(eye: nil, target: .zero, keeping: nil)
+            city.borrowedEye = nil
             city.setLabelsVisible(true)
             city.sunEnabled = true
             inBuilding = nil

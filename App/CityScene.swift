@@ -25,6 +25,12 @@ final class CityScene {
     private var cars: [(entity: Entity, along: Float)] = []
     private var cover: [String: [simd_float4x4]] = [:]
     private var loop: (origin: Float, length: Float) = (0, 1)
+    private let haze = Horizon.haze()
+    private let sky = Entity()
+    private var clouds: [(entity: ModelEntity, opacity: Float)] = []
+    /// Where the building view's camera sits in city space, while it rather than the city's own camera is looking.
+    var borrowedEye: (eye: SIMD3<Float>, target: SIMD3<Float>)?
+    static let woodland = ["tree_default", "tree_oak", "tree_detailed", "tree_fat", "tree_tall", "tree_pineRoundC", "tree_pineDefaultB"]
     static let carSpeed: Float = 0.5
     var hostsCamera = true
     var titleMode = false
@@ -110,13 +116,61 @@ final class CityScene {
         addTreeRing(halfWidth: extent / 2)
         addCountryside(halfWidth: extent / 2)
         for (name, placements) in cover {
-            root.addChild(Foliage.instanced(name, placements, casts: !["grass_tuft", "flowers_A", "flowers_B", "pebbles"].contains(name)))
+            root.addChild(Foliage.instanced(name, placements))
         }
         setUpLighting()
         camera.overview = overviewPose()
         if firstBuild { camera.reset(to: titleMode ? titlePose() : camera.overview, animated: false) }
         applyReceivers()
+        addSky()
         refresh()
+    }
+
+    private func addSky() {
+        root.addChild(haze)
+        sky.children.removeAll()
+        root.addChild(sky)
+        clouds = []
+        var generator = SeededGenerator(seed: 23)
+        let receiver = ImageBasedLightReceiverComponent(imageBasedLight: lighting)
+        for index in 0..<10 {
+            let cloud = Horizon.cloud(seed: UInt64(index), colour: Palette.resolved(Palette.cloud, dark: dark))
+            let angle = Float(index) / 10 * 2 * .pi + Float.random(in: -0.2...0.2, using: &generator)
+            let reach = extent * Float.random(in: 1.1...1.8, using: &generator)
+            cloud.position = [cos(angle) * reach, extent * Float.random(in: 0.35...0.5, using: &generator), sin(angle) * reach]
+            cloud.scale = SIMD3(repeating: extent * Float.random(in: 0.09...0.14, using: &generator))
+            cloud.orientation = simd_quatf(angle: Float.random(in: 0...(2 * .pi), using: &generator), axis: [0, 1, 0])
+            cloud.components.set(receiver)
+            sky.addChild(cloud)
+            clouds.append((cloud, 1))
+        }
+        updateSky(0)
+    }
+
+    /// Drifts the clouds, fades any that sit between the eye and the city, and keeps the haze centred on the eye.
+    private func updateSky(_ dt: Double) {
+        if !OfficeScene.reduceMotion { sky.orientation *= simd_quatf(angle: Horizon.cloudDrift * Float(dt), axis: [0, 1, 0]) }
+        let view = borrowedEye ?? (camera.entity.position(relativeTo: root), camera.current.target)
+        let reach = simd_distance(SIMD2(view.eye.x, view.eye.z), SIMD2(view.target.x, view.target.z))
+        Horizon.place(haze, eye: view.eye, ground: Self.groundLevel, start: reach + extent * 0.9)
+        let half = extent / 2
+        let corners: [SIMD3<Float>] = [[0, 0, 0], [half, 0, half], [-half, 0, half], [half, 0, -half], [-half, 0, -half],
+                                       [half, 1.5, half], [-half, 1.5, half], [half, 1.5, -half], [-half, 1.5, -half], view.target]
+        for index in clouds.indices {
+            let cloud = clouds[index].entity
+            let centre = cloud.position(relativeTo: root), radius = cloud.scale.x * 1.4
+            let blocking = simd_distance(centre, view.eye) < simd_distance(view.target, view.eye) + radius || corners.contains { corner in
+                let line = corner - view.eye
+                let along = min(max(simd_dot(centre - view.eye, line) / max(simd_length_squared(line), 0.0001), 0), 1)
+                return simd_distance(centre, view.eye + line * along) < radius
+            }
+            let goal: Float = blocking ? 0 : 1
+            let step = OfficeScene.reduceMotion || dt == 0 ? 1 : Horizon.cloudFade * Float(dt)
+            clouds[index].opacity += max(min(goal - clouds[index].opacity, step), -step)
+            let opacity = clouds[index].opacity
+            cloud.isEnabled = opacity > 0
+            if opacity < 1 { cloud.components.set(OpacityComponent(opacity: opacity)) } else { cloud.components.remove(OpacityComponent.self) }
+        }
     }
 
     private func addBuilding(_ building: CityStore.Building, at position: SIMD3<Float>) {
@@ -322,9 +376,9 @@ final class CityScene {
                 default: [-inset, -t * inset]
                 }
                 let jitter = SIMD2<Float>(Float.random(in: -0.3...0.3, using: &generator), Float.random(in: -0.3...0.3, using: &generator))
-                let tree = ModelLibrary.entity("tree")
+                let tree = ModelLibrary.entity(Self.woodland[Int.random(in: 0..<Self.woodland.count, using: &generator)])
                 tree.position = [edge.x + jitter.x, Self.groundLevel, edge.y + jitter.y]
-                tree.scale = SIMD3(repeating: Float.random(in: 3.2...4.4, using: &generator))
+                tree.scale = SIMD3(repeating: Float.random(in: 0.9...1.25, using: &generator))
                 tree.orientation = simd_quatf(angle: Float.random(in: 0...(2 * .pi), using: &generator), axis: [0, 1, 0])
                 addProp(tree)
             }
@@ -351,8 +405,7 @@ final class CityScene {
         scatter(["pebbles"], tries: 900, from: halfWidth + 0.2, falloff: 6, scale: 1.2...2)
         scatter(["rock_single_A", "rock_single_B", "rock_single_C", "rock_single_D", "rock_single_E"], tries: 500,
                 from: halfWidth + 0.6, falloff: 8, scale: 0.8...2)
-        scatter(["tree_single_A", "tree_single_B"], tries: 900, from: halfWidth + 4, falloff: 7, scale: 1.5...2.1)
-        scatter(["trees_A_small", "trees_B_small", "trees_A_medium", "trees_B_medium"], tries: 700, from: halfWidth + 4.5, falloff: 9, scale: 1.3...1.8)
+        scatter(Self.woodland, tries: 2600, from: halfWidth + 4, falloff: 8, scale: 0.8...1.3)
     }
 
     private func addCars(origin: Float, cells: Int) {
@@ -426,6 +479,7 @@ final class CityScene {
         light.isRealWorldProxy = false
         sun.components.set(light)
         sun.look(at: .zero, from: cycle.sun([-8, 14, 6]), relativeTo: nil)
+        Horizon.tint(haze, sky: cycle.sky(dark: dark))
         for facade in facades.values { Facade.light(facade.entity, glow: 0.6 * cycle.lamps) }
         for lot in lots.values where lot.working { lot.glow.components.set(lotGlow(cycle)) }
         NightLight.apply(cycle, under: root)
@@ -506,6 +560,7 @@ final class CityScene {
             lot.beacon.position.y = lot.root.position.y - 0.3 + (still ? 0 : sin(Float(clock) * 2) * 0.06)
         }
         advanceCars(still ? 0 : dt)
+        updateSky(dt)
         daylightClock += dt
         if daylightClock > DayCycle.tick {
             daylightClock = 0

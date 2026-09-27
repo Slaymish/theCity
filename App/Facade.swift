@@ -56,13 +56,14 @@ enum Facade {
         glass.metallic = 0.35
         glass.emissiveColor = .init(color: Palette.resolved(Palette.lamp, dark: dark))
         glass.emissiveIntensity = 0
-        return [OfficeScene.material(Palette.resolved(body, dark: dark)), glass, OfficeScene.material(Palette.resolved(trim, dark: dark))]
+        return [OfficeScene.material(Palette.resolved(body, dark: dark)), glass, OfficeScene.material(Palette.resolved(trim, dark: dark)),
+                OfficeScene.material(Palette.resolved(Palette.mullion, dark: dark))]
     }
 
     /// Sets how brightly the windows glow; the glass is every module's second material.
     static func light(_ tower: Entity, glow: Float) {
         for case let module as ModelEntity in tower.descendants {
-            guard var model = module.model, model.materials.count == 3, var glass = model.materials[1] as? PhysicallyBasedMaterial else { continue }
+            guard var model = module.model, model.materials.count == 4, var glass = model.materials[1] as? PhysicallyBasedMaterial else { continue }
             glass.emissiveIntensity = glow
             model.materials[1] = glass
             module.model = model
@@ -83,9 +84,9 @@ enum Facade {
         return mesh
     }
 
-    /// Boxes gathered per material (0 body, 1 glass, 2 trim) and merged into one mesh.
+    /// Boxes gathered per material (0 body, 1 glass, 2 trim, 3 frame) and merged into one mesh.
     @MainActor private struct Shape {
-        private var parts: [(positions: [SIMD3<Float>], normals: [SIMD3<Float>], indices: [UInt32])] = Array(repeating: ([], [], []), count: 3)
+        private var parts: [(positions: [SIMD3<Float>], normals: [SIMD3<Float>], indices: [UInt32])] = Array(repeating: ([], [], []), count: 4)
         private let h = Facade.storey, w = Facade.width, d = Facade.depth, slab = Facade.slab
 
         mutating func box(_ material: Int, _ centre: SIMD3<Float>, _ size: SIMD3<Float>) {
@@ -150,6 +151,8 @@ enum Facade {
                         onFace(side, 0, along: along, y: 0.7 + (h - 0.7) / 2, width: 0.14, height: h - 0.7, proud: 0.12)
                     }
                     onFace(side, 0, along: 0, y: 3.4, width: length(of: side), height: 0.08, proud: 0.06)
+                    onFace(side, 2, along: 0, y: 0.72, width: length(of: side) + 0.3, height: 0.12, proud: 0.22)
+                    onFace(side, 3, along: 0, y: h - 0.12, width: length(of: side), height: 0.2, proud: 0.1)
                 }
             case .brick:
                 box(0, [0, h / 2, 0], [w, h, d])
@@ -159,6 +162,12 @@ enum Facade {
                         onFace(side, 1, along: along, y: 2.7, width: 1.7, height: 2.6, proud: 0.03)
                         onFace(side, 2, along: along, y: 1.33, width: 2, height: 0.14, proud: 0.18)
                         onFace(side, 2, along: along, y: 4.1, width: 2, height: 0.22, proud: 0.06)
+                        for jamb: Float in [-0.85, 0.85] {
+                            onFace(side, 3, along: along + jamb, y: 2.7, width: 0.1, height: 2.6, proud: 0.07)
+                        }
+                        onFace(side, 3, along: along, y: 3.95, width: 1.8, height: 0.1, proud: 0.07)
+                        onFace(side, 3, along: along, y: 2.7, width: 0.07, height: 2.6, proud: 0.05)
+                        onFace(side, 3, along: along, y: 3.3, width: 1.7, height: 0.07, proud: 0.05)
                     }
                 }
             case .concrete:
@@ -168,6 +177,11 @@ enum Facade {
                     for along in stations(side, spacing: 3, corners: true) {
                         onFace(side, 0, along: along, y: 1.4 + (h - 1.4) / 2, width: 0.25, height: h - 1.4, proud: 0.1)
                     }
+                    for along in stations(side, spacing: 3, corners: false) {
+                        onFace(side, 3, along: along, y: 1.4 + (h - 1.4) / 2, width: 0.06, height: h - 1.4, proud: 0.04)
+                    }
+                    onFace(side, 3, along: 0, y: 3.9, width: length(of: side), height: 0.07, proud: 0.04)
+                    onFace(side, 2, along: 0, y: 1.42, width: length(of: side) + 0.3, height: 0.1, proud: 0.2)
                 }
             }
         }
@@ -186,6 +200,14 @@ enum Facade {
             onFace(0, 0, along: 0, y: slab + 3.6, width: 3.6, height: 0.2, proud: 0.2, sunk: 0.3)
             onFace(0, 0, along: 0, y: slab + 1.7, width: 0.06, height: 3.4, proud: 0.08, sunk: 0.3)
             box(2, [0, 4.1, d / 2 + 1.1], [6, 0.25, 2.2])
+            box(3, [0, 4.1, d / 2 + 2.2], [6.1, 0.4, 0.12])
+            for x: Float in [-2.7, 2.7] {
+                box(3, [x, slab + (4 - slab) / 2, d / 2 + 1.95], [0.14, 4 - slab, 0.14])
+            }
+            onFace(0, 3, along: 0, y: slab + 3.1, width: 3.2, height: 0.08, proud: 0.12, sunk: 0.3)
+            for x: Float in [-0.9, 0.9] {
+                onFace(0, 3, along: x, y: slab + 1.55, width: 0.05, height: 3.1, proud: 0.1, sunk: 0.3)
+            }
             box(2, [0, slab / 2, d / 2 + 0.6], [5, slab, 1.2])
             if style == .brick {
                 ring(2, y: h - 0.05, height: 0.1, thickness: 0.2, outset: 0.15)
@@ -199,6 +221,19 @@ enum Facade {
             if style != .glass { ring(2, y: 1.37, height: 0.14, thickness: 0.45, outset: 0.12) }
             box(style == .concrete ? 0 : 2, [w / 4, 1.3, -d / 6], [5, 1.8, 4])
             box(0, [-w / 4, 0.8, d / 8], [2.4, 0.8, 2.4])
+            for x: Float in [-w / 4 - 3, -w / 4 + 3] {
+                box(2, [x, 0.95, -d / 4], [2, 1.1, 1.6])
+                box(3, [x, 1.53, -d / 4], [1.3, 0.06, 1.3])
+                box(3, [x + 1.02, 0.95, -d / 4], [0.04, 0.8, 1.2])
+            }
+            for x: Float in [-1.2, 0, 1.2] {
+                box(1, [x, 0.48, d / 4], [0.9, 0.16, 2.4])
+            }
+            box(3, [w / 4 + 1.5, 3.1, -d / 6 + 1], [0.12, 2.6, 0.12])
+            for leg: SIMD2<Float> in [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]] {
+                box(3, [w / 3 + leg.x, 0.9, d / 4 + leg.y], [0.12, 1, 0.12])
+            }
+            box(2, [w / 3, 2, d / 4], [1.8, 1.4, 1.8])
         }
 
         func resource() -> MeshResource? {

@@ -19,6 +19,8 @@ final class BuildingScene {
     private var storeys: [(id: UUID, scene: OfficeScene, index: Int)] = []
     private var labels: [UUID: (entity: Entity, text: String)] = [:]
     private var crown: [Entity] = []
+    private var fitOut: [Int: Entity] = [:]
+    private let haze = Horizon.haze()
     private var lobby: Pod?
     private var liftButtons: [ModelEntity] = []
     private var scaffold: Entity?
@@ -81,9 +83,19 @@ final class BuildingScene {
         ground.components.set(ImageBasedLightReceiverComponent(imageBasedLight: groundLight))
         ground.isEnabled = showsGround
         tower.addChild(ground)
+        if showsGround { tower.addChild(haze) }
         if sessions.isEmpty {
             emptySun.components.set(DirectionalLightComponent.Shadow(maximumDistance: 30, depthBias: 2))
             tower.addChild(emptySun)
+        }
+        fitOut = [:]
+        for level in 0...sessions.count {
+            let storey = fitOut(level: level, doorway: level == 0)
+            storey.position.y = Float(level) * Self.storeyHeight
+            storey.components.set(receiver)
+            storey.descendants.forEach { $0.components.set(receiver) }
+            tower.addChild(storey)
+            if level == 0 { lobbyParts.append(storey) } else { fitOut[level - 1] = storey }
         }
         applyDaylight()
         let height = Float(sessions.count + 1) * Self.storeyHeight
@@ -164,6 +176,56 @@ final class BuildingScene {
         return parts
     }
 
+    /// Glazing in the far walls' openings, slab edges, skirting, a corner plant and the lights under this storey's slab.
+    private func fitOut(level: Int, doorway: Bool) -> Entity {
+        let width = OfficeScene.footprint.x, depth = OfficeScene.footprint.y
+        let group = Entity()
+        func add(_ mesh: MeshResource, _ material: RealityKit.Material, _ position: SIMD3<Float>) {
+            let part = ModelEntity(mesh: mesh, materials: [material])
+            part.position = position
+            group.addChild(part)
+        }
+        var glass = PhysicallyBasedMaterial()
+        glass.baseColor = .init(tint: Palette.resolved(Palette.glazing, dark: dark))
+        glass.roughness = 0.1
+        glass.metallic = 0.35
+        let frame = OfficeScene.material(Palette.resolved(Palette.mullion, dark: dark))
+        let skirting = OfficeScene.material(Palette.resolved(Palette.desk, dark: dark))
+        let sill: Float = 1.3, lintel: Float = 4.2, pier: Float = 1.2, wall: Float = 0.35
+        for (length, back) in [(width, true), (depth, false)] {
+            let windows = max(Int(length / 6), 2), bay = length / Float(windows)
+            for index in 0..<windows where !(doorway && !back && index == windows - 1) {
+                let open = bay - pier, along = -length / 2 + Float(index) * bay + pier + open / 2
+                let pane: MeshResource = back ? .generateBox(width: open, height: lintel - sill, depth: 0.05) : .generateBox(width: 0.05, height: lintel - sill, depth: open)
+                let bar: MeshResource = back ? .generateBox(width: 0.06, height: lintel - sill, depth: 0.1) : .generateBox(width: 0.1, height: lintel - sill, depth: 0.06)
+                let centre: SIMD3<Float> = back ? [along, (sill + lintel) / 2, -depth / 2 - wall / 2] : [-width / 2 - wall / 2, (sill + lintel) / 2, along]
+                add(pane, glass, centre)
+                add(bar, frame, centre)
+            }
+            let run: MeshResource = back ? .generateBox(width: length, height: 0.14, depth: 0.04) : .generateBox(width: 0.04, height: 0.14, depth: length)
+            add(run, skirting, back ? [0, 0.07, -depth / 2 + 0.02] : [-width / 2 + 0.02, 0.07, 0])
+        }
+        let edge: Float = 0.12
+        add(.generateBox(width: width + edge * 2, height: OfficeScene.floorThickness + 0.04, depth: edge), frame, [0, -OfficeScene.floorThickness / 2, depth / 2 + edge / 2])
+        add(.generateBox(width: edge, height: OfficeScene.floorThickness + 0.04, depth: depth + edge), frame, [width / 2 + edge / 2, -OfficeScene.floorThickness / 2, edge / 2])
+        var light = OfficeScene.material(Palette.resolved(Palette.lamp, dark: dark))
+        light.emissiveColor = .init(color: Palette.resolved(Palette.lamp, dark: dark))
+        light.emissiveIntensity = 1
+        if level > 0 {
+            for x in [-width / 3, 0, width / 3] {
+                for z in [-depth / 4, depth / 4] {
+                    add(.generateBox(width: 2, height: 0.05, depth: 0.5, cornerRadius: 0.02), light, [x, -OfficeScene.floorThickness - 0.03, z])
+                }
+            }
+        }
+        if level > 0 {
+            let plant = ModelLibrary.entity("cactus_medium_A")
+            plant.position = [-width / 2 + 0.7, 0, -depth / 2 + 0.7]
+            group.addChild(plant)
+        }
+        return group
+    }
+
     private func applyDaylight() {
         let cycle = DayCycle.now
         if let environment = ModelLibrary.environment("studio") {
@@ -176,6 +238,7 @@ final class BuildingScene {
         light.isRealWorldProxy = false
         emptySun.components.set(light)
         emptySun.look(at: .zero, from: cycle.sun([-8, 12, 6]), relativeTo: nil)
+        Horizon.tint(haze, sky: cycle.sky(dark: dark))
         for part in lobbyParts { NightLight.apply(cycle, under: part) }
     }
 
@@ -224,6 +287,7 @@ final class BuildingScene {
         for other in storeys {
             other.scene.sunEnabled = other.id == id
             other.scene.root.isEnabled = other.index <= storey.index
+            fitOut[other.index]?.isEnabled = other.index <= storey.index
             other.scene.isActive = other.id == id
             labels[other.id]?.entity.isEnabled = other.index < storey.index
         }
@@ -260,10 +324,12 @@ final class BuildingScene {
     private func hideStoreysForLobby() {
         guard !storeys.isEmpty else { return }
         for storey in storeys {
-            if storeysHidden {
-                storey.scene.root.components.set(OpacityComponent(opacity: 0))
-            } else {
-                storey.scene.root.components.remove(OpacityComponent.self)
+            for part in [storey.scene.root, fitOut[storey.index]].compactMap({ $0 }) {
+                if storeysHidden {
+                    part.components.set(OpacityComponent(opacity: 0))
+                } else {
+                    part.components.remove(OpacityComponent.self)
+                }
             }
             labels[storey.id]?.entity.isEnabled = showsLabel(storey.index)
         }
@@ -342,6 +408,7 @@ final class BuildingScene {
         for storey in storeys {
             storey.scene.sunEnabled = storey.index == 0
             storey.scene.root.isEnabled = true
+            fitOut[storey.index]?.isEnabled = true
             storey.scene.isActive = false
             labels[storey.id]?.entity.isEnabled = true
         }
@@ -377,6 +444,11 @@ final class BuildingScene {
             applyRise()
         }
         for storey in storeys where storey.scene.root.isEnabled { storey.scene.update(dt) }
+        if showsGround {
+            let eye = camera.entity.position(relativeTo: tower), target = camera.current.target
+            let reach = simd_distance(SIMD2(eye.x, eye.z), SIMD2(target.x, target.z))
+            Horizon.place(haze, eye: eye, ground: -0.36, start: reach + OfficeScene.footprint.x * 2)
+        }
         lobby?.worker.update(dt, reduceMotion: OfficeScene.reduceMotion)
         daylightClock += dt
         if daylightClock > DayCycle.tick {

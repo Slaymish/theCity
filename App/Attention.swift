@@ -100,6 +100,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let path = RunController.launchArgument("-render-icon") { IconRenderer.run(to: path) }
         if let path = RunController.launchArgument("-render-preview") { PreviewStage.run(to: path) }
         Attention.shared.setUp()
+        #if !DEBUG
+        _ = Updater.shared
+        #endif
     }
 
     @MainActor func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {

@@ -22,5 +22,11 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/Slaymish/theCity/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>XFsMrfnVINrYuvdLOzPgPXbDhfGGm+Uu6fYmTaGAkxQ=</string>
 </dict>
 </plist>

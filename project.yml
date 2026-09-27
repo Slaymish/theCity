@@ -7,6 +7,9 @@ options:
 packages:
   OfficeCore:
     path: Packages/OfficeCore
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.10.0
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -24,6 +27,7 @@ targets:
         buildPhase: resources
     dependencies:
       - package: OfficeCore
+      - package: Sparkle
     info:
       path: App/Info.plist
       properties:
@@ -32,6 +36,9 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.developer-tools
+        SUFeedURL: https://github.com/Slaymish/theCity/releases/latest/download/appcast.xml
+        SUPublicEDKey: XFsMrfnVINrYuvdLOzPgPXbDhfGGm+Uu6fYmTaGAkxQ=
+        SUEnableAutomaticChecks: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nz.hamish.thecity

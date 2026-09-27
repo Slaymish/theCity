@@ -48,6 +48,11 @@ struct OfficeCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        #if !DEBUG
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") { Updater.shared.controller.checkForUpdates(nil) }
+        }
+        #endif
         CommandGroup(replacing: .newItem) {
             Button("New Project…") { ProjectPicker.addProject() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])

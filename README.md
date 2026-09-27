@@ -52,7 +52,9 @@ make clean     # remove build output and the generated project
 
 ### Releasing
 
-CI runs the tests and builds the app on every push and pull request. Pushing a tag such as `v0.2.0` also builds a release with that version and publishes the `.dmg` and `.zip` to GitHub Releases, using the tag's section of `CHANGELOG.md` as the notes.
+CI runs the tests and builds the app on every push and pull request. Pushing a tag such as `v0.2.0` also builds a release with that version and publishes the `.dmg`, `.zip` and Sparkle `appcast.xml` to GitHub Releases, using the tag's section of `CHANGELOG.md` as the notes. Updates are signed with the EdDSA key in the `SPARKLE_ED_PRIVATE_KEY` repository secret, which must match `SUPublicEDKey` in `project.yml`.
+
+In Claude Code, `/release` does the whole thing: it checks `main` is clean and green, writes the CHANGELOG section from what changed since the last tag, then tags, pushes and checks the published release.
 
 `make project` regenerates `TheCity.xcodeproj` from `project.yml` on its own. In debug builds, **Debug › Replay Fixture…** (⇧⌘R) replays any saved stream.
 

@@ -91,9 +91,14 @@ struct ProcessTests {
         #expect(env["PATH"]?.hasSuffix(":/opt/homebrew/bin:/usr/local/bin:\(FileManager.default.homeDirectoryForCurrentUser.path)/.claude/local:/usr/bin") == true)
     }
 
-    @Test func missingCLIIsNotFound() {
+    @Test func missingCLIIsNotFound() throws {
         #expect(ClaudeEnvironment.locateCLI(environment: ["PATH": "/nonexistent"], alsoSearch: []) == nil)
-        #expect(ClaudeEnvironment.locateCLI(environment: ["PATH": "/nonexistent"]) != nil)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let fake = dir.appendingPathComponent("claude")
+        FileManager.default.createFile(atPath: fake.path, contents: Data("#!/bin/sh\n".utf8), attributes: [.posixPermissions: 0o755])
+        #expect(ClaudeEnvironment.locateCLI(environment: ["PATH": "/nonexistent"], alsoSearch: [dir.path])?.path == fake.path)
     }
 
     @Test func replayYieldsEveryLineThenExits() async throws {

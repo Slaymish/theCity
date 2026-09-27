@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0
+
+- The welcome screen has a Watch a Demo button that replays a recorded job on a sample floor, so you can see the office working without spending any tokens or changing your city. Thanks to @Tenkeren11 for building it.
+- Jobs can't be started from the demo floor, which explains that it only replays a recording.
+
 ## 0.2.0
 
 - Settings › Accounts has an Add Account… button that names a new Claude account and opens Terminal so you can sign in to it.

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.0
+
+### Added
+
+- The City has a menu bar icon that shows each project's floors and what they're doing, opens a floor, and has Ask Reception… to send a job without opening the window.
+- Closing the window keeps The City running from the menu bar and removes it from the Dock; Settings › General › Show in menu bar can keep the icon there all the time.
+- The city and each building have a vitals strip of rooms working, waiting and idle with today's jobs and spend, and clicking it opens a ledger with success rate, average job time and jobs over the last 7 days.
+- Buildings on the city map show how many rooms are working or waiting for you.
+- A floor shows how full the manager's context is and how many turns it has taken, with details of models, subagents and the floor's record.
+- Selecting an agent shows a card with its status, current step and handovers, with each handover's model, tokens, tool calls and time worked.
+- Step bars flag the rooms that are waiting for you.
+
+### Changed
+
+- Clicking a notification opens the floor it's about.
+- Going into a floor is quicker, because offices are prepared in the background.
+
+### Fixed
+
+- Fixed a building staying at its old height on the city map after a floor was closed.
+- Fixed agent cards covering the robot at its desk.
+
 ## 0.7.0
 
 ### Added

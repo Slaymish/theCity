@@ -20,6 +20,9 @@ final class OfficeScene {
     static let footprint = SIMD2<Float>(3 * podSpacingX + 4, rowZ * 2 + 9)
     private static let loftHeight: Float = 3.4
     private static let loftFront: Float = -3.5
+    static let kioskRoom = "kiosk"
+    static let kioskScreen = SIMD2<Float>(1.4, 0.9)
+    static let kioskScreenCorner: Float = 0.05
 
     private var dark = true
     private var themed: [(ModelEntity, NSColor)] = []
@@ -34,6 +37,8 @@ final class OfficeScene {
     private var folders: [String: ModelEntity] = [:]
     private var outboxItems: [ModelEntity] = []
     private var outboxSpot: SIMD3<Float> = .zero
+    private var kioskScreen: ModelEntity?
+    private var kioskLive = false
     private var jobFolder: ModelEntity?
     private var records: [Entity] = []
     static let wallKeeps = 12
@@ -105,6 +110,7 @@ final class OfficeScene {
         }
         addPod("manager", title: "Manager", number: "M", colour: Palette.manager, at: [0, 0, Self.rowZ], variant: 3)
         addOutbox(at: [Self.podSpacingX, 0, Self.rowZ])
+        addKiosk(at: [Self.podSpacingX / 2, 0, Self.rowZ])
         servers.forEach { _ = terminal(for: $0.name) }
 
         let folder = Self.makeFolder()
@@ -198,6 +204,26 @@ final class OfficeScene {
         outboxBanner = banner
     }
 
+    private func addKiosk(at position: SIMD3<Float>) {
+        let size = SIMD3<Float>(1.6, 2.2, 0.6)
+        let body = themedModel(.generateBox(width: size.x, height: size.y, depth: size.z, cornerRadius: 0.12), Palette.tray)
+        body.position = position + [0, size.y / 2, 0]
+        body.name = "room:\(Self.kioskRoom)"
+        body.components.set(CollisionComponent(shapes: [.generateBox(size: size)]))
+        body.components.set(InputTargetComponent())
+        root.addChild(body)
+        let screen = ModelEntity(mesh: .generateBox(width: Self.kioskScreen.x, height: Self.kioskScreen.y, depth: 0.04, cornerRadius: Self.kioskScreenCorner),
+                                 materials: [UnlitMaterial(color: Palette.resolved(kioskLive ? Palette.screenOn : Palette.screenOff, dark: dark))])
+        screen.position = position + [0, size.y - 0.1 - Self.kioskScreen.y / 2, size.z / 2 + 0.01]
+        root.addChild(screen)
+        kioskScreen = screen
+    }
+
+    func setKioskLive(_ live: Bool) {
+        kioskLive = live
+        kioskScreen?.model?.materials = [UnlitMaterial(color: Palette.resolved(live ? Palette.screenOn : Palette.screenOff, dark: dark))]
+    }
+
     /// Cutaway walls on the back and left edges, with window openings the sky shows through.
     private func buildWalls(width: Float, depth: Float) {
         for piece in Self.walls(width: width, depth: depth, make: { self.themedModel($0, Palette.walls) }) { root.addChild(piece) }
@@ -287,6 +313,7 @@ final class OfficeScene {
         for (entity, token) in themed {
             entity.model?.materials = [Self.material(Palette.resolved(token, dark: dark))]
         }
+        setKioskLive(kioskLive)
         setUpLighting()
     }
 
@@ -311,7 +338,7 @@ final class OfficeScene {
         var pose = overviewPose()
         pose.distance = radius / sin(min(vertical, horizontal) / 2) * 1.0
         camera.overview = pose
-        if focusedRoom == nil { camera.reset(to: pose) }
+        if focusedRoom == nil { camera.reset(to: pose) } else if focusedRoom == Self.kioskRoom { focusKiosk() }
     }
 
     func overviewPose() -> CameraRig.Pose {
@@ -344,6 +371,28 @@ final class OfficeScene {
             pose.pitch = settled
             self.camera.reset(to: pose)
         }
+    }
+
+    /// Flies straight at the kiosk until its screen fills most of the window.
+    func focusKiosk() {
+        guard let screen = kioskScreen else { return }
+        focusedRoom = Self.kioskRoom
+        signs.forEach { $0.isEnabled = false }
+        terminals.values.forEach { $0.setLabelVisible(false) }
+        pods.values.forEach { $0.setLabelsVisible(false, overview: false) }
+        outboxBanner?.isEnabled = false
+        let spread = 2 * tan(13 * Float.pi / 180), aspect = Float(viewSize.width / max(viewSize.height, 1)), fill: Float = 0.85
+        let distance = max(Self.kioskScreen.y / (spread * fill), Self.kioskScreen.x / (spread * aspect * fill))
+        camera.focus(on: screen.position(relativeTo: nil) + [0, 0, 0.02], facing: 0, distance: distance, pitch: 0)
+    }
+
+    /// Where the kiosk's screen sits in the view once the camera arrives.
+    func kioskScreenRect() -> CGRect? {
+        guard focusedRoom == Self.kioskRoom, viewSize.height > 0 else { return nil }
+        let focal = Float(viewSize.height) / 2 / tan(13 * .pi / 180)
+        let size = Self.kioskScreen * focal / camera.goal.distance
+        let width = CGFloat(size.x.rounded()), height = CGFloat(size.y.rounded())
+        return CGRect(x: ((viewSize.width - width) / 2).rounded(), y: ((viewSize.height - height) / 2).rounded(), width: width, height: height)
     }
 
     func showOverview() {

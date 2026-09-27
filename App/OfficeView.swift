@@ -66,10 +66,16 @@ struct OfficeView: View {
                 .realityViewCameraControls(.none)
                 .gesture(SpatialTapGesture().targetedToAnyEntity().onEnded { value in
                     let room = OfficeScene.room(of: value.entity)
-                    if let room, room != "outbox", room != controller.selectedRoom { controller.select(room: room) } else { controller.selectedRoom = nil }
+                    if room == OfficeScene.kioskRoom { controller.takeOver() } else if let room, room != "outbox", room != controller.selectedRoom { controller.select(room: room) } else { controller.selectedRoom = nil }
                 })
-                .modifier(SceneControls(camera: { [scene] in scene.camera }, excludedTrailing: controller.showPanel ? Self.panelWidth + 40 : 0))
+                .modifier(SceneControls(camera: { [scene] in scene.camera }, excludedTrailing: controller.showPanel ? Self.panelWidth + 40 : 0,
+                                        passThrough: { [controller] in controller.kiosk.isOpen }))
                 .onAppear {
+                    if RunController.launchArgument("-kiosk-smoke") != nil {
+                        Task { @MainActor in
+                            for _ in 0..<120 where !controller.kiosk.isOpen { try? await Task.sleep(for: .milliseconds(500)); controller.takeOver() }
+                        }
+                    }
                     scene.sunEnabled = true
                     scene.fit(geometry.size)
                 }
@@ -125,6 +131,12 @@ struct OfficeOverlay: View {
                                 .buttonStyle(PillButtonStyle(kind: .secondary))
                                 .help("Close this floor")
                             }
+                            if controller.floorID != nil, !controller.history.isEmpty {
+                                Button("History", systemImage: "clock.arrow.circlepath") { controller.showHistory = true }
+                                    .labelStyle(.iconOnly)
+                                    .buttonStyle(PillButtonStyle(kind: .secondary))
+                                    .help("Show this floor’s past requests and results (⌘Y)")
+                            }
                         }
                     }
                     if !controller.request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, controller.state.phase != .idle {
@@ -144,6 +156,12 @@ struct OfficeOverlay: View {
                             Button("Cancel") { controller.cancel() }
                                 .buttonStyle(PillButtonStyle(kind: .secondary))
                         }
+                        if !controller.isDemo {
+                            Button("Take over", systemImage: "apple.terminal") { controller.takeOver() }
+                                .buttonStyle(PillButtonStyle(kind: .secondary))
+                                .disabled(!controller.canTakeOver)
+                                .help(controller.canTakeOver ? "Open this floor’s Claude Code session in the terminal kiosk" : "Available once the current job finishes")
+                        }
                     }
                     CounterCard(controller: controller)
                     UsageHUD(configDirectory: controller.configDirectory)
@@ -156,6 +174,8 @@ struct OfficeOverlay: View {
                 }
             }
             .padding(20)
+            .opacity(controller.kiosk.isOpen ? 0 : 1)
+            .allowsHitTesting(!controller.kiosk.isOpen)
 
             if showsDeskRequests { DeskRequestLayer(controller: controller, scene: scene, bottomInset: bottomHeight) }
 
@@ -176,7 +196,12 @@ struct OfficeOverlay: View {
             }
             .padding(.bottom, 20)
             .padding(.trailing, controller.showPanel ? Self.panelWidth + 20 : 0)
+            .opacity(controller.kiosk.isOpen ? 0 : 1)
+            .allowsHitTesting(!controller.kiosk.isOpen)
+
+            if controller.kiosk.isOpen { KioskLayer(controller: controller, scene: scene) }
         }
+        .sheet(isPresented: $controller.showHistory) { HistorySheet(controller: controller) }
         .modifier(CloseFloorConfirmation(floor: $closing, running: controller.isRunning) { _ in onClose?() })
         .overlay(alignment: .top) {
             if controller.selectedRoom != nil {
@@ -192,14 +217,18 @@ struct OfficeOverlay: View {
             scene.trailingInset = controller.showPanel ? Self.panelWidth + 20 : 0
             if let room = controller.selectedRoom { scene.focus(room: room) }
         }
+        .onChange(of: controller.kiosk.isOpen) {
+            if controller.kiosk.isOpen { scene.focusKiosk() } else if let room = controller.selectedRoom { scene.focus(room: room) } else { scene.showOverview() }
+        }
         .onChange(of: controller.selectedRoom) {
+            guard !controller.kiosk.isOpen else { return }
             if let room = controller.selectedRoom { scene.focus(room: room) } else { scene.showOverview() }
         }
     }
 
     @ViewBuilder
     private func nextJob(compact: Bool) -> some View {
-        if controller.isDemo { DemoEndCard(controller: controller) } else { FloorComposer(controller: controller, compact: compact) }
+        if controller.isDemo { DemoEndCard(controller: controller) } else { FloorComposer(controller: controller, compact: compact).disabled(controller.kiosk.isAlive) }
     }
 }
 

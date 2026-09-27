@@ -287,7 +287,7 @@ enum PreviewStage {
                 }
                 scene.showRecords(jobs, fastest: 48)
             }
-            if let room = RunController.launchArgument("-focus") { scene.focus(room: room) }
+            if let room = RunController.launchArgument("-focus") { if room == OfficeScene.kioskRoom { scene.focusKiosk() } else { scene.focus(room: room) } }
             for _ in 0..<(arguments.contains("-focus") ? 240 : 40) { scene.update(1.0 / 60) }
             if let seconds = RunController.launchArgument("-deliver").flatMap(Double.init) {
                 for _ in 0..<(RunController.launchArgument("-jobs").flatMap(Int.init) ?? 1) {

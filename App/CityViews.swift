@@ -175,7 +175,7 @@ struct WorldView: View {
                                             world.building.scroll(by: Float(event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 10))
                                             return true
                                         },
-                                        passThrough: { [city] in if case .newFloor = city.route { true } else { false } }))
+                                        passThrough: { [city] in if case .newFloor = city.route { true } else { city.activeSession?.kiosk.isOpen == true } }))
                 .onAppear {
                     world.city.titleMode = city.route == .welcome
                     world.city.build(city.buildings, dark: dark)
@@ -231,7 +231,7 @@ struct WorldView: View {
     private func tapped(_ entity: Entity) {
         if let buildingID, world.inBuilding == buildingID {
             if let floorID, world.building.floor(of: entity) == floorID, let session = city.session(for: floorID, in: buildingID) {
-                if let room = OfficeScene.room(of: entity), room != "outbox", room != session.selectedRoom { session.select(room: room) } else { session.selectedRoom = nil }
+                if OfficeScene.room(of: entity) == OfficeScene.kioskRoom { session.takeOver() } else if let room = OfficeScene.room(of: entity), room != "outbox", room != session.selectedRoom { session.select(room: room) } else { session.selectedRoom = nil }
                 return
             }
             if let tapped = world.building.floor(of: entity), tapped != floorID {
@@ -451,6 +451,9 @@ struct ReceptionComposer: View {
                 Button("Ask reception", action: withImages(ask))
                     .buttonStyle(PillButtonStyle())
                     .disabled(!canAsk)
+            }
+            .onAppear {
+                if let request = city.cancelledRequests.removeValue(forKey: building.id) { text = request }
             }
             if thinking {
                 HStack(spacing: 8) {

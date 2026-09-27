@@ -458,26 +458,70 @@ struct EndCard: View {
         followUp = ""
     }
 
-    private var title: String {
-        switch outcome {
-        case .completed: "Delivered"
-        case .cancelled: "Cancelled"
-        case .failed(.budgetExhausted, _): "Budget reached"
-        case .failed: "The job stopped"
+    private var title: String { RunController.title(for: outcome) }
+
+    private var message: String { RunController.message(for: outcome, budget: controller.budgetUSD) }
+}
+
+struct HistorySheet: View {
+    let controller: RunController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("History · \(controller.displayTitle)").eyebrow()
+                Spacer()
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(transcript, forType: .string)
+                }
+                .buttonStyle(PillButtonStyle(kind: .secondary))
+                Button("Done") { controller.showHistory = false }
+                    .buttonStyle(PillButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(jobs.enumerated()), id: \.offset) { index, job in
+                        if index > 0 { Divider() }
+                        ForEach(job) { entry in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("\(label(entry)) · \(entry.date.formatted(date: .abbreviated, time: .shortened))").eyebrow()
+                                Text(rendered(entry.text)).font(Typography.body).textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                }
+                .padding(.trailing, 12)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 720, idealWidth: 860, minHeight: 520, idealHeight: 720)
+    }
+
+    private var jobs: [[HistoryEntry]] {
+        controller.history.reduce(into: []) { groups, entry in
+            if let last = groups.last?.last, last.job == entry.job { groups[groups.count - 1].append(entry) } else { groups.append([entry]) }
         }
     }
 
-    private var message: String {
-        switch outcome {
-        case .completed(let summary, _): summary ?? "Done."
-        case .cancelled: "You cancelled the job. You can still send a follow-up to pick it up again."
-        case .failed(.cliNotFound, _): "Claude Code isn’t installed. Install or locate it below, then try again."
-        case .failed(.notLoggedIn, _): "You’re not signed in to Claude Code with this account. Sign in below, then try again."
-        case .failed(.budgetExhausted, _): "The job reached its \(controller.budgetUSD.formatted(.currency(code: "USD"))) budget."
-        case .failed(.runError, let message): message ?? "The job stopped unexpectedly."
-        case .failed(.processCrashed(let code), let message): "Claude Code stopped without finishing (exit \(code)). \(message ?? "")"
-        case .failed(.couldNotStart, let message): "Claude Code couldn’t start: \(message ?? "")"
+    private func label(_ entry: HistoryEntry) -> String {
+        switch entry.kind {
+        case .request: "New job"
+        case .followUp: "Follow-up"
+        case .outcome: entry.title ?? "Outcome"
         }
+    }
+
+    private var transcript: String {
+        jobs.map { job in
+            job.map { "\(label($0)) (\($0.date.formatted(date: .abbreviated, time: .shortened)))\n\($0.text)" }.joined(separator: "\n\n")
+        }.joined(separator: "\n\n---\n\n")
+    }
+
+    private func rendered(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
     }
 }
 

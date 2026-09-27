@@ -14,6 +14,7 @@ struct HiringView: View {
                     .textFieldStyle(.plain)
                     .font(Typography.body)
                     .lineLimit(2...5)
+                    .dictation(text: $controller.request)
                     .disabled(controller.isHiring)
             }
             .glass()
@@ -58,6 +59,7 @@ struct HiringView: View {
             HStack {
                 Button("Back") { if let onBack { onBack() } else { controller.backToReception() } }
                     .buttonStyle(PillButtonStyle(kind: .secondary))
+                AccountMenu(controller: controller)
                 Spacer()
                 Text(summary).font(Typography.caption).foregroundStyle(Color(Palette.muted))
                 Button("Open the office") { controller.openOffice() }

@@ -46,6 +46,7 @@ struct TheCityApp: App {
 struct OfficeCommands: Commands {
     let city: CityStore
     @Environment(\.openWindow) private var openWindow
+    @FocusedValue(\.dictationTarget) private var dictationTarget
     static let helpPage = URL(string: "https://github.com/Slaymish/theCity#how-it-works")!
 
     /// Question cards answer with ⌘1–⌘9, so floor jumping steps aside while one is up.
@@ -79,6 +80,13 @@ struct OfficeCommands: Commands {
             }
             .disabled(city.buildings.allSatisfy(\.floors.isEmpty))
         }
+        CommandGroup(after: .textEditing) {
+            Button(DictationStore.shared.recordingTarget != nil && DictationStore.shared.recordingTarget == dictationTarget?.id ? "Stop Dictating" : "Dictate") {
+                dictationTarget?.toggle()
+            }
+            .keyboardShortcut(.space, modifiers: .option)
+            .disabled(dictationTarget == nil)
+        }
         CommandGroup(before: .toolbar) {
             Button("City") { city.route = city.buildings.isEmpty ? .welcome : .city }
                 .keyboardShortcut("0", modifiers: .command)
@@ -97,6 +105,9 @@ struct OfficeCommands: Commands {
                 .disabled(city.activeSession == nil)
             Button("Show Raw Log") { openWindow(id: "raw-log") }
                 .keyboardShortcut("l", modifiers: [.command, .option])
+            Button("Show Floor History") { city.activeSession?.showHistory = true }
+                .keyboardShortcut("y", modifiers: .command)
+                .disabled(city.activeSession?.floorID == nil || city.activeSession?.history.isEmpty != false)
             Divider()
         }
         CommandMenu("Job") {

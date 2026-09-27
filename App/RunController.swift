@@ -43,6 +43,7 @@ final class RunController {
     var pendingFloorName: String?
     private(set) var queued: [(text: String, continues: Bool)] = []
     let scene = OfficeScene()
+    let kiosk = KioskSession()
 
     var screen: Screen = .reception
     enum Readiness: Equatable {
@@ -100,6 +101,8 @@ final class RunController {
     private(set) var endedAt: Date?
     private(set) var jobFiles: [String] = []
     private(set) var followUps: [String] = []
+    private(set) var history: [HistoryEntry] = []
+    var showHistory = false
     private(set) var resumeSession: String?
     private(set) var currentJob: UUID?
     private(set) var jobCost: Double = 0
@@ -116,7 +119,9 @@ final class RunController {
     init(building: CityStore.Building?, floor: CityStore.Floor?) {
         buildingID = building?.id
         floorID = floor?.id
+        history = floor.map { FloorHistory.load($0.id) } ?? []
         workingDirectory = building?.url ?? Self.defaultWorkspace
+        if let path = floor?.configDirectory { configDirectory = URL(fileURLWithPath: path) }
         refreshCatalogue()
         loadKit()
         checkReadiness()
@@ -424,6 +429,7 @@ final class RunController {
     func newJobOnFloor(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isRunning, !text.isEmpty else { return }
+        guard !kiosk.isAlive else { return queue(text) }
         request = text
         jobFiles = []
         followUps = []
@@ -508,8 +514,32 @@ final class RunController {
     func followUp(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isRunning, !text.isEmpty, let session = state.sessionID ?? resumeSession else { return }
+        guard !kiosk.isAlive else { return queue(text, continuing: true) }
         followUps.append(text)
         start(message: text, resume: session)
+    }
+
+    var canTakeOver: Bool { kiosk.isAlive || (!isRunning && !isDemo && workingDirectory != nil) }
+
+    /// Opens the kiosk's terminal, starting `claude` on this floor's session if it isn't already running there.
+    func takeOver() {
+        guard canTakeOver, let workingDirectory else { return }
+        if !kiosk.isAlive {
+            let resume = state.sessionID ?? resumeSession
+            kiosk.start(directory: workingDirectory, resume: resume, model: model, configDirectory: configDirectory) { [weak self] in self?.kioskEnded() }
+            scene.setKioskLive(true)
+            appLog(resume.map { "Terminal opened on session \($0)" } ?? "Terminal opened")
+        }
+        selectedRoom = nil
+        kiosk.isOpen = true
+    }
+
+    private func kioskEnded() {
+        scene.setKioskLive(false)
+        appLog("Terminal session ended")
+        guard !queued.isEmpty else { return }
+        let next = queued.removeFirst()
+        if next.continues { followUp(next.text) } else { newJobOnFloor(next.text) }
     }
 
     // MARK: Running
@@ -525,6 +555,7 @@ final class RunController {
             return
         }
         CityStore.shared.jobStarted(on: floorID, in: buildingID, request: request)
+        remember(resume == nil ? .request : .followUp, request)
         if let resume { appLog("Follow-up in session \(resume): \(request)") }
         let config = RunConfig(
             request: request,
@@ -780,7 +811,10 @@ final class RunController {
             case .runEnded(let outcome):
                 if !isReplay { Attention.shared.finished(outcome, files: state.outputFiles, place: placeName) }
                 noteLimit(outcome)
-                if !isReplay { recordJob(outcome) }
+                if !isReplay {
+                    recordJob(outcome)
+                    remember(.outcome, title: Self.title(for: outcome), Self.message(for: outcome, budget: budgetUSD))
+                }
                 if !queued.isEmpty {
                     let next = queued.removeFirst()
                     Task { @MainActor [weak self] in
@@ -806,6 +840,35 @@ final class RunController {
                 .firstMatch(in: text, range: NSRange(text.startIndex..., in: text))?.url
             limitNotice = LimitNotice(message: text, url: url, resetsAt: rejected ? state.rateLimit?.resetsAt : nil)
         default: break
+        }
+    }
+
+    private func remember(_ kind: HistoryEntry.Kind, title: String? = nil, _ text: String) {
+        guard let floorID, !isReplay, !isDemo else { return }
+        let job = kind == .request ? UUID() : history.last?.job ?? UUID()
+        history.append(HistoryEntry(date: .now, job: job, kind: kind, title: title, text: text))
+        FloorHistory.save(history, for: floorID)
+    }
+
+    static func title(for outcome: RunOutcome) -> String {
+        switch outcome {
+        case .completed: "Delivered"
+        case .cancelled: "Cancelled"
+        case .failed(.budgetExhausted, _): "Budget reached"
+        case .failed: "The job stopped"
+        }
+    }
+
+    static func message(for outcome: RunOutcome, budget: Double) -> String {
+        switch outcome {
+        case .completed(let summary, _): summary ?? "Done."
+        case .cancelled: "You cancelled the job. You can still send a follow-up to pick it up again."
+        case .failed(.cliNotFound, _): "Claude Code isn’t installed. Install or locate it below, then try again."
+        case .failed(.notLoggedIn, _): "You’re not signed in to Claude Code with this account. Sign in below, then try again."
+        case .failed(.budgetExhausted, _): "The job reached its \(budget.formatted(.currency(code: "USD"))) budget."
+        case .failed(.runError, let message): message ?? "The job stopped unexpectedly."
+        case .failed(.processCrashed(let code), let message): "Claude Code stopped without finishing (exit \(code)). \(message ?? "")"
+        case .failed(.couldNotStart, let message): "Claude Code couldn’t start: \(message ?? "")"
         }
     }
 

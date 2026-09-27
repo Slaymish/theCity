@@ -61,6 +61,9 @@ final class Preferences {
     var hiddenAccounts: Set<String> {
         didSet { defaults.set(Array(hiddenAccounts), forKey: "hiddenAccounts") }
     }
+    var dictationModel: String? {
+        didSet { defaults.set(dictationModel, forKey: "dictationModel") }
+    }
 
     private init() {
         configDirectory = defaults.string(forKey: "configDirectory").map { URL(fileURLWithPath: $0) }
@@ -75,6 +78,7 @@ final class Preferences {
         cliPath = defaults.string(forKey: "cliPath")
         editorPath = defaults.string(forKey: "editorPath")
         hiddenAccounts = Set(defaults.stringArray(forKey: "hiddenAccounts") ?? [])
+        dictationModel = defaults.string(forKey: "dictationModel")
     }
 
     var isDark: Bool {
@@ -282,6 +286,8 @@ struct SettingsView: View {
                 }
             }
             .tabItem { Label("Alerts", systemImage: "bell") }
+            page { DictationSettings() }
+                .tabItem { Label("Dictation", systemImage: "mic") }
             page {
                 Section("Updates") {
                     LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")

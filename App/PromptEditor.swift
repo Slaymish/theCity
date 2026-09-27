@@ -86,6 +86,7 @@ struct PromptEditor<Actions: View>: View {
                     // macOS ignores a changed lineLimit on a live vertical TextField, so rebuild it on toggle.
                     .id(expanded)
                     .focused($focused)
+                    .dictation(text: $text)
                     .padding(10)
                     .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(Palette.hairline), lineWidth: 1))
                     .onKeyPress(.upArrow) { move(-1) }

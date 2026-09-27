@@ -21,6 +21,7 @@ struct ReceptionView: View {
                     .textFieldStyle(.plain)
                     .font(Typography.body)
                     .lineLimit(3...8)
+                    .dictation(text: $controller.request)
                     .commandReturn(enabled: canHire) { controller.beginHiring() }
                     .onKeyPress(.tab) {
                         guard let first = matches.first else { return .ignored }
@@ -48,17 +49,7 @@ struct ReceptionView: View {
                 .buttonStyle(PillButtonStyle(kind: .secondary))
                 .help(controller.workingDirectory?.path ?? "The folder the office works in")
                 HStack(spacing: 8) {
-                    Menu {
-                        ForEach(Preferences.shared.visibleAccounts(including: controller.configDirectory), id: \.self) { url in
-                            Button(UsageStore.shared.summary(url)) { controller.configDirectory = url }
-                        }
-                    } label: {
-                        Label("Account: \(Preferences.accountName(controller.configDirectory))", systemImage: "person.crop.circle")
-                    }
-                    .menuStyle(.button)
-                    .buttonStyle(PillButtonStyle(kind: .secondary))
-                    .fixedSize()
-                    .help(controller.configDirectory?.path ?? "~/.claude")
+                    AccountMenu(controller: controller)
                     Menu {
                         Button("Default") { controller.model = nil }
                         ForEach(controller.primaryModels) { model in
@@ -199,5 +190,23 @@ extension View {
             self
             ScrollView { self }
         }
+    }
+}
+
+struct AccountMenu: View {
+    @Bindable var controller: RunController
+
+    var body: some View {
+        Menu {
+            ForEach(Preferences.shared.visibleAccounts(including: controller.configDirectory), id: \.self) { url in
+                Button(UsageStore.shared.summary(url)) { controller.configDirectory = url }
+            }
+        } label: {
+            Label("Account: \(Preferences.accountName(controller.configDirectory))", systemImage: "person.crop.circle")
+        }
+        .menuStyle(.button)
+        .buttonStyle(PillButtonStyle(kind: .secondary))
+        .fixedSize()
+        .help(controller.configDirectory?.path ?? "~/.claude")
     }
 }

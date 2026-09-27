@@ -20,6 +20,7 @@ final class CityStore {
         var sessionID: String?
         var lastOutcome: String?
         var nameIsCustom: Bool?
+        var configDirectory: String?
     }
 
     struct Building: Codable, Identifiable, Equatable {
@@ -52,6 +53,7 @@ final class CityStore {
     private var demoEntered = false
     private(set) var sessions: [UUID: RunController] = [:]
     private(set) var draft: RunController?
+    var cancelledRequests: [UUID: String] = [:]
     private(set) var journal: [JobRecord] = JobJournal.load()
 
     static var fileURL: URL {
@@ -106,7 +108,7 @@ final class CityStore {
 
     func removeBuilding(_ id: UUID) {
         guard let building = building(id), !building.floors.contains(where: { sessions[$0.id]?.isRunning == true }) else { return }
-        building.floors.forEach { sessions[$0.id] = nil }
+        building.floors.forEach { sessions[$0.id]?.kiosk.end(); sessions[$0.id] = nil }
         buildings.removeAll { $0.id == id }
         if case .building(id) = route { route = .city }
         save()
@@ -115,6 +117,7 @@ final class CityStore {
     func removeFloor(_ id: UUID, in buildingID: UUID) {
         guard let index = buildings.firstIndex(where: { $0.id == buildingID }) else { return }
         sessions[id]?.cancel()
+        sessions[id]?.kiosk.end()
         if route == .floor(building: buildingID, floor: id) { route = .building(buildingID) }
         buildings[index].floors.removeAll { $0.id == id }
         sessions[id] = nil
@@ -185,6 +188,7 @@ final class CityStore {
 
     func cancelNewFloor() {
         guard case .newFloor(let id) = route else { return }
+        if let request = draft?.request, !request.isEmpty { cancelledRequests[id] = request }
         draft = nil
         route = .building(id)
     }
@@ -214,7 +218,8 @@ final class CityStore {
             hires: session.hired.map(\.name), model: session.model, budgetUSD: session.budgetUSD,
             allowedServers: session.kit.map { _ in Array(session.allowedServers) },
             allowedSkills: session.kit.map { _ in Array(session.allowedSkills) },
-            lastRequest: session.request
+            lastRequest: session.request,
+            configDirectory: session.configDirectory?.path
         )
         buildings[index].floors.append(floor)
         sessions[floor.id] = session
@@ -298,7 +303,7 @@ final class CityStore {
         demoID = nil
         demoEntered = false
         if draft?.buildingID == id { draft = nil }
-        building(id)?.floors.forEach { sessions[$0.id]?.cancel(); sessions[$0.id] = nil }
+        building(id)?.floors.forEach { sessions[$0.id]?.cancel(); sessions[$0.id]?.kiosk.end(); sessions[$0.id] = nil }
         buildings.removeAll { $0.id == id }
         if buildings.isEmpty { route = .welcome }
     }

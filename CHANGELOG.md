@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.7.0
+
+### Added
+
+- Reception suggests a ready-made team when a request fits one of eight presets (Security Review, Bug Fix, Frontend, Code Review, Feature Build, Quick Fix, Docs & Copy and Deep Research), and sends the work to an existing floor of that kind rather than setting up a new one.
+- New Security Reviewer and Debugger departments are available when hiring.
+- Clouds drift high above the city and fade out when they would block the view.
+
+### Changed
+
+- The ground and distant woodland fade into the sky at the horizon instead of ending at a hard edge.
+- The woodland has new, more varied trees.
+- Buildings have window frames, sills, an entrance canopy and rooftop plant, and the cut-away building view shows windows, ceiling lights and slab edges.
+- Long text in an agent's tools list, the room brief, the job ticket and the approval card scrolls, and the tools list stays on the newest command.
+- A floor keeps its name after each job instead of being renamed after whatever it last did.
+- The Reviewer department can no longer run shell commands.
+
+### Fixed
+
+- Fixed shadows under the woodland shimmering while the camera moves.
+
 ## 0.6.0
 
 ### Added

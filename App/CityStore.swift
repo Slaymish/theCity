@@ -189,15 +189,21 @@ final class CityStore {
         route = .building(id)
     }
 
-    /// Reception hands a request to an existing floor's team.
-    func send(_ request: String, toFloor floorID: UUID, in buildingID: UUID) {
+    /// Reception hands a request to an existing floor's team, as a fresh job or as a follow-up on its last one.
+    func send(_ request: String, toFloor floorID: UUID, in buildingID: UUID, continuing: Bool = false) {
         guard let session = session(for: floorID, in: buildingID) else { return }
         route = .floor(building: buildingID, floor: floorID)
         if session.isRunning {
-            session.queue(request)
+            session.queue(request, continuing: continuing)
+        } else if continuing {
+            session.followUp(request)
         } else {
             session.newJobOnFloor(request)
         }
+    }
+
+    func canContinue(_ floor: Floor) -> Bool {
+        floor.sessionID != nil || sessions[floor.id]?.canContinue == true
     }
 
     /// Called when a draft's hiring is done: the draft becomes the new floor's session.

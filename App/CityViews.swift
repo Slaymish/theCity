@@ -476,32 +476,59 @@ struct ReceptionComposer: View {
             if !suggestion.reason.isEmpty {
                 Text("“\(suggestion.reason)”").font(Typography.caption).foregroundStyle(Color(Palette.muted))
             }
-            HStack(spacing: 8) {
-                if let match {
-                    Button("Send to \(match.name)", systemImage: "arrow.up.circle.fill") { send(to: match.id) }
-                        .buttonStyle(PillButtonStyle())
-                    Button("Set up “\(suggestion.newFloorName)” instead") { newFloor(suggestion.newFloorName) }
-                        .buttonStyle(PillButtonStyle(kind: .secondary))
-                } else {
-                    Button("Set up “\(suggestion.newFloorName)”", systemImage: "plus.circle.fill") { newFloor(suggestion.newFloorName) }
-                        .buttonStyle(PillButtonStyle())
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    routeButtons(suggestion, match: match)
+                    otherButtons(suggestion, match: match)
                 }
-                let others = building.floors.filter { $0.id != match?.id }
-                if !others.isEmpty {
-                    Menu("Another floor") {
-                        ForEach(others) { floor in
-                            Button(floor.name + (city.sessions[floor.id]?.isRunning == true ? " (busy, will queue)" : "")) { send(to: floor.id) }
-                        }
-                    }
-                    .menuStyle(.button)
-                    .buttonStyle(PillButtonStyle(kind: .secondary))
-                    .fixedSize()
+                .fixedSize()
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) { routeButtons(suggestion, match: match) }.fixedSize()
+                    HStack(spacing: 8) { otherButtons(suggestion, match: match) }.fixedSize()
                 }
+            }
+            if match != nil {
+                Text("Same team and settings. Starts without the last job’s conversation.")
+                    .font(Typography.caption).foregroundStyle(Color(Palette.muted))
             }
             if let match, city.sessions[match.id]?.isRunning == true {
                 Text("\(match.name) is busy; this will start when its current job finishes.")
                     .font(Typography.caption).foregroundStyle(Color(Palette.muted))
             }
+        }
+    }
+
+    @ViewBuilder
+    private func routeButtons(_ suggestion: RoutingSuggestion, match: CityStore.Floor?) -> some View {
+        if let match {
+            Button("New job on \(match.name)", systemImage: "arrow.up.circle.fill") { send(to: match.id) }
+                .buttonStyle(PillButtonStyle())
+            if city.canContinue(match) {
+                Button("Continue \(match.name)’s last job") { send(to: match.id, continuing: true) }
+                    .buttonStyle(PillButtonStyle(kind: .secondary))
+            }
+        } else {
+            Button("Set up “\(suggestion.newFloorName)”", systemImage: "plus.circle.fill") { newFloor(suggestion.newFloorName) }
+                .buttonStyle(PillButtonStyle())
+        }
+    }
+
+    @ViewBuilder
+    private func otherButtons(_ suggestion: RoutingSuggestion, match: CityStore.Floor?) -> some View {
+        if match != nil {
+            Button("Set up “\(suggestion.newFloorName)” instead") { newFloor(suggestion.newFloorName) }
+                .buttonStyle(PillButtonStyle(kind: .secondary))
+        }
+        let others = building.floors.filter { $0.id != match?.id }
+        if !others.isEmpty {
+            Menu("Another floor") {
+                ForEach(others) { floor in
+                    Button(floor.name + (city.sessions[floor.id]?.isRunning == true ? " (busy, will queue)" : "")) { send(to: floor.id) }
+                }
+            }
+            .menuStyle(.button)
+            .buttonStyle(PillButtonStyle(kind: .secondary))
+            .fixedSize()
         }
     }
 
@@ -541,9 +568,9 @@ struct ReceptionComposer: View {
         return match.map { ($0, body.dropFirst($0.name.count).trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
 
-    private func send(to floorID: UUID) {
+    private func send(to floorID: UUID, continuing: Bool = false) {
         stopRouting()
-        city.send(text, toFloor: floorID, in: building.id)
+        city.send(text, toFloor: floorID, in: building.id, continuing: continuing)
         text = ""
         suggestion = nil
         scene?.leaveLobby()

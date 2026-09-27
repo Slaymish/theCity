@@ -41,7 +41,7 @@ final class RunController {
     let buildingID: UUID?
     private(set) var floorID: UUID?
     var pendingFloorName: String?
-    private(set) var queued: [String] = []
+    private(set) var queued: [(text: String, continues: Bool)] = []
     let scene = OfficeScene()
 
     var screen: Screen = .reception
@@ -404,9 +404,9 @@ final class RunController {
     }
 
     /// A job that arrives while the floor is busy waits its turn.
-    func queue(_ text: String) {
-        queued.append(text)
-        appLog("Queued for when this floor is free: \(text)")
+    func queue(_ text: String, continuing: Bool = false) {
+        queued.append((text, continuing))
+        appLog("Queued \(continuing ? "follow-up" : "job") for when this floor is free: \(text)")
     }
 
     /// A fresh job for this floor's existing team.
@@ -470,6 +470,8 @@ final class RunController {
             }
         }
     }
+
+    var canContinue: Bool { (state.sessionID ?? resumeSession) != nil }
 
     func followUp(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -726,7 +728,7 @@ final class RunController {
                     let next = queued.removeFirst()
                     Task { @MainActor [weak self] in
                         try? await Task.sleep(for: .seconds(1))
-                        self?.newJobOnFloor(next)
+                        if next.continues { self?.followUp(next.text) } else { self?.newJobOnFloor(next.text) }
                     }
                 }
             default:

@@ -28,19 +28,39 @@ struct OpenInMenu: View {
     var body: some View {
         Group {
             if let remembered {
-                Menu("Open in \(Self.name(of: remembered))", systemImage: "arrow.up.forward.app") {
-                    choices
-                } primaryAction: {
-                    open(with: remembered)
+                HStack(spacing: 0) {
+                    Button("Open in \(Self.name(of: remembered))", systemImage: "arrow.up.forward.app") {
+                        open(with: remembered)
+                    }
+                    Menu { choices } label: { Image(systemName: "chevron.down") }
+                        .menuStyle(.button)
+                        .menuIndicator(.hidden)
+                        .overlay(alignment: .leading) { Rectangle().fill(Color(Palette.hairline)).frame(width: 1) }
+                        .help("Choose another app")
                 }
+                .buttonStyle(SegmentStyle())
+                .overlay { Capsule().strokeBorder(Color(Palette.hairline), lineWidth: 1) }
+                .contentShape(Capsule())
             } else {
                 Menu("Open…", systemImage: "arrow.up.forward.app") { choices }
+                    .menuStyle(.button)
+                    .buttonStyle(PillButtonStyle(kind: .secondary))
             }
         }
-        .menuStyle(.button)
-        .buttonStyle(PillButtonStyle(kind: .secondary))
         .fixedSize()
         .help("Open this project's folder in another app")
+    }
+
+    private struct SegmentStyle: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .font(Typography.controlQuiet)
+                .foregroundStyle(Color(Palette.text))
+                .padding(.vertical, 8)
+                .padding(.horizontal, 15)
+                .contentShape(Rectangle())
+                .scaleEffect(configuration.isPressed ? 0.97 : 1)
+        }
     }
 
     @ViewBuilder private var choices: some View {

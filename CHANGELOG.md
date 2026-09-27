@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- ⌘↩ accepts Reception's suggested action once it's showing.
+- Times on the counter, step bars and trophies show as m:ss, such as 0:14 rather than 14s.
+- VoiceOver reads how long each room has been working, such as "Research, working, 12 seconds".
+- Fixed the camera passing through the first floor, and trees blocking the view, when you type to Reception.
+- Fixed Reception's suggestion buttons being clickable while routing was still running, which could start the wrong job.
+- Fixed delivered files showing full paths instead of project-relative ones when the project is behind a symlink, such as under /tmp.
+
 ## 0.4.0
 
 ### Added

@@ -21,6 +21,8 @@ final class CityStore {
         var lastOutcome: String?
         var nameIsCustom: Bool?
         var configDirectory: String?
+        var presetID: String?
+        var purpose: String?
     }
 
     struct Building: Codable, Identifiable, Equatable {
@@ -133,7 +135,7 @@ final class CityStore {
 
     private var namedFor: [UUID: String] = [:]
 
-    /// Asks Haiku for a short label describing what the floor is doing now, unless the user named it.
+    /// Asks Haiku once for a short label describing the floor's work, unless the user named it.
     private func relabel(_ floorID: UUID, in buildingID: UUID, for request: String) {
         guard let building = building(buildingID), let floor = floor(floorID, in: buildingID),
               floor.nameIsCustom != true, namedFor[floorID] != request,
@@ -172,10 +174,11 @@ final class CityStore {
         }
     }
 
-    func startNewFloor(in buildingID: UUID, request: String = "", name: String? = nil) {
+    func startNewFloor(in buildingID: UUID, request: String = "", name: String? = nil, preset: FloorPreset? = nil) {
         guard let building = building(buildingID) else { return }
         let session = RunController(building: building, floor: nil)
         session.pendingFloorName = name
+        session.pendingPreset = preset
         draft = session
         route = .newFloor(buildingID)
         if request.isEmpty {
@@ -219,21 +222,22 @@ final class CityStore {
             allowedServers: session.kit.map { _ in Array(session.allowedServers) },
             allowedSkills: session.kit.map { _ in Array(session.allowedSkills) },
             lastRequest: session.request,
-            configDirectory: session.configDirectory?.path
+            configDirectory: session.configDirectory?.path,
+            presetID: session.pendingPreset?.id,
+            purpose: session.pendingPreset?.purpose ?? (session.request.isEmpty ? nil : String(session.request.prefix(160)))
         )
         buildings[index].floors.append(floor)
         sessions[floor.id] = session
         if draft === session { draft = nil }
         save()
         route = .floor(building: buildingID, floor: floor.id)
-        relabel(floor.id, in: buildingID, for: session.request)
+        if session.pendingPreset?.session != .fresh { relabel(floor.id, in: buildingID, for: session.request) }
         return floor.id
     }
 
     func jobStarted(on floorID: UUID?, in buildingID: UUID?, request: String) {
         guard let floorID, let buildingID else { return }
         update(floor: floorID, in: buildingID) { $0.lastRequest = request }
-        relabel(floorID, in: buildingID, for: request)
     }
 
     func jobEnded(on floorID: UUID?, in buildingID: UUID?, sessionID: String?, outcome: String) {

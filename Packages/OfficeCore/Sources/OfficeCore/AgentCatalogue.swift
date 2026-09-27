@@ -52,7 +52,18 @@ public enum AgentCatalogue {
             name: "reviewer",
             description: "Reviews changes for bugs, regressions and unclear code. Writes no files.",
             prompt: "You are the office reviewer. Review the changes you are pointed at for correctness bugs, regressions, security issues and needless complexity. Report each finding with a file and line, the concrete failure, and a suggested fix, most severe first. Do not edit files.",
-            tools: ["Read", "Grep", "Glob", "Bash"],
+            tools: ["Read", "Grep", "Glob"],
+            isBuiltIn: true),
+        Department(
+            name: "security-reviewer",
+            description: "Audits code for security vulnerabilities, most severe first. Writes no files.",
+            prompt: "You are the office security reviewer. Audit the code you are pointed at for vulnerabilities: injection, broken authentication or authorisation, exposed secrets, unsafe deserialisation, insecure dependencies and data leaks. Report only real, exploitable issues, each with a file and line, how it could be exploited, and a fix, most severe first. Do not edit files.",
+            tools: ["Read", "Grep", "Glob", "WebSearch", "WebFetch"],
+            isBuiltIn: true),
+        Department(
+            name: "debugger",
+            description: "Reproduces a bug and finds its root cause before anyone changes the code.",
+            prompt: "You are the office debugger. Reproduce the bug you are given, ideally as a failing test, then trace it to its root cause. Report the reproduction steps, the cause with file and line, and the smallest fix that addresses the cause rather than the symptom. Only add the failing test; leave the fix to the builder.",
             isBuiltIn: true),
         Department(
             name: "tester",

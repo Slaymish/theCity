@@ -41,6 +41,7 @@ final class RunController {
     let buildingID: UUID?
     private(set) var floorID: UUID?
     var pendingFloorName: String?
+    var pendingPreset: FloorPreset?
     private(set) var queued: [(text: String, continues: Bool)] = []
     let scene = OfficeScene()
     let kiosk = KioskSession()
@@ -351,7 +352,8 @@ final class RunController {
         let kitTask = kitTask
         Task {
             let kit = await Self.value(of: kitTask, within: .seconds(3)) ?? self.kit
-            let outcome = await HiringDesk.propose(request: request, catalogue: catalogue, kit: kit)
+            var outcome = await HiringDesk.propose(request: request, catalogue: catalogue, kit: kit)
+            if let preset = pendingPreset { outcome = HiringDesk.staff(outcome, with: preset, catalogue: catalogue) }
             guard screen == .hiring else { return }
             switch outcome {
             case .proposed(let proposed, let kitPlan):

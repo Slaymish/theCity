@@ -234,14 +234,17 @@ enum PreviewStage {
             }
             if let request = RunController.launchArgument("-route-test") {
                 let floors: [CityStore.Floor] = [
-                    .init(name: "Feature: login", hires: ["research", "build", "review"], budgetUSD: 1, lastRequest: "Add a sign-in page with email login"),
-                    .init(name: "Security review", hires: ["research", "review"], budgetUSD: 2, lastRequest: "Review the auth code for vulnerabilities"),
+                    .init(name: "Feature: login", hires: ["research", "build", "review"], budgetUSD: 1, lastRequest: "Add a sign-in page with email login",
+                          presetID: "feature", purpose: "Add a sign-in page with email login"),
+                    .init(name: "Security Review", hires: ["security-reviewer"], budgetUSD: 2, lastRequest: "Review the auth code for vulnerabilities",
+                          presetID: "security", purpose: FloorPreset.named("security")?.purpose),
                     .init(name: "Docs", hires: ["design", "build"], budgetUSD: 1, lastRequest: "Write the README introduction"),
                 ]
                 Task { @MainActor in
                     let started = Date()
                     let result = await ReceptionDesk.route(request: request, floors: floors)
-                    let target = result.floorID.flatMap { id in floors.first { $0.id == id }?.name } ?? "NEW: \(result.newFloorName)"
+                    let target = result.floorID.flatMap { id in floors.first { $0.id == id }?.name }
+                        ?? "NEW: \(result.newFloorName)\(result.presetID.map { " [\($0)]" } ?? "")"
                     print(String(format: "ROUTE %.1fs | %@ | %@", Date().timeIntervalSince(started), target, result.reason))
                     exit(0)
                 }

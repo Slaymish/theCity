@@ -95,6 +95,18 @@ enum HiringDesk {
             return .unavailable("The on-device model couldn’t make a plan: \(error.localizedDescription). Choose departments yourself.", everyone)
         }
     }
+
+    /// Hires the preset's team in its order; the model's services and skills still apply, and the team stays editable.
+    static func staff(_ outcome: Outcome, with preset: FloorPreset, catalogue: [Department]) -> Outcome {
+        let team = preset.roles.compactMap { role in catalogue.first { $0.name == role } }
+        guard !team.isEmpty else { return outcome }
+        let hired = team.map { Candidate(department: $0, reason: "Part of the \(preset.name) team", hired: true) }
+        let rest = catalogue.filter { !team.contains($0) }.map { Candidate(department: $0, reason: nil, hired: false) }
+        switch outcome {
+        case .proposed(_, let kitPlan): return .proposed(hired + rest, kitPlan)
+        case .unavailable: return .proposed(hired + rest, nil)
+        }
+    }
 }
 
 @Generable
@@ -109,6 +121,7 @@ struct RoutingSuggestion: Equatable {
     var floorID: UUID?
     var newFloorName: String
     var reason: String
+    var presetID: String? = nil
 }
 
 /// The building's receptionist: decides whether a request belongs on an existing floor or a new one.
@@ -116,28 +129,48 @@ struct RoutingSuggestion: Equatable {
 enum ReceptionDesk {
     static func route(request: String, floors: [CityStore.Floor]) async -> RoutingSuggestion {
         let fallbackName = CityStore.floorName(for: request, existing: floors.map(\.name))
+        let guess = FloorPreset.match(request)
         guard !floors.isEmpty else {
-            return RoutingSuggestion(floorID: nil, newFloorName: fallbackName, reason: "There are no floors yet, so this needs a new one.")
+            return newFloor(for: request, preset: guess, proposed: "", floors: floors, reason: "There are no floors yet, so this needs a new one.")
         }
         guard case .available = SystemLanguageModel.default.availability else {
-            return RoutingSuggestion(floorID: nil, newFloorName: fallbackName, reason: "Choose a floor, or set up a new one.")
+            return newFloor(for: request, preset: guess, proposed: "", floors: floors, reason: "Choose a floor, or set up a new one.")
         }
         let session = takeSession(for: floors)
         do {
             guard let routing = try await withTimeout(seconds: 12, { try await session.respond(to: request, generating: Routing.self).content }) else {
-                return RoutingSuggestion(floorID: nil, newFloorName: fallbackName, reason: "Reception is taking too long. Choose a floor, or set up a new one.")
+                return newFloor(for: request, preset: guess, proposed: "", floors: floors, reason: "Reception is taking too long. Choose a floor, or set up a new one.")
             }
             let named = floors.first { $0.name.caseInsensitiveCompare(routing.floor.trimmingCharacters(in: .whitespaces)) == .orderedSame }
-            if let match = named ?? closest(to: request, proposed: routing.newFloorName, in: floors) {
+            if let match = (named ?? closest(to: request, proposed: routing.newFloorName, in: floors))
+                .flatMap({ supports($0, request: request, preset: guess) ? $0 : nil }) {
                 let last = match.lastRequest.map { " Its last job: “\($0.prefix(80))”." } ?? ""
                 return RoutingSuggestion(floorID: match.id, newFloorName: fallbackName,
                                          reason: "\(match.name) looks like the right team.\(last)")
             }
-            return RoutingSuggestion(floorID: nil, newFloorName: usableName(routing.newFloorName, floors: floors) ?? fallbackName,
-                                     reason: "None of the floors does this kind of work yet.")
+            return newFloor(for: request, preset: guess, proposed: routing.newFloorName, floors: floors,
+                            reason: "None of the floors does this kind of work yet.")
         } catch {
-            return RoutingSuggestion(floorID: nil, newFloorName: fallbackName, reason: "Choose a floor, or set up a new one.")
+            return newFloor(for: request, preset: guess, proposed: "", floors: floors, reason: "Choose a floor, or set up a new one.")
         }
+    }
+
+    /// A preset's existing floor takes the work instead of a new one: always for one-off jobs, and for long ones when it has done related work.
+    private static func newFloor(for request: String, preset: FloorPreset?, proposed: String, floors: [CityStore.Floor], reason: String) -> RoutingSuggestion {
+        let fallbackName = CityStore.floorName(for: request, existing: floors.map(\.name))
+        guard let preset else {
+            return RoutingSuggestion(floorID: nil, newFloorName: usableName(proposed, floors: floors) ?? fallbackName, reason: reason)
+        }
+        if let standing = floors.first(where: { presetOf($0) == preset && (preset.session == .fresh || supports($0, request: request, preset: nil)) }) {
+            return RoutingSuggestion(floorID: standing.id, newFloorName: fallbackName,
+                                     reason: "\(standing.name) is set up for this: \(preset.purpose.prefix(1).lowercased() + preset.purpose.dropFirst())")
+        }
+        let name = preset.session == .fresh || words(proposed).isDisjoint(with: words(request))
+            ? CityStore.floorName(for: preset.name, existing: floors.map(\.name))
+            : usableName(proposed, floors: floors) ?? fallbackName
+        return RoutingSuggestion(floorID: nil, newFloorName: name,
+                                 reason: "\(reason) It suits a \(preset.name) team: \(preset.roles.joined(separator: ", ")).",
+                                 presetID: preset.id)
     }
 
     private static var warm: (key: String, session: LanguageModelSession)?
@@ -161,7 +194,9 @@ enum ReceptionDesk {
 
     private static func instructions(for floors: [CityStore.Floor]) -> String {
         let list = floors.map { floor in
-            "- \(floor.name) (team: \(floor.hires.joined(separator: ", "))). Last job: \(floor.lastRequest?.prefix(120) ?? "none")"
+            let purpose = floor.purpose.map { " Set up for: \($0.prefix(120))." } ?? ""
+            let recent = recentRequests(floor).map { "“\($0.prefix(80))”" }.joined(separator: ", ")
+            return "- \(floor.name) (team: \(floor.hires.joined(separator: ", "))).\(purpose) Recent jobs: \(recent.isEmpty ? "none" : recent)"
         }.joined(separator: "\n")
         return """
         You are the receptionist of an office building. Each floor is a team that does one kind of work. \
@@ -171,6 +206,11 @@ enum ReceptionDesk {
         Floors:
         \(list)
         """
+    }
+
+    private static func recentRequests(_ floor: CityStore.Floor) -> [String] {
+        let asked = FloorHistory.load(floor.id).filter { $0.kind == .request }.suffix(3).map(\.text)
+        return asked.isEmpty ? floor.lastRequest.map { [$0] } ?? [] : Array(asked.reversed())
     }
 
     // A task group would wait for the model, which ignores cancellation, so race unstructured tasks instead.
@@ -183,13 +223,26 @@ enum ReceptionDesk {
         }
     }
 
+    private static func words(_ text: String) -> Set<String> {
+        let stop: Set<String> = ["the", "and", "for", "with", "add", "make", "fix", "our", "this", "that", "into", "from", "about", "update", "new", "please"]
+        return Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 2 && !stop.contains($0) })
+    }
+
+    /// The small model often picks an unrelated floor, so its pick needs a shared word or a matching preset to stand.
+    private static func supports(_ floor: CityStore.Floor, request: String, preset: FloorPreset?) -> Bool {
+        if let preset, presetOf(floor) == preset { return true }
+        let known = ([floor.name, floor.purpose ?? ""] + recentRequests(floor)).joined(separator: " ")
+        return !words(request).isDisjoint(with: words(known))
+    }
+
+    /// Floors set up before presets existed are matched by what they are called and for.
+    private static func presetOf(_ floor: CityStore.Floor) -> FloorPreset? {
+        FloorPreset.named(floor.presetID) ?? FloorPreset.match(floor.name + " " + (floor.purpose ?? ""))
+    }
+
     /// Backs up the small on-device model: a proposed name that repeats a floor's name, or a request sharing
     /// two meaningful words with a floor's name or last job, means that floor already does this work.
     private static func closest(to request: String, proposed: String, in floors: [CityStore.Floor]) -> CityStore.Floor? {
-        let stop: Set<String> = ["the", "and", "for", "with", "add", "make", "fix", "our", "this", "that", "into", "from", "about", "update", "new", "please"]
-        func words(_ text: String) -> Set<String> {
-            Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 2 && !stop.contains($0) })
-        }
         let proposedWords = words(proposed)
         if let byName = floors.first(where: { !proposedWords.isDisjoint(with: words($0.name)) }) { return byName }
         let asked = words(request)

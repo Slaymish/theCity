@@ -523,7 +523,7 @@ struct ReceptionComposer: View {
                     .buttonStyle(PillButtonStyle(kind: .secondary))
             }
         } else {
-            Button("Set up “\(suggestion.newFloorName)”", systemImage: "plus.circle.fill") { newFloor(suggestion.newFloorName) }
+            Button("Set up “\(suggestion.newFloorName)”", systemImage: "plus.circle.fill") { newFloor(suggestion) }
                 .buttonStyle(PillButtonStyle())
                 .keyboardShortcut(.return, modifiers: .command)
         }
@@ -532,7 +532,7 @@ struct ReceptionComposer: View {
     @ViewBuilder
     private func otherButtons(_ suggestion: RoutingSuggestion, match: CityStore.Floor?) -> some View {
         if match != nil {
-            Button("Set up “\(suggestion.newFloorName)” instead") { newFloor(suggestion.newFloorName) }
+            Button("Set up “\(suggestion.newFloorName)” instead") { newFloor(suggestion) }
                 .buttonStyle(PillButtonStyle(kind: .secondary))
         }
         let others = building.floors.filter { $0.id != match?.id }
@@ -592,9 +592,9 @@ struct ReceptionComposer: View {
         scene?.leaveLobby()
     }
 
-    private func newFloor(_ name: String) {
+    private func newFloor(_ chosen: RoutingSuggestion) {
         stopRouting()
-        city.startNewFloor(in: building.id, request: text, name: name)
+        city.startNewFloor(in: building.id, request: text, name: chosen.newFloorName, preset: FloorPreset.named(chosen.presetID))
         text = ""
         suggestion = nil
     }

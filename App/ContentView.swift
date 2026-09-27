@@ -10,12 +10,8 @@ struct ContentView: View {
         ZStack {
             Color(Palette.background).ignoresSafeArea()
             switch city.route {
-            case .welcome, .city, .building, .floor:
+            case .welcome, .city, .building, .floor, .newFloor:
                 WorldView(city: city)
-            case .newFloor(let id):
-                if let draft = city.draft {
-                    DraftFlow(controller: draft) { city.route = .building(id) }
-                }
             }
         }
         .foregroundStyle(Color(Palette.text))

@@ -237,8 +237,9 @@ enum PreviewStage {
             let question = PermissionRequest.preview(question: "Which tone should the greeting use?")
             scene.apply([.runStarted, .managerActive(false),
                          .handoff(toolUseID: "a", room: "build", description: nil), .roomStarted(toolUseID: "a", room: "build"),
-                         .roomActivity(room: "build", toolName: "Write"),
+                         .roomActivity(room: "build", toolName: "Write"), .roomCaption(room: "build", caption: "writing hello.txt"),
                          .roomStarted(toolUseID: "b", room: "research"), .roomActivity(room: "research", toolName: "Read"),
+                         .roomCaption(room: "research", caption: "reading README.md"),
                          .skillLoaded(room: "research", skill: "office-house-style"),
                          .handRaised(question, room: "review")])
             if let count = RunController.launchArgument("-records").flatMap(Int.init) {

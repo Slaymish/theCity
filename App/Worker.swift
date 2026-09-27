@@ -1,4 +1,5 @@
 import AppKit
+import OfficeCore
 import RealityKit
 import SwiftUI
 
@@ -37,6 +38,9 @@ final class Worker {
     static let walkSpeed: Float = 1.8
     private let face = ModelEntity()
     private let screen: Entity?
+    private let captionPanel = ModelEntity()
+    private var captionAspect: Float = 1.45
+    private(set) var caption = ToolCaption.thinking
     private var time = Double.random(in: 0...10)
     private var armLAngle: Float = 0
     private var armRAngle: Float = 0
@@ -72,6 +76,13 @@ final class Worker {
             (head ?? anchor).addChild(face)
             face.setPosition(anchor.position(relativeTo: robot) + [0, 0, 0.008], relativeTo: robot)
             face.setOrientation(simd_quatf(angle: 0, axis: [0, 1, 0]), relativeTo: robot)
+        }
+        if let screen {
+            let bounds = screen.visualBounds(relativeTo: screen)
+            captionAspect = bounds.extents.x / max(bounds.extents.y, 0.001)
+            captionPanel.model = ModelComponent(mesh: .generatePlane(width: bounds.extents.x, height: bounds.extents.y), materials: [])
+            captionPanel.position = [bounds.center.x, bounds.center.y, bounds.max.z + 0.002]
+            screen.addChild(captionPanel)
         }
         Self.attachAccessory(for: room, to: robot)
         ModelLibrary.tint(robot, parts: ["Knob", "AntennaTip", "Accent"], colour: colour)
@@ -156,11 +167,29 @@ final class Worker {
             model.materials = model.materials.map { _ in material }
             part.components.set(model)
         }
+        captionPanel.isEnabled = on
         if on {
+            if captionPanel.model?.materials.isEmpty == true { drawCaption() }
             glow.components.set(PointLightComponent(color: Palette.screenOn, intensity: 2600, attenuationRadius: 2.2))
         } else {
             glow.components.remove(PointLightComponent.self)
         }
+    }
+
+    func setCaption(_ text: String) {
+        guard text != caption else { return }
+        caption = text
+        drawCaption()
+    }
+
+    private func drawCaption() {
+        let view = CaptionView(text: caption, aspect: CGFloat(captionAspect))
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        guard let image = renderer.cgImage, let texture = try? TextureResource(image: image, options: .init(semantic: .color)) else { return }
+        var material = UnlitMaterial()
+        material.color = .init(tint: .white, texture: .init(texture))
+        captionPanel.model?.materials = [material]
     }
 
     func resetClock() { workedFor = 0 }
@@ -272,6 +301,23 @@ struct FaceView: View {
             .font(Typography.ui(glyph.count > 1 ? 92 : 132, weight: 700))
             .foregroundStyle(Color(Palette.screenOn))
             .frame(width: 290, height: 200)
+            .background(Color(Palette.screenOff))
+    }
+}
+
+struct CaptionView: View {
+    let text: String
+    let aspect: CGFloat
+
+    var body: some View {
+        Text(text)
+            .font(Typography.ui(92, weight: 700))
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
+            .minimumScaleFactor(0.1)
+            .foregroundStyle(Color(Palette.screenOn))
+            .padding(24)
+            .frame(width: 200 * aspect, height: 200)
             .background(Color(Palette.screenOff))
     }
 }

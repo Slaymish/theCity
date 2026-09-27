@@ -140,7 +140,8 @@ public enum StreamParser {
                     (window["utilization"] as? Double).map {
                         RateLimit.Window(utilization: $0, resetsAt: (window["resetsAt"] as? Double).map { Date(timeIntervalSince1970: $0) })
                     }
-                }
+                },
+                isUsingOverage: info?["isUsingOverage"] as? Bool ?? false
             )))
         case ("result", _):
             let modelUsage = (json["modelUsage"] as? [String: [String: Any]] ?? [:]).mapValues(camelUsage)

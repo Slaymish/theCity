@@ -37,6 +37,9 @@ final class Preferences {
     var budgetUSD: Double {
         didSet { defaults.set(budgetUSD, forKey: "budgetUSD") }
     }
+    var permissionMode: PermissionMode {
+        didSet { defaults.set(permissionMode.rawValue, forKey: "permissionMode") }
+    }
     var theme: Theme {
         didSet { defaults.set(theme.rawValue, forKey: "theme") }
     }
@@ -52,17 +55,26 @@ final class Preferences {
     var cliPath: String? {
         didSet { defaults.set(cliPath, forKey: "cliPath") }
     }
+    var editorPath: String? {
+        didSet { defaults.set(editorPath, forKey: "editorPath") }
+    }
+    var hiddenAccounts: Set<String> {
+        didSet { defaults.set(Array(hiddenAccounts), forKey: "hiddenAccounts") }
+    }
 
     private init() {
         configDirectory = defaults.string(forKey: "configDirectory").map { URL(fileURLWithPath: $0) }
             ?? ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
         model = defaults.string(forKey: "model")
         budgetUSD = defaults.object(forKey: "budgetUSD") as? Double ?? 1.0
+        permissionMode = PermissionMode(rawValue: defaults.string(forKey: "permissionMode") ?? "") ?? .auto
         theme = Theme(rawValue: defaults.string(forKey: "theme") ?? "") ?? .system
         notifications = defaults.object(forKey: "notifications") as? Bool ?? true
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
         soundVolume = defaults.object(forKey: "soundVolume") as? Double ?? 0.7
         cliPath = defaults.string(forKey: "cliPath")
+        editorPath = defaults.string(forKey: "editorPath")
+        hiddenAccounts = Set(defaults.stringArray(forKey: "hiddenAccounts") ?? [])
     }
 
     var isDark: Bool {
@@ -81,6 +93,20 @@ final class Preferences {
         case "dark": .dark
         default: theme.scheme
         }
+    }
+
+    static var allAccounts: [URL?] { [nil] + RunController.configDirectories.map { $0 } }
+
+    func visibleAccounts(including selected: URL?) -> [URL?] {
+        let accounts = Self.allAccounts
+        let visible = accounts.filter { $0 == selected || !hiddenAccounts.contains(UsageStore.key($0)) }
+        return visible.contains(selected) ? visible : visible + [selected]
+    }
+
+    func isShown(_ account: URL?) -> Binding<Bool> {
+        let id = UsageStore.key(account)
+        return Binding(get: { !self.hiddenAccounts.contains(id) },
+                       set: { if $0 { self.hiddenAccounts.remove(id) } else { self.hiddenAccounts.insert(id) } })
     }
 
     static func accountName(_ directory: URL?) -> String {
@@ -109,9 +135,8 @@ struct SettingsView: View {
         Form {
             Section("New jobs start with") {
                 Picker("Account", selection: $preferences.configDirectory) {
-                    Text("Default").tag(URL?.none)
-                    ForEach(RunController.configDirectories, id: \.self) { url in
-                        Text(Preferences.accountName(url)).tag(URL?.some(url))
+                    ForEach(preferences.visibleAccounts(including: preferences.configDirectory), id: \.self) { url in
+                        Text(Preferences.accountName(url)).tag(url)
                     }
                 }
                 Picker("Model", selection: $preferences.model) {
@@ -124,6 +149,31 @@ struct SettingsView: View {
                     ForEach(RunController.budgets, id: \.self) { budget in
                         Text(budget.formatted(.currency(code: "USD"))).tag(budget)
                     }
+                }
+                Picker("Permissions", selection: $preferences.permissionMode) {
+                    ForEach(PermissionMode.allCases) { mode in Text(mode.title).tag(mode) }
+                }
+                Text(preferences.permissionMode.detail).font(.caption).foregroundStyle(Color(Palette.muted))
+            }
+            if Preferences.allAccounts.count > 1 {
+                Section {
+                    ForEach(Preferences.allAccounts, id: \.self) { url in
+                        let starts = url == preferences.configDirectory
+                        Toggle(isOn: starts ? .constant(true) : preferences.isShown(url)) {
+                            Text(Preferences.accountName(url))
+                            Text(((url?.path ?? "~/.claude") as NSString).abbreviatingWithTildeInPath)
+                                .font(.caption).foregroundStyle(Color(Palette.muted))
+                            if starts {
+                                Text("Starts new jobs, so it stays shown.").font(.caption).foregroundStyle(Color(Palette.muted))
+                            }
+                        }
+                        .disabled(starts)
+                    }
+                } header: {
+                    Text("Accounts")
+                } footer: {
+                    Text("Hidden accounts don’t appear in the usage gauges or the Account menu, and aren’t refreshed.")
+                        .font(.caption).foregroundStyle(Color(Palette.muted))
                 }
             }
             Section("Branding") {

@@ -64,6 +64,15 @@ struct OfficeCommands: Commands {
         CommandGroup(before: .toolbar) {
             Button("City") { city.route = city.buildings.isEmpty ? .welcome : .city }
                 .keyboardShortcut("0", modifiers: .command)
+            ForEach(1...9, id: \.self) { number in
+                Button("Floor \(number)") {
+                    if let id = city.currentBuildingID, let floor = city.building(id)?.floors.dropFirst(number - 1).first {
+                        city.route = .floor(building: id, floor: floor.id)
+                    }
+                }
+                .keyboardShortcut(KeyEquivalent(Character(String(number))), modifiers: .command)
+                .disabled((city.currentBuildingID.flatMap { city.building($0)?.floors.count } ?? 0) < number)
+            }
             Button(city.activeSession?.showPanel ?? true ? "Hide Panel" : "Show Panel") { city.activeSession?.showPanel.toggle() }
                 .keyboardShortcut("\\", modifiers: .command)
                 .disabled(city.activeSession == nil)

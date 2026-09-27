@@ -54,9 +54,8 @@ struct ReceptionView: View {
                 .help(controller.workingDirectory?.path ?? "The folder the office works in")
                 HStack(spacing: 8) {
                     Menu {
-                        Button("Default") { controller.configDirectory = nil }
-                        ForEach(RunController.configDirectories, id: \.self) { url in
-                            Button(Preferences.accountName(url)) { controller.configDirectory = url }
+                        ForEach(Preferences.shared.visibleAccounts(including: controller.configDirectory), id: \.self) { url in
+                            Button(UsageStore.shared.summary(url)) { controller.configDirectory = url }
                         }
                     } label: {
                         Label("Account: \(Preferences.accountName(controller.configDirectory))", systemImage: "person.crop.circle")
@@ -94,6 +93,7 @@ struct ReceptionView: View {
                     .buttonStyle(PillButtonStyle(kind: .secondary))
                     .fixedSize()
                     .help("The most this job may spend before it stops")
+                    PermissionModeMenu(controller: controller)
                     Spacer(minLength: 0)
                     Button("Hire staff") { controller.beginHiring() }
                         .buttonStyle(PillButtonStyle())

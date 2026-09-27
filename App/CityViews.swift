@@ -128,7 +128,7 @@ struct WorldView: View {
 
     private var buildingID: UUID? {
         switch city.route {
-        case .building(let id), .floor(let id, _): id
+        case .building(let id), .floor(let id, _), .newFloor(let id): id
         default: nil
         }
     }
@@ -160,7 +160,8 @@ struct WorldView: View {
                                             guard case .building = city.route, world.inBuilding != nil, !event.modifierFlags.contains(.option) else { return false }
                                             world.building.scroll(by: Float(event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 10))
                                             return true
-                                        }))
+                                        },
+                                        passThrough: { [city] in if case .newFloor = city.route { true } else { false } }))
                 .onAppear {
                     world.city.titleMode = city.route == .welcome
                     world.city.build(city.buildings, dark: dark)
@@ -184,18 +185,20 @@ struct WorldView: View {
                     guard world.inBuilding == buildingID, buildingID != nil else { return }
                     if let floorID { world.building.enter(floor: floorID) } else { world.building.leaveFloor() }
                 }
+                .onChange(of: billboardTitle) { if let buildingID { show(buildingID) } }
                 .onChange(of: buildingID.flatMap { city.building($0)?.floors.map(\.id) } ?? []) {
                     guard let buildingID, world.inBuilding == buildingID else { return }
                     show(buildingID)
                     world.cityRebuilt()
+                    if let floorID { world.building.enter(floor: floorID) }
                 }
             }
-            .padding(.trailing, session?.showPanel == true ? OfficeView.panelWidth + 20 : 0)
             .ignoresSafeArea()
             .accessibilityHidden(true)
 
             if let buildingID, let session, let floorScene = world.building.scene(for: session.floorID ?? UUID()) {
-                OfficeOverlay(controller: session, scene: floorScene) { city.route = .building(buildingID) }
+                OfficeOverlay(controller: session, scene: floorScene, onBack: { city.route = .building(buildingID) },
+                              onClose: { city.removeFloor(session.floorID ?? UUID(), in: buildingID) })
             } else if let buildingID, let building = city.building(buildingID) {
                 BuildingHUD(city: city, building: building, since: since, scene: world.building)
             } else if city.route == .welcome {
@@ -208,8 +211,8 @@ struct WorldView: View {
 
     private func tapped(_ entity: Entity) {
         if let buildingID, world.inBuilding == buildingID {
-            if let floorID, let room = OfficeScene.room(of: entity), room != "outbox", world.building.floor(of: entity) == floorID {
-                city.session(for: floorID, in: buildingID)?.select(room: room)
+            if let floorID, world.building.floor(of: entity) == floorID, let session = city.session(for: floorID, in: buildingID) {
+                if let room = OfficeScene.room(of: entity), room != "outbox", room != session.selectedRoom { session.select(room: room) } else { session.selectedRoom = nil }
                 return
             }
             if let tapped = world.building.floor(of: entity), tapped != floorID {
@@ -230,6 +233,8 @@ struct WorldView: View {
             city.route = .building(id)
         }
     }
+
+    private var billboardTitle: String? { buildingID.flatMap { city.building($0)?.title } }
 
     private func show(_ id: UUID) {
         guard let building = city.building(id) else { return }
@@ -277,6 +282,7 @@ struct BuildingHUD: View {
                     .keyboardShortcut(.escape, modifiers: [])
                 Spacer()
                 UsageHUD(configDirectory: Preferences.shared.configDirectory)
+                OpenInMenu(directory: building.url)
                 Button("New floor…", systemImage: "plus") { city.startNewFloor(in: building.id) }
                     .buttonStyle(PillButtonStyle(kind: .secondary))
                     .help("Set up a floor yourself instead of asking reception")
@@ -302,7 +308,17 @@ struct BuildingHUD: View {
                         CGPoint(x: min(head.x + 60 + composerSize.width / 2, geometry.size.width - 20 - composerSize.width / 2),
                                 y: min(max(head.y, 20 + composerSize.height / 2), geometry.size.height - 20 - composerSize.height / 2))
                     }
-                    ReceptionComposer(city: city, building: building, scene: scene)
+                    Group {
+                        if let draft = city.draft, draft.buildingID == building.id, city.route == .newFloor(building.id) {
+                            HiringView(controller: draft) { city.cancelNewFloor() }
+                                .frame(width: 620)
+                                .glass(padding: 16)
+                                .onAppear { scene.receptionist(thinking: false, pointingAt: nil, scaffold: true) }
+                                .onDisappear { scene.receptionist(thinking: false, pointingAt: nil, scaffold: false) }
+                        } else {
+                            ReceptionComposer(city: city, building: building, scene: scene)
+                        }
+                    }
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { composerSize = $0 }
                         .position(pinned ?? resting)
                         .animation(OfficeScene.reduceMotion ? nil : .easeOut(duration: 0.3), value: pinned == nil)
@@ -360,6 +376,7 @@ struct FloorList: View {
     let building: CityStore.Building
     @State private var renaming: UUID?
     @State private var newName = ""
+    @State private var closing: ClosingFloor?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -376,8 +393,7 @@ struct FloorList: View {
                         newName = floor.name
                         renaming = floor.id
                     }
-                    Button("Remove Floor") { city.removeFloor(floor.id, in: building.id) }
-                        .disabled(session?.isRunning == true)
+                    Button("Close Floor…") { closing = ClosingFloor(id: floor.id, name: floor.name) }
                 }
             }
         }
@@ -390,6 +406,9 @@ struct FloorList: View {
             }
             Button("Cancel", role: .cancel) { renaming = nil }
         }
+        .modifier(CloseFloorConfirmation(floor: $closing, running: closing.map { city.sessions[$0.id]?.isRunning == true } ?? false) {
+            city.removeFloor($0.id, in: building.id)
+        })
     }
 }
 
@@ -402,25 +421,14 @@ struct ReceptionComposer: View {
     @State private var suggestion: RoutingSuggestion?
     @State private var thinking = false
     @State private var asked = ""
-    @FocusState private var focused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "bell.fill").foregroundStyle(Color(Palette.primaryFill))
-                Text("Reception").eyebrow()
-            }
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField("What do you need done in \(building.name)?", text: $text, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(Typography.body)
-                    .lineLimit(1...5)
-                    .commandReturn(enabled: canAsk) { ask() }
-                    .onSubmit(ask)
-                    .focused($focused)
-                Button("Ask reception", action: ask)
+            PromptEditor(address: [building.name, "Reception", "picks the right floor"],
+                         placeholder: "What do you need done in \(building.name)?",
+                         directory: building.url, text: $text, canSend: canAsk, send: ask) { withImages in
+                Button("Ask reception", action: withImages(ask))
                     .buttonStyle(PillButtonStyle())
-                    .keyboardShortcut(.return, modifiers: .command)
                     .disabled(!canAsk)
             }
             if thinking {
@@ -432,11 +440,11 @@ struct ReceptionComposer: View {
                 suggestionView(suggestion)
             }
         }
-        .frame(width: 560, alignment: .leading)
+        .frame(width: 620, alignment: .leading)
         .glass(padding: 16)
         .onChange(of: text) { if text != asked { suggestion = nil } }
-        .onChange(of: focused) {
-            if focused { scene?.focusLobby() } else if text.isEmpty, suggestion == nil { scene?.leaveLobby() }
+        .onChange(of: text.isEmpty) {
+            if !text.isEmpty { scene?.focusLobby() } else if suggestion == nil { scene?.leaveLobby() }
         }
         .onChange(of: thinking) { gesture() }
         .onChange(of: suggestion) { gesture() }
@@ -484,6 +492,10 @@ struct ReceptionComposer: View {
 
     private func ask() {
         guard canAsk else { return }
+        if let (floor, rest) = directFloor(), !rest.isEmpty {
+            text = rest
+            return send(to: floor.id)
+        }
         asked = text
         thinking = true
         let request = text
@@ -493,6 +505,16 @@ struct ReceptionComposer: View {
             if asked == request { suggestion = result }
             thinking = false
         }
+    }
+
+    /// "@Floor name request" skips routing; the longest matching floor name wins.
+    private func directFloor() -> (CityStore.Floor, String)? {
+        guard text.hasPrefix("@") else { return nil }
+        let body = text.dropFirst()
+        let match = building.floors
+            .filter { body.lowercased().hasPrefix($0.name.lowercased()) }
+            .max { $0.name.count < $1.name.count }
+        return match.map { ($0, body.dropFirst($0.name.count).trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
 
     private func send(to floorID: UUID) {
@@ -506,5 +528,26 @@ struct ReceptionComposer: View {
         city.startNewFloor(in: building.id, request: text, name: name)
         text = ""
         suggestion = nil
+    }
+}
+
+struct ClosingFloor: Equatable {
+    let id: UUID
+    let name: String
+}
+
+/// Asks before a floor and its team are closed, and warns when that cancels a job.
+struct CloseFloorConfirmation: ViewModifier {
+    @Binding var floor: ClosingFloor?
+    let running: Bool
+    let close: (ClosingFloor) -> Void
+
+    func body(content: Content) -> some View {
+        content.confirmationDialog("Close \(floor?.name ?? "floor")?", isPresented: Binding(get: { floor != nil }, set: { if !$0 { floor = nil } }), presenting: floor) { floor in
+            Button(running ? "Cancel Job and Close" : "Close Floor", role: .destructive) { close(floor) }
+            Button("Keep", role: .cancel) {}
+        } message: { _ in
+            Text(running ? "Its current job will be cancelled. Past jobs stay in the building's history." : "The floor and its team are removed from the building. Past jobs stay in the building's history.")
+        }
     }
 }

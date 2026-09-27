@@ -19,6 +19,7 @@ final class CityStore {
         var lastRequest: String?
         var sessionID: String?
         var lastOutcome: String?
+        var nameIsCustom: Bool?
     }
 
     struct Building: Codable, Identifiable, Equatable {
@@ -28,6 +29,7 @@ final class CityStore {
         var style: Int
         var floors: [Floor] = []
         var createdAt = Date()
+        var title: String?
 
         var url: URL { URL(fileURLWithPath: path) }
     }
@@ -62,6 +64,7 @@ final class CityStore {
         if buildings.isEmpty, let path = RunController.launchArgument("-workspace") ?? UserDefaults.standard.string(forKey: "workingDirectory") {
             _ = addBuilding(at: URL(fileURLWithPath: path))
         }
+        buildings.map(\.id).forEach(nameProject)
         route = buildings.isEmpty ? .welcome : .city
         if ProcessInfo.processInfo.arguments.contains("-show-building"), let first = buildings.first { route = .building(first.id) }
     }
@@ -78,7 +81,23 @@ final class CityStore {
         let building = Building(name: url.lastPathComponent, path: url.path, style: buildings.count % 8)
         buildings.append(building)
         save()
+        nameProject(building.id)
         return building
+    }
+
+    private var naming: Set<UUID> = []
+
+    /// Asks Haiku once for the project's proper name, shown on the building's billboard.
+    private func nameProject(_ id: UUID) {
+        guard let building = building(id), building.title == nil, !naming.contains(id) else { return }
+        naming.insert(id)
+        Task {
+            let title = await FloorNamer.projectName(folder: building.url, configDirectory: Preferences.shared.configDirectory)
+            naming.remove(id)
+            guard let title, let index = buildings.firstIndex(where: { $0.id == id }) else { return }
+            buildings[index].title = title
+            save()
+        }
     }
 
     func removeBuilding(_ id: UUID) {
@@ -90,14 +109,36 @@ final class CityStore {
     }
 
     func removeFloor(_ id: UUID, in buildingID: UUID) {
-        guard sessions[id]?.isRunning != true, let index = buildings.firstIndex(where: { $0.id == buildingID }) else { return }
+        guard let index = buildings.firstIndex(where: { $0.id == buildingID }) else { return }
+        sessions[id]?.cancel()
+        if route == .floor(building: buildingID, floor: id) { route = .building(buildingID) }
         buildings[index].floors.removeAll { $0.id == id }
         sessions[id] = nil
         save()
     }
 
     func renameFloor(_ id: UUID, in buildingID: UUID, to name: String) {
-        update(floor: id, in: buildingID) { $0.name = name }
+        update(floor: id, in: buildingID) {
+            $0.name = name
+            $0.nameIsCustom = true
+        }
+    }
+
+    private var namedFor: [UUID: String] = [:]
+
+    /// Asks Haiku for a short label describing what the floor is doing now, unless the user named it.
+    private func relabel(_ floorID: UUID, in buildingID: UUID, for request: String) {
+        guard let building = building(buildingID), let floor = floor(floorID, in: buildingID),
+              floor.nameIsCustom != true, namedFor[floorID] != request,
+              !request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        namedFor[floorID] = request
+        let others = building.floors.filter { $0.id != floorID }.map(\.name)
+        let configDirectory = sessions[floorID]?.configDirectory ?? Preferences.shared.configDirectory
+        Task {
+            guard let label = await FloorNamer.label(for: request, avoiding: others, configDirectory: configDirectory),
+                  namedFor[floorID] == request, self.floor(floorID, in: buildingID)?.nameIsCustom != true else { return }
+            update(floor: floorID, in: buildingID) { $0.name = label }
+        }
     }
 
     func update(floor id: UUID, in buildingID: UUID, _ change: (inout Floor) -> Void) {
@@ -117,16 +158,31 @@ final class CityStore {
         return session
     }
 
+    var currentBuildingID: UUID? {
+        switch route {
+        case .building(let id), .floor(let id, _), .newFloor(let id): id
+        default: nil
+        }
+    }
+
     func startNewFloor(in buildingID: UUID, request: String = "", name: String? = nil) {
         guard let building = building(buildingID) else { return }
         let session = RunController(building: building, floor: nil)
         session.pendingFloorName = name
         draft = session
         route = .newFloor(buildingID)
-        if !request.isEmpty {
+        if request.isEmpty {
+            session.pickTeamYourself()
+        } else {
             session.request = request
             session.beginHiring()
         }
+    }
+
+    func cancelNewFloor() {
+        guard case .newFloor(let id) = route else { return }
+        draft = nil
+        route = .building(id)
     }
 
     /// Reception hands a request to an existing floor's team.
@@ -155,12 +211,14 @@ final class CityStore {
         if draft === session { draft = nil }
         save()
         route = .floor(building: buildingID, floor: floor.id)
+        relabel(floor.id, in: buildingID, for: session.request)
         return floor.id
     }
 
     func jobStarted(on floorID: UUID?, in buildingID: UUID?, request: String) {
         guard let floorID, let buildingID else { return }
         update(floor: floorID, in: buildingID) { $0.lastRequest = request }
+        relabel(floorID, in: buildingID, for: request)
     }
 
     func jobEnded(on floorID: UUID?, in buildingID: UUID?, sessionID: String?, outcome: String) {

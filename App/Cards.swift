@@ -119,6 +119,12 @@ struct RequestCard: View {
                         .buttonStyle(PillButtonStyle())
                         .keyboardShortcut(isFront ? KeyboardShortcut(.return, modifiers: .command) : nil)
                 }
+                if controller.permissionMode != .auto {
+                    Button("Allow and switch this job to Auto") { controller.allowAndSwitchToAuto(pending) }
+                        .buttonStyle(.link)
+                        .font(Typography.caption)
+                        .help(PermissionMode.auto.detail)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -134,7 +140,7 @@ struct DeskCard: View {
     @State private var stamped: Stamp?
     static let width: CGFloat = 360
 
-    enum Stamp { case allowed, alwaysAllowed, denied }
+    enum Stamp { case allowed, alwaysAllowed, auto, denied }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -147,8 +153,14 @@ struct DeskCard: View {
                     .padding(.vertical, 4)
                     .padding(.horizontal, 10)
                     .background(Capsule().fill(Color(colour)))
-                ForEach(Array(questions.enumerated()), id: \.element.question) { index, question in
-                    QuestionFields(question: question, numbered: index == 0, colour: colour, draft: $draft)
+                let fields = VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(questions.enumerated()), id: \.element.question) { index, question in
+                        QuestionFields(question: question, numbered: index == 0, colour: colour, draft: $draft)
+                    }
+                }
+                ViewThatFits(in: .vertical) {
+                    fields
+                    ScrollView { fields }
                 }
                 HStack {
                     Spacer()
@@ -183,6 +195,13 @@ struct DeskCard: View {
                         .keyboardShortcut(.return, modifiers: .command)
                 }
                 .disabled(stamped != nil)
+                if controller.permissionMode != .auto {
+                    Button("Allow and switch this job to Auto") { stamp(.auto) }
+                        .buttonStyle(.link)
+                        .font(Typography.caption)
+                        .help(PermissionMode.auto.detail)
+                        .disabled(stamped != nil)
+                }
             }
         }
         .frame(width: Self.width, alignment: .leading)
@@ -218,6 +237,7 @@ struct DeskCard: View {
             switch kind {
             case .allowed: controller.allow(pending)
             case .alwaysAllowed: controller.allow(pending, always: true)
+            case .auto: controller.allowAndSwitchToAuto(pending)
             case .denied: controller.deny(pending)
             }
         }
@@ -268,6 +288,7 @@ struct EndCard: View {
     let outcome: RunOutcome
     @Binding var collapsed: Bool
     @State private var followUp = ""
+    @State private var reading = false
 
     var body: some View {
         Group {
@@ -298,6 +319,9 @@ struct EndCard: View {
             HStack {
                 Text(title).eyebrow()
                 Spacer()
+                Button("Read in full", systemImage: "doc.text.magnifyingglass") { reading = true }
+                    .buttonStyle(PillButtonStyle(kind: .secondary))
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
                 Button { collapsed = true } label: { Image(systemName: "chevron.down") }
                     .buttonStyle(.plain)
                     .foregroundStyle(Color(Palette.muted))
@@ -306,9 +330,9 @@ struct EndCard: View {
             }
             ViewThatFits(in: .vertical) {
                 summaryText.fixedSize(horizontal: false, vertical: true)
-                ScrollView { summaryText }.frame(height: 160)
+                ScrollView { summaryText }.frame(height: 320)
             }
-            .frame(maxHeight: 160)
+            .frame(maxHeight: 320)
             if !links.isEmpty {
                 HStack(spacing: 8) {
                     ForEach(links, id: \.self) { url in
@@ -331,22 +355,43 @@ struct EndCard: View {
                 }
             }
             if canFollowUp {
-                HStack(spacing: 8) {
-                    TextField("Ask for a change or a next step…", text: $followUp)
-                        .textFieldStyle(.plain)
-                        .font(Typography.caption)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 12)
-                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(Palette.hairline), lineWidth: 1))
-                        .onSubmit(send)
-                    Button("Send", action: send)
+                PromptEditor(address: [controller.workingDirectory?.lastPathComponent ?? "Project", "Follow-up on this job"],
+                             placeholder: "Ask for a change or a next step…",
+                             directory: controller.workingDirectory, text: $followUp,
+                             canSend: !followUp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, send: send) { withImages in
+                    Button("Send", action: withImages(send))
                         .buttonStyle(PillButtonStyle())
                         .disabled(followUp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
-        .frame(width: 520, alignment: .leading)
+        .frame(width: 620, alignment: .leading)
         .glass(padding: 16)
+        .sheet(isPresented: $reading) { reader }
+    }
+
+    private var reader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(title).eyebrow()
+                Spacer()
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(message, forType: .string)
+                }
+                .buttonStyle(PillButtonStyle(kind: .secondary))
+                Button("Done") { reading = false }
+                    .buttonStyle(PillButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+            }
+            ScrollView {
+                Text(rendered).font(Typography.body).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.trailing, 12)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 720, idealWidth: 860, minHeight: 520, idealHeight: 720)
     }
 
     private var summaryText: some View {
@@ -372,7 +417,7 @@ struct EndCard: View {
     }
 
     private var canFollowUp: Bool {
-        guard controller.state.sessionID != nil, !controller.isAccountFailure else { return false }
+        guard controller.floorID == nil, controller.state.sessionID != nil, !controller.isAccountFailure else { return false }
         switch outcome {
         case .completed, .cancelled, .failed(.budgetExhausted, _), .failed(.runError, _): return true
         case .failed: return false

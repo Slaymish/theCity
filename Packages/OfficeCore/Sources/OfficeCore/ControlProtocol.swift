@@ -107,6 +107,10 @@ public enum ControlMessage {
         line(["type": "control_request", "request_id": requestID, "request": ["subtype": "initialize"]])
     }
 
+    public static func setPermissionMode(_ mode: PermissionMode, requestID: String = UUID().uuidString) -> Data {
+        line(["type": "control_request", "request_id": requestID, "request": ["subtype": "set_permission_mode", "mode": mode.rawValue]])
+    }
+
     public static func userMessage(_ text: String) -> Data {
         line(["type": "user", "message": ["role": "user", "content": text]])
     }

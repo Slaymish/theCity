@@ -9,17 +9,22 @@ final class OfficeScene {
     private(set) var camera: CameraRig
     private var ownsCamera = true
     var isActive = true
-    private(set) var footprint = SIMD2<Float>(21, 17)
     private(set) var focusedRoom: String?
     var updates: EventSubscription?
 
     private static let podSpacingX: Float = 7
     private static let rowZ: Float = 4
     private static let hopTime: Double = 1.1
+    static let wallHeight: Float = 5.2
+    static let floorThickness: Float = 0.3
+    static let footprint = SIMD2<Float>(3 * podSpacingX + 4, rowZ * 2 + 9)
+    private static let loftHeight: Float = 2.5
+    private static let loftFront: Float = -3.5
 
     private var dark = true
     private var themed: [(ModelEntity, NSColor)] = []
     private var pods: [String: Pod] = [:]
+    private var lofted: Set<String> = []
     private var order: [String] = []
     private var terminals: [String: Terminal] = [:]
     private var signs: [Entity] = []
@@ -67,6 +72,7 @@ final class OfficeScene {
         if ownsCamera { root.addChild(camera.entity) }
         themed = []
         pods = [:]
+        lofted = []
         order = hired.map(\.name)
         terminals = [:]
         signs = []
@@ -76,17 +82,26 @@ final class OfficeScene {
         outboxItems = []
         focusedRoom = nil
 
-        width = Float(max(hired.count, 3)) * Self.podSpacingX
-        footprint = [width + 4, Self.rowZ * 2 + 9]
-        let floor = themedModel(.generateBox(width: width + 4, height: 0.3, depth: Self.rowZ * 2 + 9, cornerRadius: 0.3), Palette.sceneFloor)
-        floor.position = [0, -0.15, 0]
+        let floor = themedModel(.generateBox(width: Self.footprint.x, height: Self.floorThickness, depth: Self.footprint.y, cornerRadius: 0.3), Palette.sceneFloor)
+        floor.position = [0, -Self.floorThickness / 2, 0]
         root.addChild(floor)
-        buildWalls(width: width + 4, depth: Self.rowZ * 2 + 9)
+        buildWalls(width: Self.footprint.x, depth: Self.footprint.y)
 
+        let ground = min(hired.count, 3)
+        let loftSpots = Self.loftLayout(count: hired.count - ground)
+        if !loftSpots.isEmpty { buildLoft() }
         for (index, department) in hired.enumerated() {
-            let x = (Float(index) - Float(hired.count - 1) / 2) * Self.podSpacingX
+            let position: SIMD3<Float>, scale: Float
+            if index < ground {
+                position = [(Float(index) - Float(ground - 1) / 2) * Self.podSpacingX, 0, -Self.rowZ]
+                scale = 1
+            } else {
+                (position, scale) = loftSpots[index - ground]
+                lofted.insert(department.name)
+            }
             addPod(department.name, title: department.name.capitalized, number: "\(index + 1)", colour: colour(department.name),
-                   at: [x, 0, -Self.rowZ], variant: index)
+                   at: position, variant: index)
+            pods[department.name]?.root.scale = SIMD3(repeating: scale)
         }
         addPod("manager", title: "Manager", number: "M", colour: Palette.manager, at: [0, 0, Self.rowZ], variant: 3)
         addOutbox(at: [Self.podSpacingX, 0, Self.rowZ])
@@ -113,6 +128,50 @@ final class OfficeScene {
         themed.append((pod.tile, colour))
         pod.hangBanner(symbol: Self.bannerSymbol(for: room), title: title, dark: dark)
         pods[room] = pod
+    }
+
+    private static func loftLayout(count: Int) -> [(SIMD3<Float>, Float)] {
+        guard count > 0 else { return [] }
+        let span = footprint.x - 1.6, depth = footprint.y / 2 + loftFront, centreX: Float = 0.8
+        let rows = (1...count).max { a, b in loftScale(count, rows: a, span: span, depth: depth) < loftScale(count, rows: b, span: span, depth: depth) } ?? 1
+        let columns = (count + rows - 1) / rows
+        let scale = loftScale(count, rows: rows, span: span, depth: depth)
+        let spacing = min(podSpacingX, span / Float(columns))
+        return (0..<count).map { index in
+            let row = index / columns
+            let inRow = min(columns, count - row * columns)
+            let x = centreX + (Float(index % columns) - Float(inRow - 1) / 2) * spacing
+            let z = -footprint.y / 2 + depth * (Float(row) + 0.5) / Float(rows)
+            return ([x, loftHeight, z], scale)
+        }
+    }
+
+    private static func loftScale(_ count: Int, rows: Int, span: Float, depth: Float) -> Float {
+        let columns = Float((count + rows - 1) / rows)
+        return min(0.75, span / columns / 5.7, depth / Float(rows) / 5.4)
+    }
+
+    private func buildLoft() {
+        let depth = Self.footprint.y / 2 + Self.loftFront, left = -Self.footprint.x / 2
+        let deck = themedModel(.generateBox(width: Self.footprint.x, height: 0.2, depth: depth, cornerRadius: 0.05), Palette.sceneFloor)
+        deck.position = [0, Self.loftHeight - 0.1, -Self.footprint.y / 2 + depth / 2]
+        root.addChild(deck)
+        let stairWidth: Float = 0.8, steps = 10, tread: Float = 0.4
+        for x in [-Self.podSpacingX / 2, Self.podSpacingX / 2, -left - 0.15] {
+            let post = themedModel(.generateBox(width: 0.14, height: Self.loftHeight + 0.9, depth: 0.14), Palette.desk)
+            post.position = [x, (Self.loftHeight + 0.9) / 2, Self.loftFront - 0.1]
+            root.addChild(post)
+        }
+        let railLength = Self.footprint.x - stairWidth
+        let rail = themedModel(.generateBox(width: railLength, height: 0.08, depth: 0.1, cornerRadius: 0.03), Palette.desk)
+        rail.position = [left + stairWidth + railLength / 2, Self.loftHeight + 0.9, Self.loftFront - 0.1]
+        root.addChild(rail)
+        for index in 0..<steps {
+            let rise = Self.loftHeight * Float(index + 1) / Float(steps)
+            let step = themedModel(.generateBox(width: stairWidth, height: rise, depth: tread), Palette.desk)
+            step.position = [left + stairWidth / 2, rise / 2, Self.loftFront + tread * (Float(steps - index) - 0.5)]
+            root.addChild(step)
+        }
     }
 
     private func addOutbox(at position: SIMD3<Float>) {
@@ -145,7 +204,7 @@ final class OfficeScene {
     }
 
     static func walls(width: Float, depth: Float, doorway: Bool = false, make: (MeshResource) -> ModelEntity) -> [ModelEntity] {
-        let height: Float = 5.2
+        let height = wallHeight
         let thickness: Float = 0.35
         let sill: Float = 1.3
         let lintel: Float = 4.2
@@ -248,7 +307,7 @@ final class OfficeScene {
         let aspect = Float(size.width / size.height)
         let vertical: Float = 26 * .pi / 180
         let horizontal = 2 * atan(tan(vertical / 2) * aspect)
-        let radius = 0.5 * simd_length(SIMD2<Float>(width + 4, Self.rowZ * 2 + 9))
+        let radius = 0.5 * simd_length(Self.footprint)
         var pose = overviewPose()
         pose.distance = radius / sin(min(vertical, horizontal) / 2) * 1.0
         camera.overview = pose
@@ -258,6 +317,8 @@ final class OfficeScene {
     func overviewPose() -> CameraRig.Pose {
         .init(target: root.position(relativeTo: nil) + [0, 0.5, 0], yaw: 0.62, pitch: 0.62, distance: 34)
     }
+
+    var trailingInset: CGFloat = 0
 
     func focus(room: String) {
         guard let pod = pods[room] ?? pods["contractor"] else { return }
@@ -270,7 +331,10 @@ final class OfficeScene {
         }
         outboxBanner?.isEnabled = false
         let settled: Float = 0.28
-        camera.focus(on: pod.worker.headPosition - [0, 0.6, 0], facing: .pi / 2 - 0.55, distance: 8.5,
+        let yaw: Float = .pi / 2 - 0.55, distance: Float = 8.5
+        let worldPerPoint = viewSize.height > 0 ? 2 * distance * tan(13 * .pi / 180) / Float(viewSize.height) : 0
+        let shift = SIMD3<Float>(cos(yaw), 0, -sin(yaw)) * Float(trailingInset / 2) * worldPerPoint
+        camera.focus(on: pod.worker.headPosition - [0, 0.6, 0] + shift, facing: yaw, distance: distance,
                      pitch: settled + (Self.reduceMotion ? 0 : 2 * .pi / 180))
         guard !Self.reduceMotion else { return }
         Task { @MainActor [weak self] in
@@ -328,7 +392,7 @@ final class OfficeScene {
         guard idleClock > nextStroll else { return }
         idleClock = 0
         nextStroll = Double.random(in: 18...35)
-        guard let pod = pods.filter({ $0.key != "manager" && $0.key != "contractor" }).values.randomElement() else { return }
+        guard let pod = pods.filter({ $0.key != "manager" && $0.key != "contractor" && !lofted.contains($0.key) }).values.randomElement() else { return }
         let seat = pod.worker.seatPosition
         let aisle = SIMD3<Float>(seat.x + Float.random(in: 0.5...3), 0, Self.rowZ - 0.4)
         strolling = pod
@@ -402,10 +466,13 @@ final class OfficeScene {
                 fly(folder, from: manager.deskTop + [0.3, 0, 0.6], to: pod(for: room).deskTop + [0.3, 0, 0.6])
                 if isActive { Sound.play(.whoosh, volume: 0.5) }
             case .roomStarted(_, let room):
+                pod(for: room).worker.setCaption(ToolCaption.thinking)
                 pod(for: room).worker.setMood(.working)
             case .roomActivity(let room, let tool):
                 let pod = pod(for: room)
                 pod.showBubble(symbol: Self.symbol(for: tool), text: Wording.verb(tool), dark: dark)
+            case .roomCaption(let room, let caption):
+                pod(for: room).worker.setCaption(caption)
             case .roomFinished(_, let room, let outcome):
                 let pod = pod(for: room)
                 pod.worker.setMood(outcome == .completed ? .done : .error)
@@ -440,7 +507,7 @@ final class OfficeScene {
             case .serviceCall(let id, let room, let server, let active):
                 let terminal = terminal(for: server)
                 if active {
-                    let line = Self.connector(from: pod(for: room).worker.headPosition, to: terminal.root.position + [0, 2.2, 0])
+                    let line = Self.connector(from: root.convert(position: pod(for: room).worker.headPosition, from: nil), to: terminal.root.position + [0, 2.2, 0])
                     root.addChild(line)
                     lines[id] = (line, server)
                 } else {

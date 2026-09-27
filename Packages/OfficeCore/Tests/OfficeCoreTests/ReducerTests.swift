@@ -9,7 +9,7 @@ struct ReducerTests {
 
     @Test func threeRoomsProducesTheOfficeStory() throws {
         var reducer = OfficeReducer()
-        let events = reducer.runToExit(try Fixture.events("three-rooms.jsonl")).withoutTally
+        let events = reducer.runToExit(try Fixture.events("three-rooms.jsonl")).withoutTally.withoutCaptions
         guard case .runEnded(.completed(let summary, let cost)) = events.dropLast().last else {
             Issue.record("run did not complete: \(String(describing: events.suffix(2)))")
             return
@@ -70,7 +70,7 @@ struct ReducerTests {
         events += reducer.apply(.cancelRequested)
         events += reducer.run(Array(wire[(startedAt + 1)...]))
         events += reducer.apply(.processExited(code: 0, stderr: ""))
-        let story = events.withoutTally
+        let story = events.withoutTally.withoutCaptions
         #expect(story.contains { if case .roomFinished(_, "research", .killed) = $0 { true } else { false } })
         #expect(story.contains { if case .runEnded(.cancelled) = $0 { true } else { false } })
         #expect(story.filter { if case .runEnded = $0 { true } else { false } }.count == 1)

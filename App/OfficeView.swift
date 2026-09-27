@@ -8,6 +8,7 @@ struct SceneControls: ViewModifier {
     let camera: () -> CameraRig
     var excludedTrailing: CGFloat = 0
     var onScroll: ((NSEvent) -> Bool)?
+    var passThrough: () -> Bool = { false }
     @State private var lastDrag: CGSize = .zero
     @State private var lastMagnification: CGFloat = 1
     @State private var monitor: Any?
@@ -28,7 +29,7 @@ struct SceneControls: ViewModifier {
                 monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
                     guard event.window?.isKeyWindow == true else { return event }
                     let width = event.window?.contentView?.bounds.width ?? 0
-                    if event.locationInWindow.x > width - excludedTrailing { return event }
+                    if passThrough() || event.locationInWindow.x > width - excludedTrailing { return event }
                     if let onScroll, onScroll(event) { return nil }
                     if event.hasPreciseScrollingDeltas && !event.modifierFlags.contains(.option) {
                         camera().pan(dx: Float(event.scrollingDeltaX), dy: Float(event.scrollingDeltaY))
@@ -64,7 +65,8 @@ struct OfficeView: View {
                 }
                 .realityViewCameraControls(.none)
                 .gesture(SpatialTapGesture().targetedToAnyEntity().onEnded { value in
-                    if let room = OfficeScene.room(of: value.entity), room != "outbox" { controller.select(room: room) }
+                    let room = OfficeScene.room(of: value.entity)
+                    if let room, room != "outbox", room != controller.selectedRoom { controller.select(room: room) } else { controller.selectedRoom = nil }
                 })
                 .modifier(SceneControls(camera: { [scene] in scene.camera }, excludedTrailing: controller.showPanel ? Self.panelWidth + 40 : 0))
                 .onAppear {
@@ -73,7 +75,6 @@ struct OfficeView: View {
                 }
                 .onChange(of: geometry.size) { scene.fit(geometry.size) }
             }
-            .padding(.trailing, controller.showPanel ? Self.panelWidth + 20 : 0)
             .ignoresSafeArea()
             .accessibilityHidden(true)
             OfficeOverlay(controller: controller, scene: scene)
@@ -86,7 +87,10 @@ struct OfficeOverlay: View {
     @Bindable var controller: RunController
     let scene: OfficeScene
     var onBack: (() -> Void)?
+    var onClose: (() -> Void)?
     @State private var outboxCollapsed = false
+    @State private var closing: ClosingFloor?
+    @State private var bottomHeight: CGFloat = 0
     static var panelWidth: CGFloat { OfficeView.panelWidth }
 
     var body: some View {
@@ -106,9 +110,20 @@ struct OfficeOverlay: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 10) {
                     if let onBack {
-                        Button(controller.displayTitle, systemImage: "chevron.backward", action: onBack)
-                            .buttonStyle(PillButtonStyle(kind: .secondary))
-                            .help("Back to the building")
+                        HStack(spacing: 8) {
+                            Button(controller.displayTitle, systemImage: "chevron.backward", action: onBack)
+                                .buttonStyle(PillButtonStyle(kind: .secondary))
+                                .keyboardShortcut(controller.selectedRoom == nil ? .cancelAction : nil)
+                                .help("Back to the building (esc)")
+                            if onClose != nil, let id = controller.floorID {
+                                Button("Close floor", systemImage: "xmark") {
+                                    closing = ClosingFloor(id: id, name: controller.displayTitle)
+                                }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(PillButtonStyle(kind: .secondary))
+                                .help("Close this floor")
+                            }
+                        }
                     }
                     if !controller.request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, controller.state.phase != .idle {
                         JobCard(controller: controller)
@@ -130,6 +145,7 @@ struct OfficeOverlay: View {
                     }
                     CounterCard(controller: controller)
                     UsageHUD(configDirectory: controller.configDirectory)
+                        .frame(maxWidth: Self.panelWidth, alignment: .trailing)
                     if controller.showPanel {
                         SidePanel(controller: controller)
                             .frame(width: Self.panelWidth)
@@ -139,23 +155,27 @@ struct OfficeOverlay: View {
             }
             .padding(20)
 
-            DeskRequestLayer(controller: controller, scene: scene)
+            DeskRequestLayer(controller: controller, scene: scene, bottomInset: bottomHeight)
 
             VStack(spacing: 12) {
                 Spacer()
-                if controller.state.phase == .running {
-                    StepBar(steps: controller.steps) { controller.select(room: $0) }
+                VStack(spacing: 12) {
+                    if controller.state.phase == .running {
+                        StepBar(steps: controller.steps) { controller.select(room: $0) }
+                    }
+                    if case .ended(let outcome) = controller.state.phase {
+                        EndCard(controller: controller, outcome: outcome, collapsed: $outboxCollapsed)
+                        if controller.floorID != nil { FloorComposer(controller: controller, compact: true) }
+                    } else if controller.state.phase == .idle, !controller.isRunning, controller.floorID != nil {
+                        FloorComposer(controller: controller, compact: false)
+                    }
                 }
-                if case .ended(let outcome) = controller.state.phase {
-                    EndCard(controller: controller, outcome: outcome, collapsed: $outboxCollapsed)
-                    if controller.floorID != nil { FloorComposer(controller: controller, compact: true) }
-                } else if controller.state.phase == .idle, !controller.isRunning, controller.floorID != nil {
-                    FloorComposer(controller: controller, compact: false)
-                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomHeight = $0 + 20 }
             }
             .padding(.bottom, 20)
             .padding(.trailing, controller.showPanel ? Self.panelWidth + 20 : 0)
         }
+        .modifier(CloseFloorConfirmation(floor: $closing, running: controller.isRunning) { _ in onClose?() })
         .overlay(alignment: .top) {
             if controller.selectedRoom != nil {
                 Button("Back to floor", systemImage: "chevron.backward") { controller.selectedRoom = nil }
@@ -166,6 +186,10 @@ struct OfficeOverlay: View {
             }
         }
         .onChange(of: controller.startedAt) { outboxCollapsed = false }
+        .onChange(of: controller.showPanel, initial: true) {
+            scene.trailingInset = controller.showPanel ? Self.panelWidth + 20 : 0
+            if let room = controller.selectedRoom { scene.focus(room: room) }
+        }
         .onChange(of: controller.selectedRoom) {
             if let room = controller.selectedRoom { scene.focus(room: room) } else { scene.showOverview() }
         }
@@ -175,6 +199,7 @@ struct OfficeOverlay: View {
 struct DeskRequestLayer: View {
     let controller: RunController
     let scene: OfficeScene
+    var bottomInset: CGFloat = 0
     @State private var index = 0
     @State private var cardSize = CGSize(width: DeskCard.width, height: 200)
     @State private var returnTo: String??
@@ -192,11 +217,6 @@ struct DeskRequestLayer: View {
                         if let shown {
                             DeskCard(pending: shown, colour: controller.colour(for: shown.room), controller: controller)
                                 .id(shown.id)
-                        } else if !(controller.showPanel && controller.panelTab == .room) {
-                            RoomInspector(controller: controller)
-                                .frame(width: DeskCard.width, alignment: .leading)
-                                .frame(maxHeight: 380)
-                                .glass(radius: 12, padding: 12)
                         }
                         if shown != nil, pending.count > 1 {
                             Button("\(pending.count - 1) more waiting", systemImage: "chevron.forward") {
@@ -208,7 +228,7 @@ struct DeskRequestLayer: View {
                     }
                     .onGeometryChange(for: CGSize.self) { $0.size } action: { cardSize = $0 }
                     .position(x: min(max(head.x + 40 + cardSize.width / 2, cardSize.width / 2 + 20), limit - cardSize.width / 2),
-                              y: min(max(head.y, cardSize.height / 2 + 20), geometry.size.height - cardSize.height / 2 - 20))
+                              y: min(max(head.y, cardSize.height / 2 + 20), max(cardSize.height / 2 + 20, geometry.size.height - bottomInset - cardSize.height / 2 - 20)))
                 }
                 .transition(OfficeScene.reduceMotion ? .opacity : .scale(scale: 0.6, anchor: .leading).combined(with: .opacity))
             }
@@ -252,29 +272,34 @@ struct FloorComposer: View {
                 Text(controller.hired.isEmpty ? "The manager works this floor alone." : "On staff: " + controller.hired.map { $0.name.capitalized }.joined(separator: ", "))
                     .font(Typography.caption).foregroundStyle(Color(Palette.muted))
             }
-            HStack(spacing: 8) {
-                TextField(compact ? "Give this floor another job…" : "Give this floor a job…", text: $text)
-                    .textFieldStyle(.plain)
-                    .font(Typography.caption)
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 12)
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(Palette.hairline), lineWidth: 1))
-                    .onSubmit(startNew)
-                Button("New job", action: startNew)
-                    .buttonStyle(PillButtonStyle())
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || controller.readiness != .ready)
-                if controller.resumeSession != nil || controller.state.sessionID != nil {
-                    Button("Continue last job") {
-                        controller.followUp(text.isEmpty ? "Please continue where you left off." : text)
-                        text = ""
-                    }
-                    .buttonStyle(PillButtonStyle(kind: .secondary))
-                    .disabled(controller.readiness != .ready)
+            PromptEditor(address: [controller.workingDirectory?.lastPathComponent ?? "Project", controller.displayTitle, continues ? "Follow-up on last job" : "New job"],
+                         placeholder: continues ? "Ask for a change or a next step…" : "Give this floor a job…",
+                         directory: controller.workingDirectory, text: $text,
+                         canSend: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && controller.readiness == .ready,
+                         send: continues ? continueLast : startNew) { withImages in
+                if continues {
+                    Button("Start a new job", action: withImages(startNew))
+                        .buttonStyle(PillButtonStyle(kind: .secondary))
+                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || controller.readiness != .ready)
+                    Button("Send", action: withImages(continueLast))
+                        .buttonStyle(PillButtonStyle())
+                        .disabled(controller.readiness != .ready)
+                } else {
+                    Button("Start job", action: withImages(startNew))
+                        .buttonStyle(PillButtonStyle())
+                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || controller.readiness != .ready)
                 }
             }
         }
-        .frame(width: 520, alignment: .leading)
+        .frame(width: 620, alignment: .leading)
         .glass(padding: 16)
+    }
+
+    private var continues: Bool { compact && (controller.resumeSession != nil || controller.state.sessionID != nil) }
+
+    private func continueLast() {
+        controller.followUp(text.isEmpty ? "Please continue where you left off." : text)
+        text = ""
     }
 
     private func startNew() {
@@ -300,11 +325,35 @@ struct JobCard: View {
                     .foregroundStyle(Color(Palette.muted))
                     .lineLimit(2)
             }
+            PermissionModeMenu(controller: controller)
         }
         .frame(maxWidth: 300, alignment: .leading)
         .padding(EdgeInsets(top: 12, leading: 12, bottom: 18, trailing: 12))
         .background(TicketShape().fill(Color(Palette.glassTop)))
         .overlay(TicketShape().stroke(Color(Palette.hairline), lineWidth: 1))
+    }
+}
+
+struct PermissionModeMenu: View {
+    let controller: RunController
+
+    var body: some View {
+        Menu {
+            ForEach(PermissionMode.allCases) { mode in
+                Button {
+                    controller.setPermissionMode(mode)
+                } label: {
+                    if mode == controller.permissionMode { Label(mode.title, systemImage: "checkmark") } else { Text(mode.title) }
+                }
+                .help(mode.detail)
+            }
+        } label: {
+            Label("Permissions: \(controller.permissionMode.title)", systemImage: "checkmark.shield")
+        }
+        .menuStyle(.button)
+        .buttonStyle(PillButtonStyle(kind: .secondary))
+        .fixedSize()
+        .help(controller.permissionMode.detail)
     }
 }
 
@@ -338,11 +387,15 @@ struct CounterCard: View {
         let tally = controller.state.tally
         TimelineView(.animation(minimumInterval: 0.25, paused: !controller.isRunning)) { context in
             HStack(spacing: 12) {
-            RingGauge(fraction: (tally.costUSD ?? 0) / max(controller.budgetUSD, 0.01))
-                .help("Spent so far against the budget")
+            RingGauge(fraction: session.map { $0.utilization } ?? (tally.costUSD ?? 0) / max(controller.budgetUSD, 0.01))
+                .help(session == nil ? "Spent so far against the budget" : "Share of your plan's 5-hour session used")
             VStack(alignment: .trailing, spacing: 4) {
-                Text(costLine(tally))
-                    .foregroundStyle(Color(tally.costUSD == nil ? Palette.muted : Palette.text))
+                if let session {
+                    Text("Plan \(session.utilization.formatted(.percent.precision(.fractionLength(0)))) of session")
+                } else {
+                    Text(costLine(tally))
+                        .foregroundStyle(Color(tally.costUSD == nil ? Palette.muted : Palette.text))
+                }
                 Text(RunController.clock(elapsed(now: context.date)))
                 Text("\(Self.compact(tally.total)) tokens")
                     .foregroundStyle(Color(Palette.muted))
@@ -355,10 +408,17 @@ struct CounterCard: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// On a subscription the dollar figure is only what the API would have charged, so show plan usage instead.
+    private var session: RateLimit.Window? {
+        guard let limit = controller.state.rateLimit, !limit.isUsingOverage else { return nil }
+        return limit.windows["five_hour"]
+    }
+
     private func costLine(_ tally: TokenTally) -> String {
         let budget = controller.budgetUSD.formatted(.currency(code: "USD"))
-        guard let cost = tally.costUSD else { return "Budget \(budget)" }
-        return "\(cost.formatted(.currency(code: "USD"))) of \(budget)"
+        let extra = controller.state.rateLimit?.isUsingOverage == true ? " extra usage" : ""
+        guard let cost = tally.costUSD else { return "Budget \(budget)\(extra)" }
+        return "\(cost.formatted(.currency(code: "USD")))\(extra) of \(budget)"
     }
 
     private func elapsed(now: Date) -> TimeInterval {

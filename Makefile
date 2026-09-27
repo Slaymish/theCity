@@ -1,7 +1,7 @@
 DERIVED := build
 APP := $(DERIVED)/Build/Products/Debug/TheOffice.app
 
-.PHONY: run build test project replay clean
+.PHONY: run build install test project replay clean
 
 run: build
 	open $(APP) --args -workspace "$(CURDIR)/SampleWorkspace"
@@ -11,6 +11,10 @@ replay: build
 
 build: project
 	xcodebuild -project TheOffice.xcodeproj -scheme TheOffice -configuration Debug -derivedDataPath $(DERIVED) -quiet build
+
+install: build
+	rm -rf /Applications/TheOffice.app
+	cp -R $(APP) /Applications/TheOffice.app
 
 test:
 	cd Packages/OfficeCore && swift test

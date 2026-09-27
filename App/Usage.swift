@@ -14,54 +14,83 @@ final class UsageStore {
     }
 
     static let shared = UsageStore()
-    private(set) var latest: Reading?
-    private(set) var isRefreshing = false
-    private(set) var refreshError: String?
-    private let key = "usageReading"
+    private(set) var readings: [String: Reading] = [:]
+    private(set) var refreshing: Set<String> = []
+    private(set) var errors: [String: String] = [:]
+    private(set) var noLimits: Set<String> = []
+    private let key = "usageReadings"
 
     private init() {
         if let data = UserDefaults.standard.data(forKey: key) {
-            latest = try? JSONDecoder().decode(Reading.self, from: data)
+            readings = (try? JSONDecoder().decode([String: Reading].self, from: data)) ?? [:]
         }
     }
 
-    func record(_ limit: RateLimit) {
+    static func key(_ directory: URL?) -> String { directory?.path ?? "default" }
+
+    func reading(_ directory: URL?) -> Reading? { readings[Self.key(directory)] }
+    func isRefreshing(_ directory: URL?) -> Bool { refreshing.contains(Self.key(directory)) }
+    func refreshError(_ directory: URL?) -> String? { errors[Self.key(directory)] }
+    func hasNoLimits(_ directory: URL?) -> Bool { noLimits.contains(Self.key(directory)) }
+
+    func summary(_ directory: URL?) -> String {
+        let name = Preferences.accountName(directory)
+        if let reading = reading(directory) {
+            let percent = { (window: RateLimit.Window?) in "\(Int(((window?.utilization ?? 0) * 100).rounded()))%" }
+            return "\(name) — Session \(percent(reading.session)) · Week \(percent(reading.week))"
+        }
+        return "\(name) — \(hasNoLimits(directory) ? "no plan limits" : "no reading yet")"
+    }
+
+    func record(_ limit: RateLimit, configDirectory: URL?) {
         guard !limit.windows.isEmpty else { return }
-        let reading = Reading(session: limit.windows["five_hour"], week: limit.windows["seven_day"], asOf: .now)
-        latest = reading
-        if let data = try? JSONEncoder().encode(reading) { UserDefaults.standard.set(data, forKey: key) }
+        let id = Self.key(configDirectory)
+        readings[id] = Reading(session: limit.windows["five_hour"], week: limit.windows["seven_day"], asOf: .now)
+        noLimits.remove(id)
+        errors[id] = nil
+        if let data = try? JSONEncoder().encode(readings) { UserDefaults.standard.set(data, forKey: key) }
+    }
+
+    func refresh(_ directories: [URL?]) {
+        directories.forEach { refresh(configDirectory: $0) }
     }
 
     /// Asks Haiku for one word just to read the limits the reply carries (about US$0.001).
     func refresh(configDirectory: URL?) {
-        guard !isRefreshing else { return }
+        let id = Self.key(configDirectory)
+        guard !refreshing.contains(id) else { return }
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
         guard let executable = ClaudeEnvironment.locateCLI(environment: environment) else {
-            refreshError = "Claude Code isn’t installed."
+            errors[id] = "Claude Code isn’t installed."
             return
         }
-        isRefreshing = true
-        refreshError = nil
+        refreshing.insert(id)
+        errors[id] = nil
         // A bare session: the default prompt carries every skill and MCP tool, which made one word cost about US$0.05.
         let arguments = ["-p", "ok", "--output-format", "stream-json", "--verbose", "--model", "haiku", "--no-session-persistence",
                          "--system-prompt", "Reply with the single word ok.", "--tools", "", "--strict-mcp-config",
                          "--mcp-config", #"{"mcpServers":{}}"#, "--disable-slash-commands", "--setting-sources", ""]
         let directory = FileManager.default.temporaryDirectory
         Task {
-            defer { isRefreshing = false }
+            defer { refreshing.remove(id) }
             guard let process = try? ClaudeProcess(executable: executable, arguments: arguments, environment: environment,
                                                     workingDirectory: directory) else {
-                refreshError = "Couldn’t start Claude Code."
+                errors[id] = "Couldn’t start Claude Code."
                 return
             }
             var found = false
+            var replied = false
             for await output in process.output {
-                if case .line(let line) = output, case .event(.rateLimit(let limit)) = line.parsed, !limit.windows.isEmpty {
-                    record(limit)
+                guard case .line(let line) = output else { continue }
+                if case .event(.rateLimit(let limit)) = line.parsed, !limit.windows.isEmpty {
+                    record(limit, configDirectory: configDirectory)
                     found = true
+                } else if case .event(.result) = line.parsed {
+                    replied = true
                 }
             }
-            if !found { refreshError = "Claude Code didn’t report your limits." }
+            if found { return }
+            if replied { noLimits.insert(id) } else { errors[id] = "Claude Code didn’t report your limits." }
         }
     }
 }
@@ -70,27 +99,63 @@ struct UsageHUD: View {
     let usage = UsageStore.shared
     var configDirectory: URL?
 
+    private var accounts: [URL?] { Preferences.shared.visibleAccounts(including: configDirectory) }
+
     var body: some View {
+        let accounts = accounts
         HStack(spacing: 14) {
-            if let reading = usage.latest {
+            if accounts.count > 1 {
+                Grid(horizontalSpacing: 14, verticalSpacing: 8) {
+                    ForEach(accounts, id: \.self) { account in row(account) }
+                }
+            } else if let reading = usage.reading(configDirectory) {
                 gauge("Session", reading.session)
                 gauge("Week", reading.week)
-                Text("as of \(reading.asOf.formatted(date: .omitted, time: .shortened))")
-                    .font(Typography.caption).foregroundStyle(Color(Palette.muted))
+                asOf(reading)
+            } else if usage.hasNoLimits(configDirectory) {
+                Text("No plan limits on this account.").font(Typography.caption).foregroundStyle(Color(Palette.muted))
             } else {
                 Text("Plan limits appear after your first job.").font(Typography.caption).foregroundStyle(Color(Palette.muted))
             }
             Button {
-                usage.refresh(configDirectory: configDirectory)
+                usage.refresh(accounts)
             } label: {
-                if usage.isRefreshing { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise") }
+                if accounts.contains(where: usage.isRefreshing) { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise") }
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color(Palette.muted))
-            .help(usage.refreshError ?? "Refresh your plan limits (sends one tiny request to Haiku)")
+            .help(accounts.count > 1 ? "Refresh plan limits for every shown account (sends one tiny request to Haiku for each)"
+                  : usage.refreshError(configDirectory) ?? "Refresh your plan limits (sends one tiny request to Haiku)")
             .accessibilityLabel("Refresh plan limits")
         }
         .modifier(Glass(radius: 24, padding: EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14)))
+    }
+
+    @ViewBuilder
+    private func row(_ account: URL?) -> some View {
+        let selected = account == configDirectory
+        GridRow {
+            Text(Preferences.accountName(account))
+                .font(selected ? Typography.captionMedium : Typography.caption)
+                .foregroundStyle(Color(selected ? Palette.text : Palette.muted))
+                .gridColumnAlignment(.leading)
+            if let reading = usage.reading(account) {
+                gauge("Session", reading.session)
+                gauge("Week", reading.week)
+                asOf(reading)
+            } else {
+                Text(usage.hasNoLimits(account) ? "No plan limits" : usage.refreshError(account) ?? "No reading yet")
+                    .font(Typography.caption).foregroundStyle(Color(Palette.muted))
+                    .gridCellColumns(3)
+                    .gridCellAnchor(.leading)
+            }
+        }
+        .help(usage.reading(account) == nil ? "" : usage.refreshError(account) ?? "")
+    }
+
+    private func asOf(_ reading: UsageStore.Reading) -> some View {
+        Text("as of \(reading.asOf.formatted(date: .omitted, time: .shortened))")
+            .font(Typography.caption).foregroundStyle(Color(Palette.muted))
     }
 
     private func gauge(_ title: String, _ window: RateLimit.Window?) -> some View {

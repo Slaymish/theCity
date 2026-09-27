@@ -68,6 +68,7 @@ final class RunController {
         }
     }
     var budgetUSD: Double = Preferences.shared.budgetUSD
+    private(set) var permissionMode: PermissionMode = Preferences.shared.permissionMode
     var panelTab: PanelTab = .requests
     var showPanel = false
     var selectedRoom: String?
@@ -288,6 +289,15 @@ final class RunController {
         askReceptionist(workingDirectory: workingDirectory)
     }
 
+    func pickTeamYourself() {
+        guard let workingDirectory else { return }
+        let catalogue = AgentCatalogue.load(workingDirectory: workingDirectory)
+        catalogueNames = catalogue.map(\.name)
+        candidates = catalogue.map { Candidate(department: $0, reason: nil, hired: false) }
+        hiringNote = catalogue.isEmpty ? "No departments found in \(workingDirectory.lastPathComponent)/.claude/agents." : nil
+        screen = .hiring
+    }
+
     func askAgain() {
         guard let workingDirectory, !isHiring else { return }
         askReceptionist(workingDirectory: workingDirectory)
@@ -478,9 +488,11 @@ final class RunController {
             model: model,
             maxBudgetUSD: budgetUSD,
             appendSystemPrompt: hired.isEmpty ? nil : AgentCatalogue.hiringBrief(for: hired),
+            agents: AgentCatalogue.agentsJSON(for: hired),
             resumeSessionID: resume,
             blockedTools: kit.map { Kit.blockRules(servers: $0.usableServers, allowedServers: allowedServers,
-                                                   skills: $0.skills, allowedSkills: allowedSkills) } ?? []
+                                                   skills: $0.skills, allowedSkills: allowedSkills) } ?? [],
+            permissionMode: permissionMode
         )
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
         consumer = Task { [weak self] in
@@ -508,6 +520,7 @@ final class RunController {
                 self.process = process
                 appLog("Launched in \(workingDirectory.path)")
                 if let brief = config.appendSystemPrompt { appLog("Hiring brief: \(brief)") }
+                appLog("Permission mode: \(config.permissionMode.title)")
                 if !config.blockedTools.isEmpty { appLog("Blocked for this job: \(config.blockedTools.joined(separator: ", "))") }
                 send(.launched)
                 write(ControlMessage.initialize(), note: "initialize")
@@ -569,6 +582,7 @@ final class RunController {
 
     func select(room: String) {
         selectedRoom = room
+        showPanel = true
         panelTab = state.pendingRequests.contains { $0.room == room } ? .requests : .room
     }
 
@@ -589,6 +603,17 @@ final class RunController {
         let note = always ? "always allowed \(pending.request.suggestedRules.joined(separator: ", "))" : "allowed \(pending.request.toolName)"
         write(ControlMessage.allow(pending.request, always: always), note: note)
         send(.requestResolved(requestID: pending.id))
+    }
+
+    func setPermissionMode(_ mode: PermissionMode) {
+        guard mode != permissionMode else { return }
+        permissionMode = mode
+        if isRunning { write(ControlMessage.setPermissionMode(mode), note: "permission mode \(mode.title)") }
+    }
+
+    func allowAndSwitchToAuto(_ pending: PendingRequest) {
+        setPermissionMode(.auto)
+        allow(pending)
     }
 
     func deny(_ pending: PendingRequest) {
@@ -632,7 +657,7 @@ final class RunController {
     private func send(_ input: RunInput) {
         let events = reducer.apply(input)
         state = reducer.state
-        if case .wire(.rateLimit(let limit)) = input { UsageStore.shared.record(limit) }
+        if case .wire(.rateLimit(let limit)) = input { UsageStore.shared.record(limit, configDirectory: configDirectory) }
         Attention.shared.waiting(state.pendingRequests.count)
         if case .ended = state.phase, endedAt == nil { endedAt = .now }
         track(events)

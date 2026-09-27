@@ -38,4 +38,8 @@ extension Array where Element == OfficeEvent {
     var withoutTally: [OfficeEvent] {
         filter { if case .tallyChanged = $0 { false } else { true } }
     }
+
+    var withoutCaptions: [OfficeEvent] {
+        filter { if case .roomCaption = $0 { false } else { true } }
+    }
 }

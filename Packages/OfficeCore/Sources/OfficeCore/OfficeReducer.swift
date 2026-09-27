@@ -52,6 +52,7 @@ public enum OfficeEvent: Sendable, Equatable {
     case handoff(toolUseID: String, room: String, description: String?)
     case roomStarted(toolUseID: String, room: String)
     case roomActivity(room: String, toolName: String)
+    case roomCaption(room: String, caption: String)
     case roomFinished(toolUseID: String, room: String, outcome: RoomOutcome)
     case handback(toolUseID: String, room: String, isError: Bool)
     case tallyChanged(TokenTally)
@@ -143,6 +144,8 @@ public struct OfficeReducer: Sendable {
     private var pendingWrites: [String: String] = [:]
     private var pendingSkills: [String: (room: String, skill: String)] = [:]
     private var pendingServiceCalls: [String: (room: String, server: String)] = [:]
+    private var captionedCalls: [String: String] = [:]
+    private var latestCall: [String: String] = [:]
 
     public init() {}
 
@@ -209,6 +212,9 @@ public struct OfficeReducer: Sendable {
                     state.serviceCallsByServer[split.server, default: 0] += 1
                     out.append(.serviceCall(callID: id, room: room, server: split.server, active: true))
                 }
+                captionedCalls[id] = room
+                latestCall[room] = id
+                out.append(.roomCaption(room: room, caption: ToolCaption.text(name: name, input: input)))
                 if let parent = message.parentToolUseID {
                     state.handoffs[parent]?.tools.append(ToolCall(name: name, input: input))
                 }
@@ -253,6 +259,9 @@ public struct OfficeReducer: Sendable {
                    !state.skillsByRoom[loaded.room, default: []].contains(loaded.skill) {
                     state.skillsByRoom[loaded.room, default: []].append(loaded.skill)
                     out.append(.skillLoaded(room: loaded.room, skill: loaded.skill))
+                }
+                if let room = captionedCalls.removeValue(forKey: result.toolUseID), latestCall[room] == result.toolUseID {
+                    out.append(.roomCaption(room: room, caption: ToolCaption.thinking))
                 }
                 if let call = pendingServiceCalls.removeValue(forKey: result.toolUseID) {
                     out.append(.serviceCall(callID: result.toolUseID, room: call.room, server: call.server, active: false))

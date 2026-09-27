@@ -5,6 +5,30 @@ public enum RunnerOutput: Sendable, Equatable {
     case exited(code: Int32, stderr: String)
 }
 
+public enum PermissionMode: String, Sendable, CaseIterable, Identifiable {
+    case auto, acceptEdits, manual, plan
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .auto: "Auto"
+        case .acceptEdits: "Accept edits"
+        case .manual: "Ask every time"
+        case .plan: "Plan only"
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .auto: "Runs tools without asking; Claude checks each action and only stops for risky ones."
+        case .acceptEdits: "Edits files freely but asks before running commands."
+        case .manual: "Asks before every tool that isn't already allowed."
+        case .plan: "Reads and plans only; nothing is changed."
+        }
+    }
+}
+
 public struct RunConfig: Sendable, Equatable {
     public var request: String
     public var workingDirectory: URL
@@ -12,20 +36,24 @@ public struct RunConfig: Sendable, Equatable {
     public var model: String?
     public var maxBudgetUSD: Double?
     public var appendSystemPrompt: String?
+    public var agents: String?
     public var resumeSessionID: String?
     public var blockedTools: [String]
+    public var permissionMode: PermissionMode
 
     public init(request: String, workingDirectory: URL, claudeConfigDirectory: URL?, model: String?,
-                maxBudgetUSD: Double?, appendSystemPrompt: String? = nil, resumeSessionID: String? = nil,
-                blockedTools: [String] = []) {
+                maxBudgetUSD: Double?, appendSystemPrompt: String? = nil, agents: String? = nil, resumeSessionID: String? = nil,
+                blockedTools: [String] = [], permissionMode: PermissionMode = .auto) {
         self.request = request
         self.workingDirectory = workingDirectory
         self.claudeConfigDirectory = claudeConfigDirectory
         self.model = model
         self.maxBudgetUSD = maxBudgetUSD
         self.appendSystemPrompt = appendSystemPrompt
+        self.agents = agents
         self.resumeSessionID = resumeSessionID
         self.blockedTools = blockedTools
+        self.permissionMode = permissionMode
     }
 
     /// `AskUserQuestion` only exists when a host answers `can_use_tool` over stdio; plain `-p` leaves it out.
@@ -35,13 +63,14 @@ public struct RunConfig: Sendable, Equatable {
             "--input-format", "stream-json",
             "--output-format", "stream-json",
             "--verbose",
-            "--permission-mode", "acceptEdits",
+            "--permission-mode", permissionMode.rawValue,
             "--permission-prompt-tool", "stdio",
         ]
         if let resumeSessionID { args += ["--resume", resumeSessionID] }
         if !blockedTools.isEmpty { args += ["--disallowedTools", blockedTools.joined(separator: ",")] }
         if let model { args += ["--model", model] }
         if let appendSystemPrompt { args += ["--append-system-prompt", appendSystemPrompt] }
+        if let agents { args += ["--agents", agents] }
         if let maxBudgetUSD { args += ["--max-budget-usd", String(maxBudgetUSD)] }
         return args
     }

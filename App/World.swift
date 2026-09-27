@@ -41,7 +41,7 @@ final class World {
 
     private func cityFrame(for id: UUID) -> (scale: Float, offset: SIMD3<Float>)? {
         guard let facade = city.facade(of: id) else { return nil }
-        let scale = (building.footprint.x + 0.8) / max(facade.size.x, facade.size.z, 0.1)
+        let scale = 1 / Facade.cityScale
         return (scale, [0, -0.3, 0] - facade.position * scale)
     }
 

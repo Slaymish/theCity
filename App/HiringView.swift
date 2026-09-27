@@ -3,10 +3,11 @@ import SwiftUI
 
 struct HiringView: View {
     @Bindable var controller: RunController
+    var onBack: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Wordmark(compact: true)
+            if onBack == nil { Wordmark(compact: true) }
             VStack(alignment: .leading, spacing: 10) {
                 Text("Hiring for").eyebrow()
                 TextField("What should the office do?", text: $controller.request, axis: .vertical)
@@ -52,21 +53,21 @@ struct HiringView: View {
                     KitChooser(controller: controller)
                 }
             }
-            .frame(maxHeight: 440)
+            .frame(maxHeight: onBack == nil ? 440 : 300)
             .disabled(controller.isHiring && !controller.hiringIsSlow)
             HStack {
-                Button("Back") { controller.backToReception() }
+                Button("Back") { if let onBack { onBack() } else { controller.backToReception() } }
                     .buttonStyle(PillButtonStyle(kind: .secondary))
                 Spacer()
                 Text(summary).font(Typography.caption).foregroundStyle(Color(Palette.muted))
                 Button("Open the office") { controller.openOffice() }
                     .buttonStyle(PillButtonStyle())
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(controller.isHiring)
+                    .disabled(controller.isHiring || controller.request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .frame(maxWidth: 640)
-        .padding(32)
+        .padding(onBack == nil ? 32 : 0)
     }
 
     private var summary: String {
@@ -114,7 +115,15 @@ struct CandidateBadge: View {
                     .frame(width: 22, height: 22)
                     .background(Circle().fill(order == nil ? Color(Palette.hairline) : Color(colour)))
             }
-            Text(candidate.department.name.capitalized).font(Typography.bodyMedium)
+            HStack(spacing: 6) {
+                Text(candidate.department.name.capitalized).font(Typography.bodyMedium)
+                if candidate.department.isBuiltIn {
+                    Label("Built-in", systemImage: "building.2")
+                        .font(Typography.caption)
+                        .foregroundStyle(Color(Palette.muted))
+                        .help("Comes with The Office and works in every project. Add an agent with the same name to .claude/agents to replace it.")
+                }
+            }
             Text(candidate.department.description).font(Typography.caption).foregroundStyle(Color(Palette.muted)).lineLimit(3)
             if let reason = candidate.reason {
                 Text("“\(reason)”").font(Typography.caption).foregroundStyle(Color(Palette.muted)).lineLimit(3)
@@ -135,7 +144,7 @@ struct CandidateBadge: View {
             Button("Move Down", action: moveDown)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(candidate.department.name), \(candidate.hired ? "hired, position \((order ?? 0) + 1)" : "not hired")")
+        .accessibilityLabel("\(candidate.department.name)\(candidate.department.isBuiltIn ? ", built-in" : ""), \(candidate.hired ? "hired, position \((order ?? 0) + 1)" : "not hired")")
         .accessibilityAction(named: "Move Up", moveUp)
         .accessibilityAction(named: "Move Down", moveDown)
     }

@@ -34,6 +34,7 @@ final class CityScene {
         set { sun.isEnabled = newValue }
     }
     static let tile: Float = 2
+    static let groundLevel: Float = -0.02
 
     @MainActor private final class Lot {
         let id: UUID
@@ -110,8 +111,7 @@ final class CityScene {
     }
 
     private func addBuilding(_ building: CityStore.Building, at position: SIMD3<Float>) {
-        let styles = ["building_A", "building_B", "building_C", "building_D", "building_E", "building_F", "building_G", "building_H"]
-        let model = ModelLibrary.entity(styles[building.style % styles.count])
+        let model = Facade.tower(building, dark: dark)
         model.position = position + [0, 0.1, 0]
         model.name = "building:\(building.id.uuidString)"
         let bounds = model.visualBounds(relativeTo: nil)
@@ -262,7 +262,7 @@ final class CityScene {
     static func ground(dark: Bool) -> ModelEntity {
         let ground = ModelEntity(mesh: .generateCylinder(height: 0.1, radius: 400),
                                  materials: [OfficeScene.material(Palette.resolved(Palette.grass, dark: dark))])
-        ground.position = [0, -0.07, 0]
+        ground.position = [0, groundLevel - 0.05, 0]
         return ground
     }
 
@@ -283,7 +283,7 @@ final class CityScene {
                 }
                 let jitter = SIMD2<Float>(Float.random(in: -0.3...0.3, using: &generator), Float.random(in: -0.3...0.3, using: &generator))
                 let tree = ModelLibrary.entity("tree")
-                tree.position = [edge.x + jitter.x, 0, edge.y + jitter.y]
+                tree.position = [edge.x + jitter.x, Self.groundLevel, edge.y + jitter.y]
                 tree.scale = SIMD3(repeating: Float.random(in: 3.2...4.4, using: &generator))
                 tree.orientation = simd_quatf(angle: Float.random(in: 0...(2 * .pi), using: &generator), axis: [0, 1, 0])
                 root.addChild(tree)

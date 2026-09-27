@@ -30,7 +30,8 @@ final class BuildingScene {
     private var viewSize = CGSize(width: 1000, height: 700)
     private var labelClock: Double = 0
     private var dark = false
-    static let storeyHeight: Float = 6.4
+    static let storeyHeight = OfficeScene.wallHeight + OfficeScene.floorThickness
+    private static let roofThickness: Float = 0.4
 
     init() {
         root.addChild(camera.entity)
@@ -45,7 +46,6 @@ final class BuildingScene {
         tower.children.removeAll()
         storeys = []
         labels = [:]
-        var widest: Float = 21
         for (index, (id, session)) in sessions.enumerated() {
             let scene = session.scene
             scene.adopt(camera: camera)
@@ -55,11 +55,9 @@ final class BuildingScene {
             scene.sunEnabled = index == 0
             tower.addChild(scene.root)
             storeys.append((id, scene, index))
-            widest = max(widest, scene.footprint.x)
         }
-        let lobbyDepth = storeys.map(\.scene.footprint.y).max() ?? 17
-        lobbyParts = buildLobby(width: widest, depth: lobbyDepth, floors: sessions.count)
-        lobbyParts.forEach { $0.isEnabled = activeFloor == nil }
+        lobbyParts = buildLobby(width: OfficeScene.footprint.x, depth: OfficeScene.footprint.y, floors: sessions.count)
+        lobbyParts.forEach { $0.isEnabled = true }
         if let environment = ModelLibrary.environment("studio") {
             lobbyLight.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: dark ? 0.2 : 0.9))
         }
@@ -88,16 +86,14 @@ final class BuildingScene {
             tower.addChild(sun)
         }
         let height = Float(sessions.count + 1) * Self.storeyHeight
-        let roofDepth = storeys.map(\.scene.footprint.y).max() ?? 17
-        let roof = ModelEntity(mesh: .generateBox(width: widest + 0.8, height: 0.4, depth: roofDepth + 0.8, cornerRadius: 0.2),
+        let roof = ModelEntity(mesh: .generateBox(width: OfficeScene.footprint.x + 0.8, height: Self.roofThickness, depth: OfficeScene.footprint.y + 0.8, cornerRadius: 0.2),
                                materials: [OfficeScene.material(Palette.resolved(Palette.walls, dark: dark))])
-        roof.position = [0, height - 0.6, 0]
+        roof.position = [0, roofTop - Self.roofThickness / 2, 0]
         roof.isEnabled = !sessions.isEmpty
         tower.addChild(roof)
         crown = [roof]
-        if let sign = Billboard.make(BubbleView(symbol: "building.2.fill", text: building.name, colour: Palette.primaryFill), dark: dark) {
-            sign.position = [0, height + 1.4, 0]
-            sign.scale = [1.1, 1.1, 1.1]
+        if let sign = Billboard.make(ProjectBillboardView(title: building.title ?? building.name, folder: building.name), dark: dark) {
+            sign.position = [0, height + 2.6, 0]
             tower.addChild(sign)
             crown.append(sign)
         }
@@ -121,8 +117,8 @@ final class BuildingScene {
             return entity
         }
         var parts: [Entity] = []
-        let floor = model(.generateBox(width: width, height: 0.3, depth: depth, cornerRadius: 0.2), Palette.walls)
-        floor.position = [0, -0.15, 0]
+        let floor = model(.generateBox(width: width, height: OfficeScene.floorThickness, depth: depth, cornerRadius: 0.2), Palette.walls)
+        floor.position = [0, -OfficeScene.floorThickness / 2, 0]
         parts.append(floor)
         parts += OfficeScene.walls(width: width, depth: depth, doorway: true) { model($0, Palette.walls) } as [Entity]
 
@@ -135,8 +131,8 @@ final class BuildingScene {
 
         let shaft = SIMD3<Float>(width / 2 - 2.6, 0, -depth / 2 + 0.8)
         liftSpot = shaft
-        let core = model(.generateBox(width: 3.6, height: 5.2, depth: 1.6), Palette.walls)
-        core.position = shaft + [0, 2.6, 0]
+        let core = model(.generateBox(width: 3.6, height: OfficeScene.wallHeight, depth: 1.6), Palette.walls)
+        core.position = shaft + [0, OfficeScene.wallHeight / 2, 0]
         parts.append(core)
         for side: Float in [-1, 1] {
             let leaf = model(.generateBox(width: 0.88, height: 3, depth: 0.06, cornerRadius: 0.02), Palette.tray)
@@ -165,14 +161,14 @@ final class BuildingScene {
     }
 
     private var towerHeight: Float { Float(storeys.count + 1) * Self.storeyHeight }
+    private var roofTop: Float { towerHeight - OfficeScene.floorThickness + (storeys.isEmpty ? 0 : Self.roofThickness) }
 
     func overviewPose() -> CameraRig.Pose {
-        let widest = storeys.map(\.scene.footprint.x).max() ?? 21
         let aspect = Float(viewSize.width / max(viewSize.height, 1))
         let vertical: Float = 26 * .pi / 180
         let horizontal = 2 * atan(tan(vertical / 2) * aspect)
         let tall = towerHeight + 4
-        let distance = max(tall / 2 / tan(vertical / 2), (widest + 6) / 2 / tan(horizontal / 2)) * 1.25
+        let distance = max(tall / 2 / tan(vertical / 2), (OfficeScene.footprint.x + 6) / 2 / tan(horizontal / 2)) * 1.25
         return .init(target: [0, tall / 2 - 1.5, 0], yaw: 0.62, pitch: 0.2, distance: distance)
     }
 
@@ -189,10 +185,12 @@ final class BuildingScene {
 
     private func floorPose(_ scene: OfficeScene) -> CameraRig.Pose {
         var pose = scene.overviewPose()
+        // Aim at the floor's risen height, or entering straight from the city targets the still-sunk tower.
+        pose.target.y -= tower.position.y
         let aspect = Float(viewSize.width / max(viewSize.height, 1))
         let vertical: Float = 26 * .pi / 180
         let horizontal = 2 * atan(tan(vertical / 2) * aspect)
-        pose.distance = 0.5 * simd_length(scene.footprint) / sin(min(vertical, horizontal) / 2)
+        pose.distance = 0.5 * simd_length(OfficeScene.footprint) / sin(min(vertical, horizontal) / 2)
         return pose
     }
 
@@ -202,19 +200,19 @@ final class BuildingScene {
         activeFloor = id
         lobbyFocused = false
         scaffold?.isEnabled = false
-        lobbyParts.forEach { $0.isEnabled = false }
         crown.forEach { $0.isEnabled = false }
+        // Only storeys above the active one are hidden: they sit between the camera and the floor.
         for other in storeys {
             other.scene.sunEnabled = other.id == id
-            other.scene.root.isEnabled = other.id == id
+            other.scene.root.isEnabled = other.index <= storey.index
             other.scene.isActive = other.id == id
-            labels[other.id]?.entity.isEnabled = false
+            labels[other.id]?.entity.isEnabled = other.index < storey.index
         }
         camera.reset(to: floorPose(storey.scene))
     }
 
     var footprint: SIMD2<Float> {
-        [storeys.map(\.scene.footprint.x).max() ?? 21, storeys.map(\.scene.footprint.y).max() ?? 17]
+        OfficeScene.footprint
     }
 
     func raise(_ up: Bool, animated: Bool) {
@@ -293,7 +291,7 @@ final class BuildingScene {
                 frame.addChild(plank)
             }
         }
-        frame.position = [0, towerHeight - 0.4, 0]
+        frame.position = [0, roofTop, 0]
         tower.addChild(frame)
         scaffold = frame
     }
@@ -365,9 +363,9 @@ final class BuildingScene {
             labels[storey.id]?.entity.removeFromParent()
             let colour = waiting > 0 ? Palette.manager : session?.isRunning == true ? Palette.primaryFill : Palette.muted
             guard let label = Billboard.make(BubbleView(symbol: symbol, text: text, colour: colour), dark: dark) else { continue }
-            label.position = [-storey.scene.footprint.x / 2 - 1.2, Float(storey.index + 1) * Self.storeyHeight + 1.2, storey.scene.footprint.y / 2 + 1.5]
+            label.position = [-OfficeScene.footprint.x / 2 - 1.2, Float(storey.index + 1) * Self.storeyHeight + 1.2, OfficeScene.footprint.y / 2 + 1.5]
             label.scale = [1.3, 1.3, 1.3]
-            label.isEnabled = activeFloor == nil
+            label.isEnabled = activeFloor.flatMap { id in storeys.first { $0.id == id }?.index }.map { storey.index < $0 } ?? true
             tower.addChild(label)
             labels[storey.id] = (label, text)
         }

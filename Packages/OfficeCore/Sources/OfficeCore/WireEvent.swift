@@ -28,6 +28,8 @@ public struct RateLimit: Sendable, Equatable {
     public var kind: String?
     /// Share of the plan's rolling limits used so far: `five_hour` (the session) and `seven_day` (the week).
     public var windows: [String: Window] = [:]
+    /// True once the plan's limits are used up and the job is spending extra-usage credits.
+    public var isUsingOverage = false
 
     public var isRejected: Bool { status == "rejected" }
 }

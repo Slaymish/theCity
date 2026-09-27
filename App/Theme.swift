@@ -35,6 +35,15 @@ enum Palette {
     static var error: NSColor { token(\.error) }
     static var tray: NSColor { token(\.tray) }
     static var grass: NSColor { token { $0.grass ?? Brand.defaultGrass.light } }
+    static var facadeBrick: NSColor { pair(light: "#B5654A", dark: "#7A4434") }
+    static var facadeStone: NSColor { pair(light: "#E6DFD2", dark: "#8F897E") }
+    static var facadeConcrete: NSColor { pair(light: "#C9C7C2", dark: "#6E6D6A") }
+    static var glazing: NSColor { pair(light: "#8FB4CC", dark: "#2E4150") }
+    static var mullion: NSColor { pair(light: "#4A5059", dark: "#2B2F35") }
+
+    private static func pair(light: String, dark: String) -> NSColor {
+        NSColor(name: nil) { NSColor(hex: $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light) }
+    }
 
     static func textOn(_ fill: NSColor) -> NSColor {
         fill.isEqual(muted) || resolved(fill, dark: false) == resolved(muted, dark: false) ? background : onAccent
@@ -134,11 +143,7 @@ struct Glass: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(padding)
-            .background(
-                RoundedRectangle(cornerRadius: radius)
-                    .fill(LinearGradient(colors: [Color(Palette.glassTop), Color(Palette.glassBottom)],
-                                         startPoint: UnitPoint(x: 0.25, y: 0.07), endPoint: UnitPoint(x: 0.75, y: 0.93)))
-            )
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: radius))
             .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Color(Palette.hairline), lineWidth: 1))
     }
 }

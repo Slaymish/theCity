@@ -17,6 +17,10 @@ enum Billboard {
         var material = UnlitMaterial()
         material.color = .init(tint: .white, texture: .init(texture))
         material.blending = .transparent(opacity: .init(floatLiteral: 1))
+        if faceCamera {
+            // Walls and desks otherwise slice through labels that sit near geometry.
+            material.readsDepth = false
+        }
         let plane = ModelEntity(mesh: .generatePlane(width: width, height: height), materials: [material])
         if faceCamera { plane.components.set(BillboardComponent()) }
         return plane
@@ -118,5 +122,33 @@ struct BubbleView: View {
         .padding(.trailing, 14)
         .background(Capsule().fill(Color(Palette.glassBottom)))
         .overlay(Capsule().strokeBorder(Color(Palette.hairline), lineWidth: 1))
+    }
+}
+
+/// The rooftop sign naming the project, with its folder underneath.
+struct ProjectBillboardView: View {
+    let title: String
+    let folder: String
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(title)
+                .font(Typography.outfit(56, weight: 800))
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+            if title.caseInsensitiveCompare(folder) != .orderedSame {
+                Label(folder, systemImage: "folder.fill")
+                    .font(Typography.ui(18, weight: 600))
+            }
+        }
+        .foregroundStyle(Color(Palette.textOn(Palette.primaryFill)))
+        .padding(.horizontal, 36)
+        .padding(.vertical, 22)
+        .frame(minWidth: 360, maxWidth: 720)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color(Palette.primaryFill)))
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 20).fill(Color(Palette.walls)))
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color(Palette.hairline), lineWidth: 2))
+        .fixedSize()
     }
 }

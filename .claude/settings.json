@@ -1,0 +1,82 @@
+{
+  "$comment": "Project settings, committed to git. Personal overrides belong in .claude/settings.local.json, which is gitignored. Precedence, lowest to highest: ~/.claude/settings.json -> this file -> settings.local.json -> CLI flags -> managed policy.",
+
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/*.pem)",
+      "Read(./**/id_rsa)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(git tag:*)",
+      "Bash(gh release:*)",
+      "WebFetch"
+    ],
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git show:*)",
+      "Bash(rg:*)",
+      "Bash(fd:*)",
+      "Bash(ls:*)",
+      "Bash(make build:*)",
+      "Bash(make test:*)",
+      "Bash(make project:*)",
+      "Bash(make install:*)",
+      "Bash(sips -Z:*)",
+      "Bash(build/Build/Products/Debug/TheCity.app/Contents/MacOS/TheCity -render-preview:*)",
+      "Bash(build/Build/Products/Debug/TheCity.app/Contents/MacOS/TheCity -route-test:*)"
+    ]
+  },
+
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PYTHONDONTWRITEBYTECODE=1 python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-brief.py\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PYTHONDONTWRITEBYTECODE=1 python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-bash.py\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PYTHONDONTWRITEBYTECODE=1 python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-paths.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PYTHONDONTWRITEBYTECODE=1 python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-gate.py\"",
+            "timeout": 330
+          }
+        ]
+      }
+    ]
+  }
+}

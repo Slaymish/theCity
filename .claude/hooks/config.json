@@ -1,0 +1,41 @@
+{
+  "$comment": "Written by the agent-setup skill. Every bundled hook reads this file; the hook scripts themselves need no editing.",
+
+  "commands": {
+    "build": "make build",
+    "test": "make test"
+  },
+
+  "commitPolicy": "ask",
+  "protectedBranches": [],
+
+  "bannedCommands": [
+    {
+      "pattern": "\\b(pkill|killall)\\b[^|;&]*\\bTheCity\\b",
+      "reason": "Quit the app with `osascript -e 'tell application \"TheCity\" to quit'`, not by killing it. Tools/Dev/relaunch.sh does this for you."
+    },
+    {
+      "pattern": "TheCity\\b[^|;&]*\\s-parallel-test\\b",
+      "reason": "-parallel-test runs two real Haiku jobs (about US$0.08). Ask me before running it."
+    }
+  ],
+
+  "protectedPaths": [
+    ".env", ".env.*", "*.pem", "id_rsa", "id_ed25519",
+    "build/**", ".build/**", "**/build/**",
+    "**/Package.resolved",
+    "TheCity.xcodeproj/**",
+    "Assets/Vendor/KayKit-*/**",
+    "fixtures/*.jsonl",
+    "App/Assets.xcassets/AppIcon.appiconset/*.png"
+  ],
+
+  "stopGate": {
+    "enabled": true,
+    "run": ["build"],
+    "watchPaths": ["App/**", "Packages/**", "project.yml"],
+    "timeout": 300
+  },
+
+  "sessionNote": ""
+}

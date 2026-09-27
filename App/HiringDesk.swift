@@ -122,19 +122,11 @@ enum ReceptionDesk {
         guard case .available = SystemLanguageModel.default.availability else {
             return RoutingSuggestion(floorID: nil, newFloorName: fallbackName, reason: "Choose a floor, or set up a new one.")
         }
-        let list = floors.map { floor in
-            "- \(floor.name) (team: \(floor.hires.joined(separator: ", "))). Last job: \(floor.lastRequest?.prefix(120) ?? "none")"
-        }.joined(separator: "\n")
-        let session = LanguageModelSession(instructions: """
-        You are the receptionist of an office building. Each floor is a team that does one kind of work. \
-        Pick the floor whose kind of work matches the request. If none matches, leave the floor empty and name a new floor.
-        Examples: a request to fix or extend the sign-in page goes to a login or authentication floor. \
-        A request for a presentation goes to a new floor called "Slide decks" when no floor makes presentations.
-        Floors:
-        \(list)
-        """)
+        let session = takeSession(for: floors)
         do {
-            let routing = try await session.respond(to: request, generating: Routing.self).content
+            guard let routing = try await withTimeout(seconds: 12, { try await session.respond(to: request, generating: Routing.self).content }) else {
+                return RoutingSuggestion(floorID: nil, newFloorName: fallbackName, reason: "Reception is taking too long. Choose a floor, or set up a new one.")
+            }
             let named = floors.first { $0.name.caseInsensitiveCompare(routing.floor.trimmingCharacters(in: .whitespaces)) == .orderedSame }
             if let match = named ?? closest(to: request, proposed: routing.newFloorName, in: floors) {
                 let last = match.lastRequest.map { " Its last job: “\($0.prefix(80))”." } ?? ""
@@ -145,6 +137,49 @@ enum ReceptionDesk {
                                      reason: "None of the floors does this kind of work yet.")
         } catch {
             return RoutingSuggestion(floorID: nil, newFloorName: fallbackName, reason: "Choose a floor, or set up a new one.")
+        }
+    }
+
+    private static var warm: (key: String, session: LanguageModelSession)?
+
+    /// Loads the model while the request is still being typed, so asking doesn't wait for it.
+    static func prewarm(floors: [CityStore.Floor]) {
+        guard !floors.isEmpty, case .available = SystemLanguageModel.default.availability else { return }
+        let key = instructions(for: floors)
+        guard warm?.key != key else { return }
+        let session = LanguageModelSession(instructions: key)
+        session.prewarm()
+        warm = (key, session)
+    }
+
+    private static func takeSession(for floors: [CityStore.Floor]) -> LanguageModelSession {
+        let key = instructions(for: floors)
+        defer { warm = nil }
+        if let warm, warm.key == key { return warm.session }
+        return LanguageModelSession(instructions: key)
+    }
+
+    private static func instructions(for floors: [CityStore.Floor]) -> String {
+        let list = floors.map { floor in
+            "- \(floor.name) (team: \(floor.hires.joined(separator: ", "))). Last job: \(floor.lastRequest?.prefix(120) ?? "none")"
+        }.joined(separator: "\n")
+        return """
+        You are the receptionist of an office building. Each floor is a team that does one kind of work. \
+        Pick the floor whose kind of work matches the request. If none matches, leave the floor empty and name a new floor.
+        Examples: a request to fix or extend the sign-in page goes to a login or authentication floor. \
+        A request for a presentation goes to a new floor called "Slide decks" when no floor makes presentations.
+        Floors:
+        \(list)
+        """
+    }
+
+    // A task group would wait for the model, which ignores cancellation, so race unstructured tasks instead.
+    private static func withTimeout<T: Sendable>(seconds: Double, _ work: @escaping @Sendable () async throws -> T) async throws -> T? {
+        let race = Race<T>()
+        return try await withCheckedThrowingContinuation { continuation in
+            race.continuation = continuation
+            let job = Task { do { race.finish(.success(try await work())) } catch { race.finish(.failure(error)) } }
+            Task { try? await Task.sleep(for: .seconds(seconds)); job.cancel(); race.finish(.success(nil)) }
         }
     }
 
@@ -171,5 +206,18 @@ enum ReceptionDesk {
         guard (1...4).contains(words.count), !vague.contains(name.lowercased()),
               !floors.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { return nil }
         return name.prefix(1).uppercased() + name.dropFirst()
+    }
+}
+
+private final class Race<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    var continuation: CheckedContinuation<T?, Error>?
+
+    func finish(_ result: Result<T?, Error>) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(with: result)
     }
 }

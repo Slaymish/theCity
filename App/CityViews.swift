@@ -432,6 +432,7 @@ struct ReceptionComposer: View {
     @State private var suggestion: RoutingSuggestion?
     @State private var thinking = false
     @State private var asked = ""
+    @State private var routing: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -447,6 +448,7 @@ struct ReceptionComposer: View {
                     ProgressView().controlSize(.small)
                     Text("The receptionist is checking which floor fits…").font(Typography.caption).foregroundStyle(Color(Palette.muted))
                 }
+                suggestionView(RoutingSuggestion(floorID: nil, newFloorName: CityStore.floorName(for: text, existing: building.floors.map(\.name)), reason: ""))
             } else if let suggestion {
                 suggestionView(suggestion)
             }
@@ -455,7 +457,7 @@ struct ReceptionComposer: View {
         .glass(padding: 16)
         .onChange(of: text) { if text != asked { suggestion = nil } }
         .onChange(of: text.isEmpty) {
-            if !text.isEmpty { scene?.focusLobby() } else if suggestion == nil { scene?.leaveLobby() }
+            if !text.isEmpty { scene?.focusLobby(); ReceptionDesk.prewarm(floors: building.floors) } else if suggestion == nil { scene?.leaveLobby() }
         }
         .onChange(of: thinking) { gesture() }
         .onChange(of: suggestion) { gesture() }
@@ -471,7 +473,9 @@ struct ReceptionComposer: View {
     private func suggestionView(_ suggestion: RoutingSuggestion) -> some View {
         let match = suggestion.floorID.flatMap { id in building.floors.first { $0.id == id } }
         VStack(alignment: .leading, spacing: 10) {
-            Text("“\(suggestion.reason)”").font(Typography.caption).foregroundStyle(Color(Palette.muted))
+            if !suggestion.reason.isEmpty {
+                Text("“\(suggestion.reason)”").font(Typography.caption).foregroundStyle(Color(Palette.muted))
+            }
             HStack(spacing: 8) {
                 if let match {
                     Button("Send to \(match.name)", systemImage: "arrow.up.circle.fill") { send(to: match.id) }
@@ -511,11 +515,20 @@ struct ReceptionComposer: View {
         thinking = true
         let request = text
         let floors = building.floors
-        Task {
+        routing?.cancel()
+        routing = Task {
             let result = await ReceptionDesk.route(request: request, floors: floors)
+            guard !Task.isCancelled else { return }
             if asked == request { suggestion = result }
             thinking = false
         }
+    }
+
+    private func stopRouting() {
+        routing?.cancel()
+        routing = nil
+        thinking = false
+        asked = ""
     }
 
     /// "@Floor name request" skips routing; the longest matching floor name wins.
@@ -529,6 +542,7 @@ struct ReceptionComposer: View {
     }
 
     private func send(to floorID: UUID) {
+        stopRouting()
         city.send(text, toFloor: floorID, in: building.id)
         text = ""
         suggestion = nil
@@ -536,6 +550,7 @@ struct ReceptionComposer: View {
     }
 
     private func newFloor(_ name: String) {
+        stopRouting()
         city.startNewFloor(in: building.id, request: text, name: name)
         text = ""
         suggestion = nil

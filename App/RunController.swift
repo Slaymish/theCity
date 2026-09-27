@@ -154,6 +154,10 @@ final class RunController {
         return floor.name
     }
 
+    var placeName: String {
+        ([buildingID.flatMap { CityStore.shared.building($0)?.name }, displayTitle] as [String?]).compactMap { $0 }.joined(separator: " · ")
+    }
+
     func loadKit() {
         guard let workingDirectory else { return }
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
@@ -240,6 +244,14 @@ final class RunController {
     }
 
     func signIn() { Self.signIn(configDirectory: configDirectory) }
+
+    /// The inventory run costs nothing, so Settings can list models before any floor exists.
+    static func models(configDirectory: URL?) async -> [ModelOption] {
+        let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
+        guard let executable = cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment) else { return [] }
+        let kit = await KitLoader.load(executable: executable, environment: environment, workingDirectory: FileManager.default.homeDirectoryForCurrentUser)
+        return Array(kit.models.filter { $0.value != "default" }.prefix(4))
+    }
 
     static func signIn(configDirectory: URL?) {
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
@@ -472,6 +484,15 @@ final class RunController {
     }
 
     var canContinue: Bool { (state.sessionID ?? resumeSession) != nil }
+
+    func tryAgain() {
+        if let last = followUps.last, canContinue {
+            followUps.removeLast()
+            followUp(last)
+        } else {
+            newJobOnFloor(request)
+        }
+    }
 
     func followUp(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -717,11 +738,11 @@ final class RunController {
                 steps[i].status = .done
             case .handRaised(let request, let room):
                 panelTab = .requests
-                Attention.shared.needsInput(from: room, request: request)
+                Attention.shared.needsInput(from: room, request: request, place: placeName)
                 let who = room == "manager" ? "The manager" : room.capitalized
                 AccessibilityNotification.Announcement("\(who) needs you").post()
             case .runEnded(let outcome):
-                Attention.shared.finished(outcome, files: state.outputFiles)
+                Attention.shared.finished(outcome, files: state.outputFiles, place: placeName)
                 noteLimit(outcome)
                 if !isReplay { recordJob(outcome) }
                 if !queued.isEmpty {

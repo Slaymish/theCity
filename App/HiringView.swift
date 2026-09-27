@@ -49,7 +49,7 @@ struct HiringView: View {
                                 }
                         }
                     }
-                    Text("Kit for this job").eyebrow().frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                    Text("Tools and skills for this job").eyebrow().frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
                     KitChooser(controller: controller)
                 }
             }

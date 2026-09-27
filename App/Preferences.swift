@@ -147,6 +147,12 @@ struct SettingsView: View {
     @Bindable var brands = BrandStore.shared
     let city: CityStore
     @State private var accountsRefresh = 0
+    @State private var loadedModels: [ModelOption] = []
+
+    private var models: [ModelOption] {
+        let open = city.allSessions.first?.primaryModels ?? []
+        return open.isEmpty ? loadedModels : open
+    }
 
     private func importBrand() {
         let panel = NSOpenPanel()
@@ -170,9 +176,13 @@ struct SettingsView: View {
                     }
                     Picker("Model", selection: $preferences.model) {
                         Text("Default").tag(String?.none)
-                        ForEach(city.allSessions.first?.primaryModels ?? []) { model in
+                        ForEach(models) { model in
                             Text(model.displayName).tag(String?.some(model.value))
                         }
+                    }
+                    .task(id: preferences.configDirectory) {
+                        guard city.allSessions.first?.primaryModels.isEmpty != false else { return }
+                        loadedModels = await RunController.models(configDirectory: preferences.configDirectory)
                     }
                     Picker("Budget", selection: $preferences.budgetUSD) {
                         ForEach(RunController.budgets, id: \.self) { budget in

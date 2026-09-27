@@ -195,6 +195,12 @@ struct DeskCard: View {
                         .keyboardShortcut(.return, modifiers: .command)
                 }
                 .disabled(stamped != nil)
+                if !rules.isEmpty {
+                    Text("Always allow saves \(rules.joined(separator: ", ")) to this project’s .claude/settings.local.json.")
+                        .font(Typography.caption)
+                        .foregroundStyle(Color(Palette.muted))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if controller.permissionMode != .auto {
                     Button("Allow and switch this job to Auto") { stamp(.auto) }
                         .buttonStyle(.link)
@@ -208,7 +214,7 @@ struct DeskCard: View {
         .glass(radius: 12, padding: 12)
         .overlay {
             if let stamped {
-                Text(stamped == .denied ? "Denied" : "Allowed")
+                Text(stamped == .denied ? "Denied" : stamped == .alwaysAllowed ? "Always allowed" : "Allowed")
                     .font(Typography.titleLarge)
                     .textCase(.uppercase)
                     .foregroundStyle(Color(stamped == .denied ? Palette.error : Palette.text))
@@ -357,6 +363,14 @@ struct EndCard: View {
                 }
                 .buttonStyle(PillButtonStyle())
             }
+            if case .failed = outcome {
+                ReadinessRow(controller: controller)
+            }
+            if canTryAgain {
+                Button("Try again", systemImage: "arrow.clockwise") { controller.tryAgain() }
+                    .buttonStyle(PillButtonStyle())
+                    .disabled(controller.readiness != .ready || controller.isRunning)
+            }
             if !controller.jobFiles.isEmpty {
                 Text("Files").eyebrow()
                 ForEach(controller.jobFiles, id: \.self) { path in
@@ -433,6 +447,12 @@ struct EndCard: View {
         }
     }
 
+    private var canTryAgain: Bool {
+        guard !controller.isDemo, case .failed(let reason, _) = outcome else { return false }
+        if case .budgetExhausted = reason { return false }
+        return true
+    }
+
     private func send() {
         controller.followUp(followUp)
         followUp = ""
@@ -451,8 +471,8 @@ struct EndCard: View {
         switch outcome {
         case .completed(let summary, _): summary ?? "Done."
         case .cancelled: "You cancelled the job. You can still send a follow-up to pick it up again."
-        case .failed(.cliNotFound, _): "Claude Code isn’t installed. Install it from the opening screen, then try again."
-        case .failed(.notLoggedIn, _): "You’re not signed in to Claude Code with this account. Sign in from the opening screen, then try again."
+        case .failed(.cliNotFound, _): "Claude Code isn’t installed. Install or locate it below, then try again."
+        case .failed(.notLoggedIn, _): "You’re not signed in to Claude Code with this account. Sign in below, then try again."
         case .failed(.budgetExhausted, _): "The job reached its \(controller.budgetUSD.formatted(.currency(code: "USD"))) budget."
         case .failed(.runError, let message): message ?? "The job stopped unexpectedly."
         case .failed(.processCrashed(let code), let message): "Claude Code stopped without finishing (exit \(code)). \(message ?? "")"

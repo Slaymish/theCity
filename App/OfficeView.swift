@@ -74,6 +74,7 @@ struct OfficeView: View {
                     scene.fit(geometry.size)
                 }
                 .onChange(of: geometry.size) { scene.fit(geometry.size) }
+                .onReceive(NotificationCenter.default.publisher(for: .resetView)) { _ in scene.camera.recentre() }
             }
             .ignoresSafeArea()
             .accessibilityHidden(true)
@@ -137,7 +138,7 @@ struct OfficeOverlay: View {
                             .labelStyle(.iconOnly)
                             .buttonStyle(PillButtonStyle(kind: .secondary))
                             .keyboardShortcut("\\", modifiers: .command)
-                            .help(controller.showPanel ? "Hide the panel (⌘\\)" : "Show the panel: needs you, rooms and kit (⌘\\)")
+                            .help(controller.showPanel ? "Hide the panel (⌘\\)" : "Show the panel: activity, rooms, and tools and skills (⌘\\)")
                         if controller.isRunning {
                             Button("Cancel") { controller.cancel() }
                                 .buttonStyle(PillButtonStyle(kind: .secondary))
@@ -165,9 +166,9 @@ struct OfficeOverlay: View {
                     }
                     if case .ended(let outcome) = controller.state.phase {
                         EndCard(controller: controller, outcome: outcome, collapsed: $outboxCollapsed)
-                        if controller.floorID != nil { FloorComposer(controller: controller, compact: true) }
+                        if controller.floorID != nil { nextJob(compact: true) }
                     } else if controller.state.phase == .idle, !controller.isRunning, controller.floorID != nil {
-                        FloorComposer(controller: controller, compact: false)
+                        nextJob(compact: false)
                     }
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomHeight = $0 + 20 }
@@ -193,6 +194,35 @@ struct OfficeOverlay: View {
         .onChange(of: controller.selectedRoom) {
             if let room = controller.selectedRoom { scene.focus(room: room) } else { scene.showOverview() }
         }
+    }
+
+    @ViewBuilder
+    private func nextJob(compact: Bool) -> some View {
+        if controller.isDemo { DemoEndCard(controller: controller) } else { FloorComposer(controller: controller, compact: compact) }
+    }
+}
+
+struct DemoEndCard: View {
+    let controller: RunController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("That was a recording").eyebrow()
+            Text("The demo replays a job that already ran. Your own projects run real jobs with Claude Code.")
+                .font(Typography.caption).foregroundStyle(Color(Palette.muted))
+            HStack(spacing: 8) {
+                Button("Break ground on your own project…") { ProjectPicker.addProject() }
+                    .buttonStyle(PillButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                if let recording = CityStore.demoRecording {
+                    Button("Watch again", systemImage: "arrow.counterclockwise") { controller.replay(recording) }
+                        .buttonStyle(PillButtonStyle(kind: .secondary))
+                        .disabled(controller.isRunning)
+                }
+            }
+        }
+        .frame(width: 620, alignment: .leading)
+        .glass(padding: 16)
     }
 }
 
@@ -290,9 +320,15 @@ struct FloorComposer: View {
                         .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || controller.readiness != .ready)
                 }
             }
+            ReadinessRow(controller: controller)
         }
         .frame(width: 620, alignment: .leading)
         .glass(padding: 16)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard controller.readiness != .ready || controller.limitNotice != nil else { return }
+            controller.checkReadiness()
+            controller.clearLimitNoticeIfExpired()
+        }
     }
 
     private var continues: Bool { compact && (controller.resumeSession != nil || controller.state.sessionID != nil) }
@@ -505,9 +541,9 @@ struct SidePanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 0) {
-                tab("Needs you\(controller.state.pendingRequests.isEmpty ? "" : " · \(controller.state.pendingRequests.count)")", .requests)
+                tab(controller.state.pendingRequests.isEmpty ? "Activity" : "Needs you · \(controller.state.pendingRequests.count)", .requests)
                 tab("Room", .room)
-                tab("Kit", .kit)
+                tab("Tools & skills", .kit)
             }
             .padding(4)
             .overlay(Capsule().strokeBorder(Color(Palette.hairline), lineWidth: 1))

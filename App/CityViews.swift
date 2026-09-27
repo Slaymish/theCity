@@ -40,7 +40,7 @@ struct TitleHUD: View {
                 .buttonStyle(PillButtonStyle())
                 .keyboardShortcut(.defaultAction)
                 .disabled(city.groundBreaking != nil)
-            Button("Watch a Demo") { city.startDemo() }
+            Button("Watch a demo") { city.startDemo() }
                 .buttonStyle(PillButtonStyle())
                 .disabled(city.groundBreaking != nil)
 
@@ -104,6 +104,7 @@ struct NeedsYouList: View {
 /// A keyboard- and VoiceOver-friendly way into every building, alongside the 3D city.
 struct ProjectList: View {
     let city: CityStore
+    @State private var removing: CityStore.Building?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -117,13 +118,19 @@ struct ProjectList: View {
                 .buttonStyle(PillButtonStyle(kind: .secondary))
                 .contextMenu {
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([building.url]) }
-                    Button("Remove from City") { city.removeBuilding(building.id) }
+                    Button("Remove from City…") { removing = building }
                         .disabled(status.working > 0)
                 }
                 .accessibilityLabel("\(building.name), \(building.floors.count) floors\(status.working > 0 ? ", \(status.working) working" : "")\(status.waiting > 0 ? ", needs you" : "")")
             }
         }
         .modifier(Glass(radius: 24, padding: EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5)))
+        .confirmationDialog("Remove \(removing?.name ?? "project") from the city?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { building in
+            Button("Remove from City", role: .destructive) { city.removeBuilding(building.id) }
+            Button("Keep", role: .cancel) {}
+        } message: { building in
+            Text("Its \(building.floors.count == 1 ? "floor and team are" : "\(building.floors.count) floors and their teams are") removed. The project folder and its files stay on disk.")
+        }
     }
 }
 
@@ -180,6 +187,7 @@ struct WorldView: View {
                     world.paused = !window.occlusionState.contains(.visible)
                 }
                 .onChange(of: geometry.size) { world.fit(geometry.size) }
+                .onReceive(NotificationCenter.default.publisher(for: .resetView)) { _ in world.camera.recentre() }
                 .onChange(of: city.buildings.map(\.id)) {
                     if city.groundBreaking != nil { world.city.titleMode = false }
                     world.city.build(city.buildings, dark: dark)

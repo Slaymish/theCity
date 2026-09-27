@@ -25,32 +25,32 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
         NSApp.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
     }
 
-    func needsInput(from room: String, request: PermissionRequest) {
+    func needsInput(from room: String, request: PermissionRequest, place: String) {
         let who = room == "manager" ? "The manager" : room.capitalized
         switch request.kind {
         case .question(let questions):
-            post(title: "\(who) has a question", body: questions.first?.question ?? "")
+            post(title: "\(who) has a question", subtitle: place, body: questions.first?.question ?? "")
         case .approval(let summary):
-            post(title: "\(who) asks to use \(McpNaming.friendly(request.toolName, servers: []))", body: summary,
+            post(title: "\(who) asks to use \(McpNaming.friendly(request.toolName, servers: []))", subtitle: place, body: summary,
                  category: Self.approvalCategory, info: ["request": request.requestID])
         }
     }
 
-    func finished(_ outcome: RunOutcome, files: [String]) {
+    func finished(_ outcome: RunOutcome, files: [String], place: String) {
         switch outcome {
         case .completed:
             let name = files.first.map { URL(fileURLWithPath: $0).lastPathComponent }
-            post(title: name.map { "\($0) is ready" } ?? "The job is done", body: files.count > 1 ? "And \(files.count - 1) more in the outbox." : "Open the office to see the result.",
+            post(title: name.map { "\($0) is ready" } ?? "The job is done", subtitle: place, body: files.count > 1 ? "And \(files.count - 1) more in the outbox." : "Open the floor to see the result.",
                  category: Self.finishedCategory, info: files.first.map { ["file": $0] } ?? [:])
         case .cancelled: break
-        case .failed: post(title: "The job stopped", body: "Open the office to see why.")
+        case .failed: post(title: "The job stopped", subtitle: place, body: "Open the floor to see why.")
         }
     }
 
     static let finishedCategory = "finished"
     static let approvalCategory = "approval"
 
-    private func post(title: String, body: String, category: String? = nil, info: [String: String] = [:]) {
+    private func post(title: String, subtitle: String, body: String, category: String? = nil, info: [String: String] = [:]) {
         guard !NSApp.isActive, Preferences.shared.notifications else { return }
         NSApp.requestUserAttention(.informationalRequest)
         let center = UNUserNotificationCenter.current()
@@ -61,6 +61,7 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
             }
             let content = UNMutableNotificationContent()
             content.title = title
+            content.subtitle = subtitle
             content.body = body
             content.sound = Preferences.shared.sounds ? .default : nil
             if let category { content.categoryIdentifier = category }

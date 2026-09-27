@@ -49,6 +49,7 @@ struct DraftFlow: View {
 
 extension Notification.Name {
     static let replayFixture = Notification.Name("replayFixture")
+    static let resetView = Notification.Name("resetView")
 }
 
 struct Wordmark: View {

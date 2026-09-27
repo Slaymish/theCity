@@ -111,7 +111,13 @@ struct UsageHUD: View {
             } else if let reading = usage.reading(configDirectory) {
                 gauge("Session", reading.session)
                 gauge("Week", reading.week)
-                asOf(reading)
+                if let error = usage.refreshError(configDirectory) {
+                    errorLabel(error)
+                } else {
+                    asOf(reading)
+                }
+            } else if let error = usage.refreshError(configDirectory) {
+                errorLabel(error)
             } else if usage.hasNoLimits(configDirectory) {
                 Text("No plan limits on this account.").font(Typography.caption).foregroundStyle(Color(Palette.muted))
             } else {
@@ -125,7 +131,7 @@ struct UsageHUD: View {
             .buttonStyle(.plain)
             .foregroundStyle(Color(Palette.muted))
             .help(accounts.count > 1 ? "Refresh plan limits for every shown account (sends one tiny request to Haiku for each)"
-                  : usage.refreshError(configDirectory) ?? "Refresh your plan limits (sends one tiny request to Haiku)")
+                  : "Refresh your plan limits (sends one tiny request to Haiku)")
             .accessibilityLabel("Refresh plan limits")
         }
         .modifier(Glass(radius: 24, padding: EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14)))
@@ -151,6 +157,10 @@ struct UsageHUD: View {
             }
         }
         .help(usage.reading(account) == nil ? "" : usage.refreshError(account) ?? "")
+    }
+
+    private func errorLabel(_ error: String) -> some View {
+        Label(error, systemImage: "exclamationmark.triangle").font(Typography.caption).foregroundStyle(Color(Palette.muted)).lineLimit(1).help(error)
     }
 
     private func asOf(_ reading: UsageStore.Reading) -> some View {

@@ -482,7 +482,7 @@ struct ReceptionComposer: View {
         VStack(alignment: .leading, spacing: 12) {
             PromptEditor(address: [building.name, "Reception", "picks the right floor"],
                          placeholder: "What do you need done in \(building.name)?",
-                         directory: building.url, text: $text, canSend: canAsk, send: ask) { withImages in
+                         directory: building.url, text: $text, canSend: canAsk, commands: commands, send: ask) { withImages in
                 Button("Ask reception", action: withImages(ask))
                     .buttonStyle(PillButtonStyle())
                     .disabled(!canAsk)
@@ -495,7 +495,7 @@ struct ReceptionComposer: View {
                     ProgressView().controlSize(.small)
                     Text("The receptionist is checking which floor fits…").font(Typography.caption).foregroundStyle(Color(Palette.muted))
                 }
-                suggestionView(RoutingSuggestion(floorID: nil, newFloorName: CityStore.floorName(for: text, existing: building.floors.map(\.name)), reason: ""))
+                suggestionView(RoutingSuggestion(floorID: nil, newFloorName: CityStore.floorName(for: ReceptionDesk.topic(of: text, commands: commands), existing: building.floors.map(\.name)), reason: ""))
                     .disabled(true)
             } else if let suggestion {
                 suggestionView(suggestion)
@@ -503,6 +503,7 @@ struct ReceptionComposer: View {
         }
         .frame(width: 620, alignment: .leading)
         .glass(padding: 16)
+        .task(id: building.id) { city.loadCommands(for: building) }
         .onChange(of: text) { if text != asked { suggestion = nil } }
         .onChange(of: text.isEmpty) {
             if !text.isEmpty { scene?.focusLobby(); ReceptionDesk.prewarm(floors: building.floors) } else if suggestion == nil { scene?.leaveLobby() }
@@ -516,6 +517,8 @@ struct ReceptionComposer: View {
     }
 
     private var canAsk: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !thinking }
+
+    private var commands: [CommandInfo] { city.commands[building.id] ?? [] }
 
     @ViewBuilder
     private func suggestionView(_ suggestion: RoutingSuggestion) -> some View {
@@ -589,12 +592,18 @@ struct ReceptionComposer: View {
             return send(to: floor.id)
         }
         asked = text
-        thinking = true
         let request = text
+        let topic = ReceptionDesk.topic(of: request, commands: commands)
+        if let (command, arguments) = SlashCommand.parse(request, commands: commands), arguments.isEmpty {
+            suggestion = RoutingSuggestion(floorID: nil, newFloorName: CityStore.floorName(for: topic, existing: building.floors.map(\.name)),
+                                           reason: "Choose a floor to run /\(command.name), or set up a new one.")
+            return
+        }
+        thinking = true
         let floors = building.floors
         routing?.cancel()
         routing = Task {
-            let result = await ReceptionDesk.route(request: request, floors: floors)
+            let result = await ReceptionDesk.route(request: topic, floors: floors)
             guard !Task.isCancelled else { return }
             if asked == request { suggestion = result }
             thinking = false

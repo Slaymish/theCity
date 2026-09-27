@@ -26,6 +26,34 @@ struct KitTests {
         #expect(!kit.models.contains { $0.value == KitLoader.inventoryModel })
     }
 
+    @Test func commandsKeepTheirArgumentHints() throws {
+        let kit = try Self.kit()
+        #expect(kit.commands.first { $0.name == "grok" }?.argumentHint == "[branch | commit | PR# | feature or path]")
+        #expect(kit.commands.first { $0.name == "office-house-style" }?.argumentHint == "")
+    }
+
+    @Test func slashCompletionListsPrefixMatchesFirstUntilASpace() {
+        let commands = [CommandInfo(name: "review", description: ""), CommandInfo(name: "code-review", description: ""),
+                        CommandInfo(name: "grok", description: ""), CommandInfo(name: "Revert", description: "")]
+        #expect(SlashCommand.matches(for: "/rev", in: commands).map(\.name) == ["review", "Revert", "code-review"])
+        #expect(SlashCommand.matches(for: "/", in: commands).count == 4)
+        #expect(SlashCommand.matches(for: "/", in: commands, limit: 2).count == 2)
+        #expect(SlashCommand.matches(for: "/review now", in: commands).isEmpty)
+        #expect(SlashCommand.matches(for: "please /rev", in: commands).isEmpty)
+        #expect(SlashCommand.matches(for: "/rev\n", in: commands).isEmpty)
+    }
+
+    @Test func slashTextSplitsIntoAKnownCommandAndArguments() {
+        let commands = [CommandInfo(name: "grok", description: ""), CommandInfo(name: "alphero-web:add-tsdoc", description: "")]
+        let parsed = SlashCommand.parse("  /grok  the parser change \n", commands: commands)
+        #expect(parsed?.command.name == "grok")
+        #expect(parsed?.arguments == "the parser change")
+        #expect(SlashCommand.parse("/alphero-web:add-tsdoc", commands: commands)?.arguments == "")
+        #expect(SlashCommand.parse("/gro", commands: commands) == nil)
+        #expect(SlashCommand.parse("/ grok", commands: commands) == nil)
+        #expect(SlashCommand.parse("grok it", commands: commands) == nil)
+    }
+
     @Test func handBackPreambleIsStripped() throws {
         var reducer = OfficeReducer()
         _ = reducer.run(try Fixture.events("three-rooms.jsonl"))

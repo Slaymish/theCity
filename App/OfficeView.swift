@@ -341,7 +341,7 @@ struct FloorComposer: View {
                          placeholder: continues ? "Ask for a change or a next step…" : "Give this floor a job…",
                          directory: controller.workingDirectory, text: $text,
                          canSend: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && controller.readiness == .ready,
-                         send: continues ? continueLast : startNew) { withImages in
+                         commands: controller.kit?.commands ?? [], send: continues ? continueLast : startNew) { withImages in
                 if continues {
                     Button("Start a new job", action: withImages(startNew))
                         .buttonStyle(PillButtonStyle(kind: .secondary))

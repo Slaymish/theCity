@@ -44,6 +44,26 @@ public enum HandBack {
     }
 }
 
+public enum SlashCommand {
+    /// Completions while the text is a lone `/query`: names starting with the query first, then names containing it.
+    public static func matches(for text: String, in commands: [CommandInfo], limit: Int = 6) -> [CommandInfo] {
+        guard text.hasPrefix("/"), !text.contains(where: \.isWhitespace) else { return [] }
+        let query = text.dropFirst().lowercased()
+        let starts = commands.filter { $0.name.lowercased().hasPrefix(query) }
+        let contains = commands.filter { !$0.name.lowercased().hasPrefix(query) && $0.name.lowercased().contains(query) }
+        return Array((starts + contains).prefix(limit))
+    }
+
+    /// Splits `/name arguments` into a known command and its trimmed arguments.
+    public static func parse(_ text: String, commands: [CommandInfo]) -> (command: CommandInfo, arguments: String)? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/") else { return nil }
+        let name = trimmed.dropFirst().prefix { !$0.isWhitespace }
+        guard !name.isEmpty, let command = commands.first(where: { $0.name == name }) else { return nil }
+        return (command, trimmed.dropFirst(name.count + 1).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+}
+
 public struct Kit: Sendable, Equatable {
     public var models: [ModelOption] = []
     public var servers: [McpServer]

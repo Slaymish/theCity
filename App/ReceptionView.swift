@@ -101,7 +101,7 @@ struct ReceptionView: View {
     }
 
     private var matches: [CommandInfo] {
-        CommandPicker.matches(for: controller.request, in: controller.kit?.commands ?? [])
+        SlashCommand.matches(for: controller.request, in: controller.kit?.commands ?? [])
     }
 
     private var canHire: Bool {

@@ -183,13 +183,11 @@ final class RunController {
     }
 
     func loadKit() {
-        guard let workingDirectory else { return }
-        let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
-        guard let executable = Self.cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment) else { return }
+        guard let workingDirectory, let load = Self.kitLoader(for: workingDirectory, configDirectory: configDirectory) else { return }
         kitTask?.cancel()
         isLoadingKit = true
         let task = Task { () -> Kit? in
-            let loaded = await KitLoader.load(executable: executable, environment: environment, workingDirectory: workingDirectory)
+            let loaded = await load()
             return Task.isCancelled ? nil : loaded
         }
         kitTask = task
@@ -247,6 +245,12 @@ final class RunController {
         return names.filter { $0.hasPrefix(".claude-") }.sorted()
             .map { home.appendingPathComponent($0) }
             .filter { FileManager.default.fileExists(atPath: $0.appendingPathComponent(".claude.json").path) }
+    }
+
+    static func kitLoader(for workingDirectory: URL, configDirectory: URL?) -> (@Sendable () async -> Kit)? {
+        let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
+        guard let executable = cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment) else { return nil }
+        return { await KitLoader.load(executable: executable, environment: environment, workingDirectory: workingDirectory) }
     }
 
     private static var cliOverride: URL? {
@@ -404,7 +408,9 @@ final class RunController {
         let kitTask = kitTask
         Task {
             let kit = await Self.value(of: kitTask, within: .seconds(3)) ?? self.kit
-            var outcome = await HiringDesk.propose(request: request, catalogue: catalogue, kit: kit)
+            let slash = SlashCommand.parse(request, commands: kit?.commands ?? [])
+            let brief = slash.map { [$0.command.description, $0.arguments].filter { !$0.isEmpty }.joined(separator: ": ") } ?? request
+            var outcome = await HiringDesk.propose(request: brief, catalogue: catalogue, kit: kit)
             if let preset = pendingPreset { outcome = HiringDesk.staff(outcome, with: preset, catalogue: catalogue) }
             guard screen == .hiring else { return }
             switch outcome {
@@ -414,6 +420,7 @@ final class RunController {
                 if let kit, let kitPlan {
                     allowedServers = kitPlan.servers
                     allowedSkills = kitPlan.skills
+                    if let slash, kit.skills.contains(where: { $0.name == slash.command.name }) { allowedSkills.insert(slash.command.name) }
                     kitReasons = kitPlan.reasons
                     self.kit = kit
                 }

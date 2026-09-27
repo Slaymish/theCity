@@ -132,7 +132,9 @@ public enum StreamParser {
         case ("control_response", _):
             let response = json["response"] as? [String: Any]
             let commands = ((response?["response"] as? [String: Any])?["commands"] as? [[String: Any]] ?? []).compactMap { command in
-                (command["name"] as? String).map { CommandInfo(name: $0, description: command["description"] as? String ?? "") }
+                (command["name"] as? String).map {
+                    CommandInfo(name: $0, description: command["description"] as? String ?? "", argumentHint: command["argumentHint"] as? String ?? "")
+                }
             }
             return .event(.controlResponse(requestID: response?["request_id"] as? String, commands: commands))
         case ("rate_limit_event", _):

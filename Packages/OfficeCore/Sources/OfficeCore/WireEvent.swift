@@ -60,10 +60,12 @@ public struct CommandInfo: Sendable, Equatable, Hashable, Identifiable {
     public var id: String { name }
     public var name: String
     public var description: String
+    public var argumentHint: String
 
-    public init(name: String, description: String) {
+    public init(name: String, description: String, argumentHint: String = "") {
         self.name = name
         self.description = description
+        self.argumentHint = argumentHint
     }
 }
 

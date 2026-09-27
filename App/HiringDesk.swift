@@ -165,6 +165,13 @@ enum ReceptionDesk {
         return match.map { ($0, body.dropFirst($0.name.count).trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
 
+    /// What reception routes and names a floor on: a slash command's arguments, or the command's name when it has none.
+    static func topic(of request: String, commands: [CommandInfo]) -> String {
+        guard let (command, arguments) = SlashCommand.parse(request, commands: commands) else { return request }
+        guard arguments.isEmpty else { return arguments }
+        return String(command.name.split(separator: ":").last ?? "").replacingOccurrences(of: "-", with: " ")
+    }
+
     /// A preset's existing floor takes the work instead of a new one: always for one-off jobs, and for long ones when it has done related work.
     private static func newFloor(for request: String, preset: FloorPreset?, proposed: String, floors: [CityStore.Floor], reason: String) -> RoutingSuggestion {
         let fallbackName = CityStore.floorName(for: request, existing: floors.map(\.name))

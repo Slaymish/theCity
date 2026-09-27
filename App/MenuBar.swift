@@ -189,7 +189,8 @@ enum MenuBarReception {
             }
             city.routing.insert(buildingID)
             Task {
-                let suggestion = await ReceptionDesk.route(request: request, floors: building.floors)
+                let topic = ReceptionDesk.topic(of: request, commands: city.commands[buildingID] ?? [])
+                let suggestion = await ReceptionDesk.route(request: topic, floors: building.floors)
                 city.routing.remove(buildingID)
                 if let floorID = suggestion.floorID, city.floor(floorID, in: buildingID) != nil {
                     city.send(request, toFloor: floorID, in: buildingID, navigate: false)

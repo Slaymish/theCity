@@ -60,6 +60,8 @@ final class CityStore {
     private(set) var hiringHeadless: [UUID: RunController] = [:]
     private(set) var journal: [JobRecord] = JobJournal.load()
     private(set) var totals: [UUID: JobTotals] = [:]
+    private(set) var commands: [UUID: [CommandInfo]] = [:]
+    private var loadingCommands: Set<UUID> = []
 
     static var fileURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -171,6 +173,17 @@ final class CityStore {
         let session = RunController(building: building, floor: floor)
         sessions[floorID] = session
         return session
+    }
+
+    func loadCommands(for building: Building) {
+        guard commands[building.id] == nil, !loadingCommands.contains(building.id),
+              let load = RunController.kitLoader(for: building.url, configDirectory: Preferences.shared.configDirectory) else { return }
+        loadingCommands.insert(building.id)
+        Task {
+            let kit = await load()
+            loadingCommands.remove(building.id)
+            if !kit.commands.isEmpty { commands[building.id] = kit.commands }
+        }
     }
 
     var currentBuildingID: UUID? {

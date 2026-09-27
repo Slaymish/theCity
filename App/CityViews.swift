@@ -248,6 +248,8 @@ struct WorldView: View {
         guard let id = UUID(uuidString: String(target.dropFirst("building:".count))), id != buildingID else { return }
         prewarm([id])
         if world.inBuilding == nil {
+            // Build the tower now, while the camera is still, so the route change mid-flight only reuses it.
+            show(id)
             world.city.flyTowards(id)
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(OfficeScene.reduceMotion ? 0 : 450))

@@ -120,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let path = RunController.launchArgument("-render-preview") { PreviewStage.run(to: path) }
         if let reel = RunController.launchArgument("-render-reel"), let path = RunController.launchArgument(reel) { ReadmeReel.run(reel, to: path) }
         Attention.shared.setUp()
-        DictationStore.shared.start()
+        if !MainWindow.offscreen { DictationStore.shared.start() }
         #if !DEBUG
         _ = Updater.shared
         #endif

@@ -39,6 +39,7 @@ final class DictationStore {
     private init() {}
 
     func start() {
+        Task.detached(priority: .background) { Self.removeAbandonedCompiles() }
         installShortcut()
         guard let name = Preferences.shared.dictationModel, let variant = Self.models[name] else { return }
         let folder = Self.folder(for: variant)
@@ -47,6 +48,20 @@ final class DictationStore {
             return
         }
         load(folder)
+    }
+
+    /// Core ML leaves a partial ANE compile of the model (300–400 MB each) behind whenever the app quits before it finishes.
+    nonisolated private static func removeAbandonedCompiles() {
+        let files = FileManager.default
+        let cache = files.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "", isDirectory: true)
+            .appendingPathComponent("com.apple.e5rt.e5bundlecache", isDirectory: true)
+        guard let found = files.enumerator(at: cache, includingPropertiesForKeys: nil, options: .skipsPackageDescendants) else { return }
+        for case let url as URL in found where url.lastPathComponent.contains(".tmp.") {
+            let owner = url.lastPathComponent.components(separatedBy: ".tmp.").last?.prefix { $0.isNumber }
+            guard let pid = owner.flatMap({ pid_t($0) }), kill(pid, 0) != 0, errno == ESRCH else { continue }
+            try? files.removeItem(at: url)
+        }
     }
 
     func choose(_ name: String?) {

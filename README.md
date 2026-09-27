@@ -2,6 +2,8 @@
 
 # The City
 
+![The camera slowly circles the city at dusk: street lamps glow along the roads, office windows are lit, cars drive between the blocks and the sky turns orange behind the trees](Docs/Media/showcase.gif)
+
 A macOS app that shows Claude Code runs as a city of robot-staffed offices. Every project folder is a building, every building has floors of robots, and every animation comes from a real event in the `claude` CLI's stream.
 
 The City starts its own Claude Code runs using the `claude` you already have installed, and they count towards your plan as usual. It doesn't show sessions you started in a terminal.

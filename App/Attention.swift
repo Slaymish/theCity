@@ -13,7 +13,7 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.finishedCategory, actions: [
                 UNNotificationAction(identifier: "open", title: "Open", options: [.foreground]),
-                UNNotificationAction(identifier: "show", title: "Show in The Office", options: [.foreground]),
+                UNNotificationAction(identifier: "show", title: "Show in The City", options: [.foreground]),
             ], intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.approvalCategory, actions: [
                 UNNotificationAction(identifier: "allow", title: "Allow", options: []),

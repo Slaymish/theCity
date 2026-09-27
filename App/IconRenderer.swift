@@ -2,7 +2,7 @@ import AppKit
 import Metal
 import RealityKit
 
-/// Renders the app icon from the scene's own manager desk: `TheOffice -render-icon <file.png>`.
+/// Renders the app icon from the scene's own manager desk: `TheCity -render-icon <file.png>`.
 @MainActor
 enum IconRenderer {
     static func run(to path: String) {

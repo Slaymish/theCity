@@ -1,4 +1,4 @@
-name: TheOffice
+name: TheCity
 options:
   bundleIdPrefix: nz.hamish
   deploymentTarget:
@@ -13,7 +13,7 @@ settings:
     CODE_SIGN_IDENTITY: "-"
     CODE_SIGN_STYLE: Manual
 targets:
-  TheOffice:
+  TheCity:
     type: application
     platform: macOS
     sources:
@@ -27,17 +27,21 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: The Office
-        CFBundleName: The Office
+        CFBundleDisplayName: The City
+        CFBundleName: The City
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.developer-tools
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: nz.hamish.theoffice
+        PRODUCT_BUNDLE_IDENTIFIER: nz.hamish.thecity
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: NO
         ENABLE_APP_SANDBOX: NO
 schemes:
-  TheOffice:
+  TheCity:
     build:
       targets:
-        TheOffice: all
+        TheCity: all

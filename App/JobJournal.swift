@@ -21,7 +21,7 @@ struct JobRecord: Codable, Identifiable, Equatable {
 enum JobJournal {
     static var url: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("The Office/jobs.json")
+        return base.appendingPathComponent("The City/jobs.json")
     }
 
     static func load() -> [JobRecord] {

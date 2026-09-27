@@ -121,7 +121,7 @@ struct CandidateBadge: View {
                     Label("Built-in", systemImage: "building.2")
                         .font(Typography.caption)
                         .foregroundStyle(Color(Palette.muted))
-                        .help("Comes with The Office and works in every project. Add an agent with the same name to .claude/agents to replace it.")
+                        .help("Comes with The City and works in every project. Add an agent with the same name to .claude/agents to replace it.")
                 }
             }
             Text(candidate.department.description).font(Typography.caption).foregroundStyle(Color(Palette.muted)).lineLimit(3)

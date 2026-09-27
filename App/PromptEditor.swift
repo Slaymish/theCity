@@ -157,7 +157,7 @@ struct PromptEditor<Actions: View>: View {
         guard board.string(forType: .string) == nil, let image = NSImage(pasteboard: board),
               let tiff = image.tiffRepresentation,
               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return false }
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("TheOffice-Attachments", isDirectory: true)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("TheCity-Attachments", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent(UUID().uuidString + ".png")
         guard (try? png.write(to: url)) != nil else { return false }

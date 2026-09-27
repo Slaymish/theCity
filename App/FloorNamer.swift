@@ -18,7 +18,7 @@ enum FloorNamer {
     static func projectName(folder: URL, configDirectory: URL?) async -> String? {
         let system = """
         You name projects. Given a folder name and any README or manifest text, reply with only the clear, \
-        human name of the project in title case, one to four words, e.g. "The Office" for a folder called theOffice. \
+        human name of the project in title case, one to four words, e.g. "The City" for a folder called theCity. \
         Prefer the name the project uses for itself. No quotes, no punctuation at the end.
         """
         let files = ["README.md", "README", "package.json", "Package.swift", "project.yml", "Cargo.toml", "pyproject.toml"]

@@ -64,7 +64,8 @@ struct ControlTests {
 
     @Test func catalogueReadsTheSampleWorkspace() {
         let departments = AgentCatalogue.load(workingDirectory: Fixture.directory.deletingLastPathComponent().appendingPathComponent("SampleWorkspace"))
-        #expect(departments.map(\.name) == ["build", "design", "research", "review"])
+        #expect(departments.filter { !$0.isBuiltIn }.map(\.name) == ["build", "design", "research", "review"])
+        #expect(departments.drop { !$0.isBuiltIn }.allSatisfy { $0.isBuiltIn })
         #expect(departments.first?.description.hasPrefix("Builds the thing") == true)
     }
 

@@ -1,4 +1,4 @@
-# Handoff: The Office
+# Handoff: The City
 
 For the next Claude Code session (the claude-work account). Written 27 September 2026 by the claude-personal session that built everything so far. Read this, then `README.md`, then `Docs/Reviews/game-review.md`.
 
@@ -9,12 +9,12 @@ The owner's global rules in `~/.claude-shared` apply (UK English, colour tokens 
 Updated 27 September 2026 by the claude-work session, which worked through the whole approved queue (items 1–10 of `Docs/Reviews/game-review.md`, listed in the report below) overnight without the owner available.
 
 - `make build` succeeds with no warnings; `make test` passes 46 tests. Every item was checked with offscreen renders (see "Checking your work" for the new preview flags). The fresh build was launched live, ran for 25 s without a crash, and quit cleanly. Nothing was clicked through in the live window.
-- An instance of The Office that an earlier session left running was quit during the smoke test (`open` brought it forward, then `osascript … quit`).
+- An instance of The City that an earlier session left running was quit during the smoke test (`open` brought it forward, then `osascript … quit`).
 
 ### Done in this pass (queue items)
 
 1. Elbow rig (`robot.py`, `Worker`). The "white brick" in the review's close-ups was actually the desk clock (`OfficeScene.swift`, `clockBody`), whose face points away from the focus camera. It's still there: **raise with the owner**.
-2. `grass` token (optional in `Brand.Tokens`, defaulting to The Office's values), grass disc out to the horizon, a two-row tree ring (`Assets/Pipeline/tree.py`), and a furnished lobby the size of the tower: back and left walls with a doorway, a lift core with a floor-button panel, a couch, a lamp, plants, and the receptionist facing out from behind the desk. Only one storey's sun is lit in the building view (three suns were overexposing the ground).
+2. `grass` token (optional in `Brand.Tokens`, defaulting to The City's values), grass disc out to the horizon, a two-row tree ring (`Assets/Pipeline/tree.py`), and a furnished lobby the size of the tower: back and left walls with a doorway, a lift core with a floor-button panel, a couch, a lamp, plants, and the receptionist facing out from behind the desk. Only one storey's sun is lit in the building view (three suns were overexposing the ground).
 3. `DeskCard` (360 pt) pinned beside the robot's projected head: questions reuse `QuestionFields`/`OptionButton`; approvals are a permit slip with Allow / Always allow in <folder> / Deny stamps (`Haptics.stamp()`, stamp overlay, then the call). The camera focuses on the asking robot and returns afterwards. "N more waiting ›" cycles. The panel's Needs you list keeps working without shortcuts (the desk card owns ⌘1–9/⌘↩/⌘⌫). A folder flies back to the robot when the hand goes down.
 4. Job ticket (perforated `TicketShape`), budget `RingGauge` in the counter, `StepBar` staff strip while running, panel hidden by default behind ⌘\, the Room inspector as a card beside the selected desk, "Delivered" card title, the manager walks the folder to the outbox (`Worker.walk`), and the tray keeps 5 jobs.
 5. `World` (`App/World.swift`) and `WorldView` (`CityViews.swift`) replace `CityView`/`BuildingView`: one RealityView. Entering scales the city around the lot (`CameraRig.frame` maps a rig's space to the world), hands the camera over at an identical pose, sinks the façade and raises the tower (0.6 s). City buildings between the camera and the tower are hidden while inside.
@@ -43,7 +43,7 @@ Updated 27 September 2026 by the claude-work session, which worked through the w
 ### Loose ends to raise with the owner
 
 - The desk clock that reads as a brick in close-ups (see item 1).
-- `~/Library/Application Support/The Office/city.json` has a floor "Write a file hello.txt containing" (Build team) and `SampleWorkspace/hello.txt`. They came from a window the previous session launched with `-request` prefilled; someone clicked Hire staff and Open the office. Ask before deleting either.
+- `~/Library/Application Support/The City/city.json` has a floor "Write a file hello.txt containing" (Build team) and `SampleWorkspace/hello.txt`. They came from a window the previous session launched with `-request` prefilled; someone clicked Hire staff and Open the office. Ask before deleting either.
 - `.claude/settings.local.json` in the repo root predates this work; leave it.
 - Alphero brand: still needs Alphero's department colours (only `#3D2051` is known) and a dark theme. Noted in `App/Brands/alphero/brand.json`.
 - Values from earlier sessions still never approved: scene sizes (room spacing 7 m, walls 5.2 m, sill 1.3 m, window top 4.2 m, storey 6.4 m, city grid 2 m), 26° lens, camera smoothing 0.45–0.5 s, billboard 105 px/m, flags at half scale, face glyph sizes 92/132 pt, gauge rings 22 pt with amber ≥70% and red ≥90%, hover offsets, icon squircle inset 100/1024 and radius 22.5%.
@@ -65,12 +65,12 @@ Updated 27 September 2026 by the claude-work session, which worked through the w
 ## Checking your work
 
 - **Offscreen renders are the reliable check** (no window needed). Wrap them in a 120 s timeout, and downscale with `sips -Z 1000` before viewing:
-  `build/Build/Products/Debug/TheOffice.app/Contents/MacOS/TheOffice -render-preview out.png [-theme light|dark] [-workspace "$PWD/SampleWorkspace"] [-city | -building [-floor N] | -focus <room>]`
+  `build/Build/Products/Debug/TheCity.app/Contents/MacOS/TheCity -render-preview out.png [-theme light|dark] [-workspace "$PWD/SampleWorkspace"] [-city | -building [-floor N] | -focus <room>]`
 - `-route-test "<request>"` prints Reception's routing decision (free, on-device).
 - `-parallel-test` runs two small Haiku jobs on two floors at once and prints each outcome (about US$0.08; tell the owner before running it).
 - Live window: `Tools/Dev/relaunch.sh <args>` and `snap.py`. Compile the helpers first with `swiftc -o winid Tools/Dev/winid.swift` and so on, and set `SCRATCH` to your scratchpad. The window often moves to another desktop Space; don't spend long fighting it.
   - The first launch after a build can take 30 s or more to show the window.
-  - Quit with `osascript -e 'tell application "TheOffice" to quit'` (not `pkill`).
+  - Quit with `osascript -e 'tell application "TheCity" to quit'` (not `pkill`).
 - Launch arguments: `-workspace`, `-request`, `-model`, `-theme`, `-replay <fixture>`, `-cli`, `-show-building`.
 
 ## Traps already found

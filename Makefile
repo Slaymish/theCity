@@ -1,5 +1,5 @@
 DERIVED := build
-APP := $(DERIVED)/Build/Products/Debug/TheOffice.app
+APP := $(DERIVED)/Build/Products/Debug/TheCity.app
 
 .PHONY: run build install test project replay clean
 
@@ -10,11 +10,11 @@ replay: build
 	open $(APP) --args -workspace "$(CURDIR)/SampleWorkspace" -replay "$(CURDIR)/fixtures/three-rooms.jsonl"
 
 build: project
-	xcodebuild -project TheOffice.xcodeproj -scheme TheOffice -configuration Debug -derivedDataPath $(DERIVED) -quiet build
+	xcodebuild -project TheCity.xcodeproj -scheme TheCity -configuration Debug -derivedDataPath $(DERIVED) -quiet build
 
 install: build
-	rm -rf /Applications/TheOffice.app
-	cp -R $(APP) /Applications/TheOffice.app
+	rm -rf /Applications/TheCity.app
+	cp -R $(APP) /Applications/TheCity.app
 
 test:
 	cd Packages/OfficeCore && swift test
@@ -23,4 +23,4 @@ project:
 	xcodegen generate --quiet
 
 clean:
-	rm -rf $(DERIVED) TheOffice.xcodeproj
+	rm -rf $(DERIVED) TheCity.xcodeproj

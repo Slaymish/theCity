@@ -59,12 +59,12 @@ enum OffscreenRenderer {
     }
 }
 
-/// `TheOffice -render-preview <out.png> [-focus <room>] [-theme light] [-city | -building [-floor n | -lobby]]`: real scenes with sample data.
+/// `TheCity -render-preview <out.png> [-focus <room>] [-theme light] [-city | -building [-floor n | -lobby]]`: real scenes with sample data.
 @MainActor
 enum PreviewStage {
     static func renderCityOrBuilding(to path: String, dark: Bool, arguments: [String]) throws {
         let workspace = URL(fileURLWithPath: RunController.launchArgument("-workspace") ?? FileManager.default.currentDirectoryPath)
-        let names = ["theOffice", "alphero-web", "client-portal", "docs-site", "infra"]
+        let names = ["theCity", "alphero-web", "client-portal", "docs-site", "infra"]
         var buildings = names.enumerated().map { index, name in
             CityStore.Building(name: name, path: workspace.path, style: index * 3 % 8)
         }
@@ -195,7 +195,7 @@ enum PreviewStage {
                 exit(0)
             }
             if arguments.contains("-hud-test") {
-                let building = CityStore.Building(name: "theOffice", path: RunController.launchArgument("-workspace") ?? "", style: 0)
+                let building = CityStore.Building(name: "theCity", path: RunController.launchArgument("-workspace") ?? "", style: 0)
                 let controller = RunController(building: building, floor: .init(name: "Preview", hires: ["research", "build"], budgetUSD: 1))
                 controller.request = "Add a sign-in page with email login and write tests for it"
                 let badges = [("research", true, "Finds prior art and reads the docs"), ("build", true, "Writes and edits the code"), ("review", false, "Checks the work for bugs")]
@@ -264,7 +264,7 @@ enum PreviewStage {
                                                      background: Palette.resolved(Palette.background, dark: dark).cgColor)
             if let kind = RunController.launchArgument("-card"), let room = RunController.launchArgument("-focus"),
                let head = scene.screenPoint(of: room) {
-                let workspace = CityStore.Building(name: "theOffice", path: RunController.launchArgument("-workspace") ?? "", style: 0)
+                let workspace = CityStore.Building(name: "theCity", path: RunController.launchArgument("-workspace") ?? "", style: 0)
                 let controller = RunController(building: workspace, floor: .init(name: "Preview", hires: ["research", "build", "review"], budgetUSD: 1))
                 let request = kind == "approval"
                     ? PermissionRequest.preview(command: "npm test -- auth", rule: "npm test:*")

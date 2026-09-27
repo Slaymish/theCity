@@ -243,9 +243,9 @@ final class RunController {
     func signIn() {
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
         guard let executable = Self.cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment) else { return }
-        let script = FileManager.default.temporaryDirectory.appendingPathComponent("The Office sign-in.command")
+        let script = FileManager.default.temporaryDirectory.appendingPathComponent("The City sign-in.command")
         let config = configDirectory.map { "export CLAUDE_CONFIG_DIR='\($0.path)'\n" } ?? ""
-        let body = "#!/bin/zsh\n\(config)'\(executable.path)' auth login\necho\necho 'You can close this window and return to The Office.'\n"
+        let body = "#!/bin/zsh\n\(config)'\(executable.path)' auth login\necho\necho 'You can close this window and return to The City.'\n"
         do {
             try body.write(to: script, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
@@ -617,7 +617,7 @@ final class RunController {
     }
 
     func deny(_ pending: PendingRequest) {
-        write(ControlMessage.deny(pending.request, message: "The user denied this in The Office."), note: "denied \(pending.request.toolName)")
+        write(ControlMessage.deny(pending.request, message: "The user denied this in The City."), note: "denied \(pending.request.toolName)")
         send(.requestResolved(requestID: pending.id))
     }
 

@@ -1,4 +1,4 @@
-# The Office
+# The City
 
 A macOS app that shows Claude Code runs as a city of robot-staffed offices. Every project folder is a building, every building has floors of robots, and every animation comes from a real event in the `claude` CLI's stream.
 
@@ -10,17 +10,17 @@ A macOS app that shows Claude Code runs as a city of robot-staffed offices. Ever
 
 ## Install
 
-1. Download the latest `.dmg` or `.zip` from [Releases](https://github.com/slaymish/theOffice/releases).
-2. Drag **TheOffice.app** into Applications.
+1. Download the latest `.dmg` or `.zip` from [Releases](https://github.com/Slaymish/theCity/releases).
+2. Drag **TheCity.app** into Applications.
 3. The build is not notarised, so macOS blocks the first launch. Either right-click the app and choose **Open**, or run:
 
    ```sh
-   xattr -dr com.apple.quarantine /Applications/TheOffice.app
+   xattr -dr com.apple.quarantine /Applications/TheCity.app
    ```
 
 ### Updates
 
-The app uses [Sparkle](https://sparkle-project.org) to check for new releases and install them. To check straight away, choose **The Office › Check for Updates…**.
+The app uses [Sparkle](https://sparkle-project.org) to check for new releases and install them. To check straight away, choose **The City › Check for Updates…**.
 
 ## How it works
 
@@ -36,7 +36,7 @@ The app uses [Sparkle](https://sparkle-project.org) to check for new releases an
 
 Settings (⌘,) holds the defaults for new jobs (account, model, budget), the theme, notifications, sounds and the location of `claude`. **View › Show Raw Log** (⌥⌘L) opens the raw CLI stream.
 
-The city is saved in `~/Library/Application Support/The Office/`.
+The city is saved in `~/Library/Application Support/The City/`.
 
 ## Building from source
 
@@ -44,13 +44,17 @@ Needs Xcode 27 and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew inst
 
 ```sh
 make run       # generate the project, build, and open against SampleWorkspace/
-make install   # build and copy to /Applications/TheOffice.app
+make install   # build and copy to /Applications/TheCity.app
 make test      # OfficeCore unit tests against fixtures/
 make replay    # open and replay fixtures/three-rooms.jsonl (no API calls)
 make clean     # remove build output and the generated project
 ```
 
-`make project` regenerates `TheOffice.xcodeproj` from `project.yml` on its own. In debug builds, **Debug › Replay Fixture…** (⇧⌘R) replays any saved stream.
+### Releasing
+
+CI runs the tests and builds the app on every push and pull request. Pushing a tag such as `v0.2.0` also builds a release with that version and publishes the `.dmg` and `.zip` to GitHub Releases, using the tag's section of `CHANGELOG.md` as the notes.
+
+`make project` regenerates `TheCity.xcodeproj` from `project.yml` on its own. In debug builds, **Debug › Replay Fixture…** (⇧⌘R) replays any saved stream.
 
 ### Layout
 

@@ -81,15 +81,15 @@ final class BrandStore {
 
     static var customFolder: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("The Office/Brands")
+            .appendingPathComponent("The City/Brands")
     }
 
     private init() {
         let loaded = Self.load()
         brands = loaded
-        let saved = UserDefaults.standard.string(forKey: "brand") ?? "the-office"
+        let saved = UserDefaults.standard.string(forKey: "brand") ?? "the-city"
         selectedID = saved
-        current = loaded.first { $0.id == saved } ?? loaded.first { $0.id == "the-office" } ?? loaded[0]
+        current = loaded.first { $0.id == saved } ?? loaded.first { $0.id == "the-city" } ?? loaded[0]
         Typography.register(brand: current)
     }
 
@@ -119,7 +119,7 @@ final class BrandStore {
             folders += entries
         }
         let brands = folders.compactMap(read)
-        return brands.isEmpty ? [Brand.fallback] : brands.sorted { ($0.id == "the-office" ? 0 : 1, $0.name) < ($1.id == "the-office" ? 0 : 1, $1.name) }
+        return brands.isEmpty ? [Brand.fallback] : brands.sorted { ($0.id == "the-city" ? 0 : 1, $0.name) < ($1.id == "the-city" ? 0 : 1, $1.name) }
     }
 
     private static func read(_ folder: URL) -> Brand? {
@@ -131,9 +131,9 @@ final class BrandStore {
 }
 
 extension Brand {
-    /// Only used if the bundled brand files can't be read; mirrors `Brands/the-office/brand.json`.
+    /// Only used if the bundled brand files can't be read; mirrors `Brands/the-city/brand.json`.
     static let fallback = Brand(
-        id: "the-office", name: "The Office", wordmarkSymbol: "building.2.fill", logo: nil,
+        id: "the-city", name: "The City", wordmarkSymbol: "building.2.fill", logo: nil,
         font: .init(family: "Fredoka", file: nil),
         light: .init(background: "#DCEEFB", panel: "#FFFDF7", panelEdge: "#EADFCB", text: "#3B2F2A", muted: "#7A6A60",
                      primaryFill: "#F2C14E", primaryText: "#3B2F2A", floor: "#E8CFA8", walls: "#F6EEDF",

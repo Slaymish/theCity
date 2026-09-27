@@ -2,14 +2,21 @@ import AppKit
 import SwiftUI
 
 @main
-struct TheOfficeApp: App {
+struct TheCityApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var city = CityStore.shared
-    @State private var preferences = Preferences.shared
-    @State private var brands = BrandStore.shared
+    @State private var city: CityStore
+    @State private var preferences: Preferences
+    @State private var brands: BrandStore
+
+    init() {
+        LegacyData.migrate()
+        _city = State(initialValue: .shared)
+        _preferences = State(initialValue: .shared)
+        _brands = State(initialValue: .shared)
+    }
 
     var body: some Scene {
-        Window("The Office", id: "office") {
+        Window("The City", id: "office") {
             ContentView(city: city)
                 .id(brands.selectedID)
                 .frame(minWidth: 1000, minHeight: 680)

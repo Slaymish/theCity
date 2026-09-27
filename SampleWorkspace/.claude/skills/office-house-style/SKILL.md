@@ -1,6 +1,6 @@
 ---
 name: office-house-style
-description: The Office's house style for anything written, such as greetings, notes and labels. Use before writing user-facing text in this workspace.
+description: The City's house style for anything written, such as greetings, notes and labels. Use before writing user-facing text in this workspace.
 ---
 # House style
 

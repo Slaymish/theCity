@@ -43,7 +43,7 @@ public struct RunConfig: Sendable, Equatable {
 
     public init(request: String, workingDirectory: URL, claudeConfigDirectory: URL?, model: String?,
                 maxBudgetUSD: Double?, appendSystemPrompt: String? = nil, agents: String? = nil, resumeSessionID: String? = nil,
-                blockedTools: [String] = [], permissionMode: PermissionMode = .auto) {
+                blockedTools: [String] = [], permissionMode: PermissionMode = .manual) {
         self.request = request
         self.workingDirectory = workingDirectory
         self.claudeConfigDirectory = claudeConfigDirectory
@@ -103,6 +103,42 @@ public enum ClaudeEnvironment {
         return dirs.lazy
             .map { URL(fileURLWithPath: $0).appendingPathComponent("claude") }
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+
+    /// Fixes GHSA-7835-87q9-rgvv and GHSA-fg94-h982-f3mm.
+    public static let minimumVersion = [2, 1, 163]
+
+    public static var minimumVersionText: String { minimumVersion.map(String.init).joined(separator: ".") }
+
+    public static func parseVersion(_ text: String) -> [Int]? {
+        guard let token = text.split(whereSeparator: \.isWhitespace).first else { return nil }
+        let parts = token.split(separator: ".").map { Int($0) }
+        guard parts.count >= 2, !parts.contains(nil) else { return nil }
+        return parts.compactMap { $0 }
+    }
+
+    public static func isSupported(_ version: [Int]) -> Bool {
+        let padded = version + Array(repeating: 0, count: max(0, minimumVersion.count - version.count))
+        return !padded.lexicographicallyPrecedes(minimumVersion)
+    }
+
+    public static func version(executable: URL, environment: [String: String]) async -> [Int]? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                let process = Process()
+                process.executableURL = executable
+                process.arguments = ["--version"]
+                process.environment = environment
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = FileHandle.nullDevice
+                process.standardInput = FileHandle.nullDevice
+                do { try process.run() } catch { return continuation.resume(returning: nil) }
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                continuation.resume(returning: parseVersion(String(decoding: data, as: UTF8.self)))
+            }
+        }
     }
 
     /// `claude auth status` exits 1 when logged out; nil means the answer could not be read.

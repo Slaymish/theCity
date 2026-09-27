@@ -168,6 +168,11 @@ struct ReadinessRow: View {
                 Action(title: "Install…") { NSWorkspace.shared.open(Self.installPage) },
                 Action(title: "Locate…") { locate() },
             ])
+        case .cliOutdated(let version):
+            return ("Claude Code \(version) has known security issues. Update it to \(ClaudeEnvironment.minimumVersionText) or later.", [
+                Action(title: "How to Update…") { NSWorkspace.shared.open(Self.installPage) },
+                Action(title: "Check Again") { controller.checkReadiness() },
+            ])
         case .notLoggedIn:
             return ("You’re not signed in to Claude Code with the \(Preferences.accountName(controller.configDirectory)) account.", [
                 Action(title: "Sign In…") { controller.signIn() },

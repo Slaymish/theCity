@@ -16,7 +16,6 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
                 UNNotificationAction(identifier: "show", title: "Show in The City", options: [.foreground]),
             ], intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.approvalCategory, actions: [
-                UNNotificationAction(identifier: "allow", title: "Allow", options: []),
                 UNNotificationAction(identifier: "deny", title: "Deny", options: [.destructive]),
             ], intentIdentifiers: []),
         ])
@@ -80,9 +79,9 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
             switch action {
             case "open":
                 if let file { NSWorkspace.shared.open(URL(fileURLWithPath: file)) }
-            case "allow", "deny":
+            case "deny":
                 guard let pending = controller?.state.pendingRequests.first(where: { $0.id == requestID }) else { break }
-                if action == "allow" { controller?.allow(pending) } else { controller?.deny(pending) }
+                controller?.deny(pending)
             default:
                 NSApp.activate()
                 NSApp.windows.first { $0.canBecomeMain }?.makeKeyAndOrderFront(nil)
@@ -99,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor func applicationDidFinishLaunching(_ notification: Notification) {
         if let path = RunController.launchArgument("-render-icon") { IconRenderer.run(to: path) }
         if let path = RunController.launchArgument("-render-preview") { PreviewStage.run(to: path) }
+        if let reel = RunController.launchArgument("-render-reel"), let path = RunController.launchArgument(reel) { ReadmeReel.run(reel, to: path) }
         Attention.shared.setUp()
         #if !DEBUG
         _ = Updater.shared

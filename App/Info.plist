@@ -28,5 +28,9 @@
 	<string>https://github.com/Slaymish/theCity/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>XFsMrfnVINrYuvdLOzPgPXbDhfGGm+Uu6fYmTaGAkxQ=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 </dict>
 </plist>

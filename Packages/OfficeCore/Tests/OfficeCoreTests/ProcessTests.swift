@@ -101,6 +101,26 @@ struct ProcessTests {
         #expect(ClaudeEnvironment.locateCLI(environment: ["PATH": "/nonexistent"], alsoSearch: [dir.path])?.path == fake.path)
     }
 
+    @Test func cliVersionIsParsedAndCheckedAgainstTheMinimum() async throws {
+        #expect(ClaudeEnvironment.parseVersion("2.1.283 (Claude Code)\n") == [2, 1, 283])
+        #expect(ClaudeEnvironment.parseVersion("Claude Code") == nil)
+        #expect(ClaudeEnvironment.parseVersion("") == nil)
+        #expect(ClaudeEnvironment.isSupported([2, 1, 163]))
+        #expect(ClaudeEnvironment.isSupported([2, 2]))
+        #expect(ClaudeEnvironment.isSupported([3, 0, 0]))
+        #expect(!ClaudeEnvironment.isSupported([2, 1, 162]))
+        #expect(!ClaudeEnvironment.isSupported([2, 0, 999]))
+        #expect(!ClaudeEnvironment.isSupported([1, 9]))
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let fake = dir.appendingPathComponent("claude")
+        FileManager.default.createFile(atPath: fake.path, contents: Data("#!/bin/sh\necho '2.1.100 (Claude Code)'\n".utf8),
+                                       attributes: [.posixPermissions: 0o755])
+        #expect(await ClaudeEnvironment.version(executable: fake, environment: [:]) == [2, 1, 100])
+    }
+
     @Test func replayYieldsEveryLineThenExits() async throws {
         let stream = try FixtureReplay.stream(contentsOf: Fixture.url("three-rooms.jsonl"), interval: .zero)
         var count = 0

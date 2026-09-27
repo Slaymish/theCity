@@ -67,7 +67,7 @@ final class Preferences {
             ?? ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
         model = defaults.string(forKey: "model")
         budgetUSD = defaults.object(forKey: "budgetUSD") as? Double ?? 1.0
-        permissionMode = PermissionMode(rawValue: defaults.string(forKey: "permissionMode") ?? "") ?? .auto
+        permissionMode = PermissionMode(rawValue: defaults.string(forKey: "permissionMode") ?? "") ?? .manual
         theme = Theme(rawValue: defaults.string(forKey: "theme") ?? "") ?? .system
         notifications = defaults.object(forKey: "notifications") as? Bool ?? true
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true

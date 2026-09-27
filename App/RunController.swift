@@ -134,8 +134,7 @@ final class RunController {
     }
 
     /// The floor's own office, built from its team and the services it may use.
-    func buildScene() {
-        let dark = Preferences.shared.isDark
+    func buildScene(dark: Bool = Preferences.shared.isDark) {
         scene.build(hired: hired, servers: (kit?.usableServers ?? []).filter { allowedServers.contains($0.name) },
                     colour: { [weak self] in self?.colour(for: $0) ?? Palette.muted }, dark: dark)
         showRecords()
@@ -150,7 +149,7 @@ final class RunController {
     }
 
     var displayTitle: String {
-        guard let buildingID, let floorID, let floor = CityStore.shared.floor(floorID, in: buildingID) else { return "New floor" }
+        guard let buildingID, let floorID, let floor = CityStore.shared.floor(floorID, in: buildingID) else { return pendingFloorName ?? "New floor" }
         return floor.name
     }
 
@@ -567,6 +566,30 @@ final class RunController {
         }
     }
 
+    /// The README reels render in simulated time, so they swap this for their own clock.
+    static var now: () -> Date = { .now }
+
+    /// A job the README reels drive one wire line at a time, with no `claude` process. A nil `dark` keeps a floor already shown in a building.
+    func beginScript(servers: [McpServer], dark: Bool?) {
+        kit = Kit(servers: servers)
+        allowedServers = Set(servers.map(\.name))
+        screen = .office
+        jobFiles = []
+        followUps = []
+        if let dark { buildScene(dark: dark) }
+        readiness = .ready
+        reset(keepLog: false)
+        isReplay = true
+        send(.launched)
+    }
+
+    func endScript() { send(.processExited(code: 0, stderr: "")) }
+
+    func feed(_ raw: String) {
+        guard case .event(let event) = StreamParser.parse(raw, index: log.count).parsed else { return }
+        send(.wire(event))
+    }
+
     func replay(_ url: URL) {
         guard !isRunning else { return }
         if hired.isEmpty, let workingDirectory { hired = AgentCatalogue.load(workingDirectory: workingDirectory) }
@@ -691,9 +714,10 @@ final class RunController {
     private func send(_ input: RunInput) {
         let events = reducer.apply(input)
         state = reducer.state
-        if case .wire(.rateLimit(let limit)) = input { UsageStore.shared.record(limit, configDirectory: configDirectory) }
+        // Replayed limits are old or made up, so they mustn't replace the account's saved reading.
+        if case .wire(.rateLimit(let limit)) = input, !isReplay { UsageStore.shared.record(limit, configDirectory: configDirectory) }
         Attention.shared.waiting(state.pendingRequests.count)
-        if case .ended = state.phase, endedAt == nil { endedAt = .now }
+        if case .ended = state.phase, endedAt == nil { endedAt = Self.now() }
         track(events)
         for path in state.outputFiles where !jobFiles.contains(path) { jobFiles.append(path) }
         if !events.isEmpty { scene.apply(events) }
@@ -730,19 +754,19 @@ final class RunController {
             case .roomStarted(_, let room):
                 guard let i = steps.firstIndex(where: { $0.room == room }) else { break }
                 steps[i].status = .working
-                steps[i].startedAt = steps[i].startedAt ?? .now
+                steps[i].startedAt = steps[i].startedAt ?? Self.now()
             case .roomFinished(_, let room, _):
                 guard let i = steps.firstIndex(where: { $0.room == room }), let start = steps[i].startedAt else { break }
-                steps[i].workedFor += Date.now.timeIntervalSince(start)
+                steps[i].workedFor += Self.now().timeIntervalSince(start)
                 steps[i].startedAt = nil
                 steps[i].status = .done
             case .handRaised(let request, let room):
                 panelTab = .requests
-                Attention.shared.needsInput(from: room, request: request, place: placeName)
+                if !isReplay { Attention.shared.needsInput(from: room, request: request, place: placeName) }
                 let who = room == "manager" ? "The manager" : room.capitalized
                 AccessibilityNotification.Announcement("\(who) needs you").post()
             case .runEnded(let outcome):
-                Attention.shared.finished(outcome, files: state.outputFiles, place: placeName)
+                if !isReplay { Attention.shared.finished(outcome, files: state.outputFiles, place: placeName) }
                 noteLimit(outcome)
                 if !isReplay { recordJob(outcome) }
                 if !queued.isEmpty {
@@ -779,7 +803,7 @@ final class RunController {
         if !keepLog { log = [] }
         steps = hired.map { Step(room: $0.name, colour: colour(for: $0.name), isContractor: false) }
         activity = []
-        startedAt = .now
+        startedAt = Self.now()
         endedAt = nil
         process = nil
         consumer = nil
@@ -790,7 +814,7 @@ final class RunController {
         log.append(LogEntry(elapsed: sinceStart, kind: .app, text: text))
     }
 
-    private var sinceStart: TimeInterval { startedAt.map { Date.now.timeIntervalSince($0) } ?? 0 }
+    private var sinceStart: TimeInterval { startedAt.map { Self.now().timeIntervalSince($0) } ?? 0 }
 
     private static func tag(for event: WireEvent) -> String {
         switch event {

@@ -89,6 +89,7 @@ struct OfficeOverlay: View {
     let scene: OfficeScene
     var onBack: (() -> Void)?
     var onClose: (() -> Void)?
+    var showsDeskRequests = true
     @State private var outboxCollapsed = false
     @State private var closing: ClosingFloor?
     @State private var bottomHeight: CGFloat = 0
@@ -156,7 +157,7 @@ struct OfficeOverlay: View {
             }
             .padding(20)
 
-            DeskRequestLayer(controller: controller, scene: scene, bottomInset: bottomHeight)
+            if showsDeskRequests { DeskRequestLayer(controller: controller, scene: scene, bottomInset: bottomHeight) }
 
             VStack(spacing: 12) {
                 Spacer()
@@ -423,7 +424,7 @@ struct CounterCard: View {
 
     var body: some View {
         let tally = controller.state.tally
-        TimelineView(.animation(minimumInterval: 0.25, paused: !controller.isRunning)) { context in
+        TimelineView(.animation(minimumInterval: 0.25, paused: !controller.isRunning)) { _ in
             HStack(spacing: 12) {
             RingGauge(fraction: session.map { $0.utilization } ?? (tally.costUSD ?? 0) / max(controller.budgetUSD, 0.01))
                 .help(session == nil ? "Spent so far against the budget" : "Share of your plan's 5-hour session used")
@@ -434,7 +435,7 @@ struct CounterCard: View {
                     Text(costLine(tally))
                         .foregroundStyle(Color(tally.costUSD == nil ? Palette.muted : Palette.text))
                 }
-                Text(RunController.clock(elapsed(now: context.date)))
+                Text(RunController.clock(elapsed(now: RunController.now())))
                 Text("\(Self.compact(tally.total)) tokens")
                     .foregroundStyle(Color(Palette.muted))
             }
@@ -477,11 +478,11 @@ struct StepBar: View {
 
     var body: some View {
         if !steps.isEmpty {
-            TimelineView(.animation(minimumInterval: 0.1, paused: !steps.contains { $0.status == .working })) { context in
+            TimelineView(.animation(minimumInterval: 0.1, paused: !steps.contains { $0.status == .working })) { _ in
                 HStack(spacing: 4) {
                     ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
                         Button { select(step.room) } label: {
-                            StepPill(number: index + 1, step: step, now: context.date)
+                            StepPill(number: index + 1, step: step, now: RunController.now())
                         }
                         .buttonStyle(.plain)
                         .help("Inspect \(step.room.capitalized)")

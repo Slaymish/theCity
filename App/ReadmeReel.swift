@@ -9,8 +9,14 @@ enum ReadmeReel {
     typealias Cue = (at: Double, run: () -> Void)
 
     static let size = CGSize(width: 1600, height: 1000)
+    /// The window the HUD is laid out in; frames are rendered at `size`, so the HUD is drawn at `size.width / points.width`.
+    static let points = CGSize(width: 1000, height: 625)
+
+    private static var time = 0.0
 
     static func run(_ name: String, to directory: String) {
+        let epoch = Date.now
+        RunController.now = { epoch.addingTimeInterval(time) }
         do {
             let dark = RunController.launchArgument("-theme") != "light"
             let fps = RunController.launchArgument("-fps").flatMap(Double.init) ?? 30
@@ -30,138 +36,343 @@ enum ReadmeReel {
     }
 
     private static func record(seconds: Double, fps: Double, cues: [Cue], recorder: FrameRecorder, to folder: URL,
-                               step: (Double) -> Void, camera: () -> Entity, overlay: (CGImage) throws -> CGImage = { $0 }) throws {
+                               step: (Double) -> Void, camera: () -> Entity, overlay: (CGImage, Double) throws -> CGImage = { image, _ in image }) throws {
         var pending = cues.sorted { $0.at < $1.at }
         let dt = 1 / fps
         try recorder.warmUp()
         for frame in 0..<Int(seconds * fps) {
-            let time = Double(frame) * dt
+            time = Double(frame) * dt
             while let cue = pending.first, cue.at <= time {
                 pending.removeFirst()
                 cue.run()
             }
             for _ in 0..<2 { step(dt / 2) }
-            let image = try overlay(try recorder.capture(camera: camera()))
+            let image = try overlay(try recorder.capture(camera: camera()), time)
             try OffscreenRenderer.writePNG(image, to: folder.appendingPathComponent(String(format: "frame-%05d.png", frame)))
         }
     }
 
     private static func background(_ dark: Bool) -> CGColor { Palette.resolved(Palette.background, dark: dark).cgColor }
 
-    private static func work(_ scene: OfficeScene, rooms: [(String, String, String)], prefix: String) {
-        scene.apply([.runStarted, .managerActive(true)])
-        for (index, (room, tool, caption)) in rooms.enumerated() {
-            let id = "\(prefix)\(index)"
-            scene.apply([.handoff(toolUseID: id, room: room, description: nil), .roomStarted(toolUseID: id, room: room),
-                         .roomActivity(room: room, toolName: tool), .roomCaption(room: room, caption: caption)])
-        }
+    // MARK: HUD
+
+    private static func hud(_ view: some View, dark: Bool) -> CGImage? {
+        let renderer = ImageRenderer(content: view
+            .frame(width: points.width, height: points.height)
+            .foregroundStyle(Color(Palette.text))
+            .environment(\.colorScheme, dark ? .dark : .light)
+            .environment(\.rendersOffscreen, true))
+        renderer.scale = size.width / points.width
+        return renderer.cgImage
     }
 
-    // MARK: City: break ground, rise, walk in, visit a floor
+    private static func layer(_ base: CGImage, _ layers: [(CGImage?, Double)]) throws -> CGImage {
+        guard layers.contains(where: { $0.0 != nil && $0.1 > 0 }) else { return base }
+        guard let context = CGContext(data: nil, width: base.width, height: base.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        else { throw CocoaError(.fileWriteUnknown) }
+        let frame = CGRect(x: 0, y: 0, width: base.width, height: base.height)
+        context.draw(base, in: frame)
+        for case let (image?, alpha) in layers where alpha > 0 {
+            context.setAlpha(alpha)
+            context.draw(image, in: frame)
+        }
+        guard let result = context.makeImage() else { throw CocoaError(.fileWriteUnknown) }
+        return result
+    }
+
+    private static func fade(_ time: Double, in start: Double, _ duration: Double = 0.3) -> Double {
+        let t = min(max((time - start) / duration, 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+
+    private static func window(_ time: Double, _ from: Double, _ to: Double) -> Double {
+        fade(time, in: from) * (1 - fade(time, in: to))
+    }
+
+    /// A copy of the sample workspace's departments under the project's name, so file rows and addresses read like a real project.
+    private static func project(named name: String, beside folder: URL) throws -> URL {
+        let sample = URL(fileURLWithPath: RunController.launchArgument("-workspace") ?? FileManager.default.currentDirectoryPath)
+        let project = folder.deletingLastPathComponent().appendingPathComponent("reel-\(folder.lastPathComponent)").appendingPathComponent(name)
+        try? FileManager.default.removeItem(at: project)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: sample.appendingPathComponent(".claude"), to: project.appendingPathComponent(".claude"))
+        return project.standardizedFileURL
+    }
+
+    private static func plan(session: Double, week: Double) {
+        let now = Date.now.timeIntervalSince1970
+        let line = Wire.json(["type": "rate_limit_event", "rate_limit_info": [
+            "status": "allowed", "rateLimitType": "five_hour", "isUsingOverage": false,
+            "unifiedWindows": ["five_hour": ["utilization": session, "resetsAt": now + 3 * 3600],
+                               "seven_day": ["utilization": week, "resetsAt": now + 4 * 86_400]],
+        ] as [String: Any]])
+        guard case .event(.rateLimit(let limit)) = StreamParser.parse(line, index: 0).parsed else { return }
+        UsageStore.shared.record(limit, configDirectory: Preferences.shared.configDirectory, persist: false)
+    }
+
+    // MARK: City: break ground, rise, walk in, ask reception, go up to the floor
 
     private static func city(dark: Bool, fps: Double, to folder: URL) throws {
-        let workspace = RunController.launchArgument("-workspace") ?? FileManager.default.currentDirectoryPath
+        let root = try project(named: "theCity", beside: folder)
+        plan(session: 0.34, week: 0.21)
         var buildings = ["api", "web-app", "docs-site", "infra", "theCity"].enumerated().map { index, name in
-            CityStore.Building(name: name, path: workspace, style: index * 3 % 8)
+            CityStore.Building(name: name, path: root.path, style: index * 3 % 8)
         }
         buildings[4].floors = [
-            .init(name: "Feature: login", hires: ["research", "build", "review"], budgetUSD: 1),
-            .init(name: "Security review", hires: ["research", "review"], budgetUSD: 2),
+            .init(name: "Login", hires: ["research", "build", "review"], budgetUSD: 1, lastRequest: "Add a sign-in page with email login"),
+            .init(name: "Audit", hires: ["research", "review"], budgetUSD: 2),
             .init(name: "Docs", hires: ["design", "build"], budgetUSD: 1),
         ]
         let building = buildings[4]
         let sessions = building.floors.map { floor in (floor.id, RunController(building: building, floor: floor)) }
+        for (index, (_, session)) in sessions.enumerated() {
+            session.pendingFloorName = building.floors[index].name
+            session.buildScene(dark: dark)
+        }
+        let login = sessions[0].1
+        let audit = Wire(cwd: root.path)
+        sessions[1].1.request = "Audit the auth code"
+        sessions[1].1.beginScript(servers: [], dark: nil)
+        ([audit.initLine()] + audit.assign("review", "Audit the auth code")
+            + audit.use(.init(room: "review", tool: "Grep", input: ["pattern": "password"], caption: "Searching for password")))
+            .forEach(sessions[1].1.feed)
+        let request = "Add a password reset flow"
+        let suggestion = RoutingSuggestion(floorID: building.floors[0].id, newFloorName: "Password reset",
+                                           reason: "Login already builds the sign-in flow. Its last job: “Add a sign-in page with email login”.")
 
         let world = World()
         world.city.titleMode = true
         world.city.build(Array(buildings.prefix(4)), dark: dark)
-        world.fit(size)
+        world.fit(points)
 
+        var typed = ""
+        var suggested: RoutingSuggestion?
+        var entered: Double?
+        var onFloor: Double?
+        let script = Wire(cwd: root.path)
         let recorder = try FrameRecorder(root: world.root, camera: world.camera.entity, width: Int(size.width), height: Int(size.height),
                                          environment: ModelLibrary.environment("sky"), exposure: dark ? -0.5 : 0.6, background: background(dark))
-        let cues: [Cue] = [
+        var cues: [Cue] = [
             (2.0, {
                 world.city.titleMode = false
                 world.city.build(buildings, dark: dark)
                 world.city.riseBuilding(building.id)
                 world.city.flyTowards(building.id)
             }),
-            (3.6, {
-                world.building.show(building, sessions: sessions, dark: dark)
+            (2.8, { world.building.show(building, sessions: sessions, dark: dark) }),
+            (3.0, {
                 world.enter(building.id, animated: true)
-                work(sessions[0].1.scene, rooms: [("research", "Read", "reading README.md"), ("build", "Write", "writing Login.swift")], prefix: "f0-")
-                work(sessions[1].1.scene, rooms: [("review", "Grep", "searching for tokens")], prefix: "f1-")
+                entered = 3.0
             }),
-            (6.2, {
-                world.building.enter(floor: sessions[2].0)
-                work(sessions[2].1.scene, rooms: [("design", "Read", "reading the style guide"), ("build", "Edit", "editing README.md")], prefix: "f2-")
+            (5.8, {
+                suggested = suggestion
+                world.building.receptionist(thinking: false, pointingAt: suggestion.floorID, scaffold: false)
             }),
-            (8.4, {
-                sessions[2].1.scene.apply([.handRaised(PermissionRequest.preview(question: "Which tone should the intro use?"), room: "design")])
+            (7.2, {
+                world.building.receptionist(thinking: false, pointingAt: nil, scaffold: false)
+                world.building.enter(floor: sessions[0].0)
+                onFloor = 7.2
+                login.request = request
+                login.beginScript(servers: [], dark: nil)
+                ([script.initLine()] + script.assign("research", "Find how sign-in works") + script.assign("build", "Build the reset flow"))
+                    .forEach(login.feed)
             }),
+            (7.9, { script.use(.init(room: "research", tool: "Read", input: ["file_path": root.appendingPathComponent("Sources/LoginView.swift").path], caption: "Reading LoginView.swift")).forEach(login.feed) }),
+            (8.5, { script.use(.init(room: "build", tool: "Write", input: ["file_path": root.appendingPathComponent("Sources/PasswordReset.swift").path, "content": ""], caption: "Writing PasswordReset.swift")).forEach(login.feed) }),
         ]
+        let letters = Array(request)
+        for index in letters.indices {
+            cues.append((4.2 + Double(index) * 0.045, { typed = String(letters[...index]) }))
+        }
+
+        let title = hud(TitleHUD(city: .shared), dark: dark)
         try record(seconds: 10.5, fps: fps, cues: cues, recorder: recorder, to: folder,
-                   step: world.update, camera: { world.camera.entity })
+                   step: world.update, camera: { world.camera.entity },
+                   overlay: { image, time in
+                       var layers: [(CGImage?, Double)] = [(title, 1 - fade(time, in: 1.7))]
+                       if let entered, onFloor == nil || time < onFloor! + 0.3 {
+                           let composer = ReceptionComposer(city: .shared, building: building, scene: world.building, text: typed, suggestion: suggested)
+                           let alpha = fade(time, in: entered + 0.6) * (1 - fade(time, in: onFloor ?? .infinity, 0.25))
+                           layers.append((hud(BuildingHUD(city: .shared, building: building, scene: world.building, composer: composer), dark: dark), alpha))
+                       }
+                       if let onFloor, let floor = world.building.scene(for: sessions[0].0) {
+                           layers.append((hud(OfficeOverlay(controller: login, scene: floor, onBack: {}, onClose: {}), dark: dark), fade(time, in: onFloor + 0.5)))
+                       }
+                       return try layer(image, layers)
+                   })
     }
 
     // MARK: Office: hand-offs, tools, an approval at the desk, delivery
 
     private static func office(dark: Bool, fps: Double, to folder: URL) throws {
-        let scene = OfficeScene()
-        let hired = ["research", "build", "review"].map { Department(name: $0, description: "") }
-        let colours = ["research": Palette.departments[2], "build": Palette.departments[0], "review": Palette.departments[3]]
-        scene.build(hired: hired, servers: [McpServer(name: "specification-website", status: "connected", source: "user")],
-                    colour: { colours[$0] ?? Palette.muted }, dark: dark)
-        scene.fit(size)
-        scene.camera.overview.distance *= 0.72
-        scene.camera.reset(to: scene.camera.overview, animated: false)
-
-        let workspace = CityStore.Building(name: "theCity", path: RunController.launchArgument("-workspace") ?? "", style: 0)
-        let controller = RunController(building: workspace, floor: .init(name: "Feature: login", hires: ["research", "build", "review"], budgetUSD: 1))
+        let root = try project(named: "theCity", beside: folder)
+        plan(session: 0.34, week: 0.21)
+        let building = CityStore.Building(name: "theCity", path: root.path, style: 0)
+        let controller = RunController(building: building, floor: .init(name: "Feature: login", hires: ["research", "build", "review"], budgetUSD: 1))
+        controller.pendingFloorName = "Feature: login"
+        controller.request = "Add a sign-in page with email login"
         // ImageRenderer draws the link-style "switch to Auto" button as a placeholder, so hide it.
         controller.setPermissionMode(.auto)
-        let approval = PermissionRequest.preview(command: "npm test -- auth", rule: "npm test:*")
-        let card = ImageRenderer(content: DeskCard(pending: PendingRequest(request: approval, room: "build"), colour: colours["build"]!, controller: controller)
-            .environment(\.colorScheme, dark ? .dark : .light))
-        card.scale = 1.5
-        guard let cardImage = card.cgImage else { throw CocoaError(.fileWriteUnknown) }
-        var showCard = false
+        let servers = [McpServer(name: "specification-website", status: "connected", source: "user")]
+        controller.beginScript(servers: servers, dark: dark)
+        let scene = controller.scene
+        scene.fit(points)
+        scene.camera.reset(to: scene.camera.overview, animated: false)
 
+        let script = Wire(cwd: root.path)
+        let view = root.appendingPathComponent("Sources/LoginView.swift")
+        var cardShown: Double?
+        var cardHidden: Double?
+        var delivered: Double?
+        var before: CGImage?
         let recorder = try FrameRecorder(root: scene.root, camera: scene.camera.entity, width: Int(size.width), height: Int(size.height),
                                          environment: ModelLibrary.environment("studio"), exposure: dark ? 0.2 : 0.9, background: background(dark))
         let cues: [Cue] = [
-            (0.3, { scene.apply([.runStarted, .managerActive(true)]) }),
-            (0.6, { scene.apply([.handoff(toolUseID: "a", room: "research", description: nil)]) }),
-            (1.1, { scene.apply([.handoff(toolUseID: "b", room: "build", description: nil)]) }),
-            (1.6, { scene.apply([.handoff(toolUseID: "c", room: "review", description: nil)]) }),
-            (1.5, { scene.apply([.roomStarted(toolUseID: "a", room: "research"), .roomActivity(room: "research", toolName: "Read"),
-                                 .roomCaption(room: "research", caption: "reading README.md")]) }),
-            (2.0, { scene.apply([.roomStarted(toolUseID: "b", room: "build"), .roomActivity(room: "build", toolName: "Write"),
-                                 .roomCaption(room: "build", caption: "writing Login.swift")]) }),
-            (2.4, { scene.apply([.skillLoaded(room: "research", skill: "office-house-style")]) }),
-            (2.5, { scene.apply([.roomStarted(toolUseID: "c", room: "review"), .roomActivity(room: "review", toolName: "Grep"),
-                                 .roomCaption(room: "review", caption: "searching for TODO")]) }),
-            (2.8, { scene.apply([.serviceCall(callID: "s", room: "research", server: "specification-website", active: true)]) }),
-            (3.9, { scene.apply([.serviceCall(callID: "s", room: "research", server: "specification-website", active: false)]) }),
-            (4.2, { scene.apply([.handRaised(approval, room: "build")]) }),
-            (4.8, { scene.focus(room: "build") }),
-            (5.6, { showCard = true }),
-            (7.8, {
-                showCard = false
-                scene.apply([.handLowered(requestID: approval.requestID, room: "build"), .roomActivity(room: "build", toolName: "Bash"),
-                             .roomCaption(room: "build", caption: "running npm test")])
-                scene.showOverview()
+            (0.0, { controller.feed(script.initLine()) }),
+            (0.4, { script.assign("research", "Find how sign-in should look").forEach(controller.feed) }),
+            (0.8, { script.assign("build", "Build the sign-in page").forEach(controller.feed) }),
+            (1.2, { script.assign("review", "Check the auth code").forEach(controller.feed) }),
+            (1.3, { script.use(.init(room: "research", tool: "Read", input: ["file_path": root.appendingPathComponent("README.md").path], caption: "Reading README.md")).forEach(controller.feed) }),
+            (1.7, { script.use(.init(room: "build", tool: "Write", input: ["file_path": view.path, "content": ""], caption: "Writing LoginView.swift")).forEach(controller.feed) }),
+            (2.1, { script.use(.init(room: "review", tool: "Grep", input: ["pattern": "TODO"], caption: "Searching for TODO")).forEach(controller.feed) }),
+            (2.4, { script.use(.init(room: "research", tool: "Skill", input: ["skill": "office-house-style"], caption: "Loading office-house-style")).forEach(controller.feed) }),
+            (2.7, { controller.feed(script.finish("research")) }),
+            (3.0, { script.use(.init(room: "research", tool: "mcp__specification-website__search", input: ["query": "sign-in form"], caption: "Searching the specification")).forEach(controller.feed) }),
+            (3.8, { controller.feed(script.approval(room: "build", command: "npm test -- auth", rule: "npm test:*")) }),
+            (4.0, { scene.focus(room: "build") }),
+            (4.2, { controller.feed(script.finish("research")) }),
+            (4.7, { cardShown = 4.7 }),
+            (7.1, {
+                cardHidden = 7.1
+                if let pending = controller.state.pendingRequests.first { controller.allow(pending) }
+                script.use(.init(room: "build", tool: "Bash", input: ["command": "npm test -- auth"], caption: "Running npm test")).forEach(controller.feed)
             }),
-            (8.6, { scene.apply([.roomFinished(toolUseID: "a", room: "research", outcome: .completed), .handback(toolUseID: "a", room: "research", isError: false)]) }),
-            (9.0, { scene.apply([.roomFinished(toolUseID: "c", room: "review", outcome: .completed), .handback(toolUseID: "c", room: "review", isError: false)]) }),
-            (9.6, { scene.apply([.roomFinished(toolUseID: "b", room: "build", outcome: .completed), .handback(toolUseID: "b", room: "build", isError: false)]) }),
-            (10.8, { scene.apply([.runEnded(.completed(summary: "Done", costUSD: 0.42))]) }),
+            (7.4, { scene.showOverview() }),
+            (7.7, { script.handBack("research").forEach(controller.feed) }),
+            (8.1, {
+                controller.feed(script.finish("review"))
+                script.handBack("review").forEach(controller.feed)
+            }),
+            (8.7, {
+                try? FileManager.default.createDirectory(at: view.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? "struct LoginView {}\n".write(to: view, atomically: true, encoding: .utf8)
+                controller.feed(script.finish("build", tool: "Write"))
+                controller.feed(script.finish("build"))
+                script.handBack("build").forEach(controller.feed)
+            }),
+            (9.3, {
+                controller.feed(script.done(summary: "Added a sign-in page with email login in `LoginView.swift`. The auth tests pass.", cost: 0.42))
+                controller.endScript()
+                delivered = 9.3
+            }),
         ]
-        try record(seconds: 13.5, fps: fps, cues: cues, recorder: recorder, to: folder,
+        try record(seconds: 12.5, fps: fps, cues: cues, recorder: recorder, to: folder,
                    step: scene.update, camera: { scene.camera.entity },
-                   overlay: { image in
-                       guard showCard, let head = scene.screenPoint(of: "build") else { return image }
-                       return try OffscreenRenderer.composite(image, card: cardImage, leadingAt: CGPoint(x: head.x + 40, y: head.y))
+                   overlay: { image, time in
+                       let base = hud(OfficeOverlay(controller: controller, scene: scene, onBack: {}, onClose: {}, showsDeskRequests: false), dark: dark)
+                       if delivered == nil { before = base }
+                       let arriving = delivered.map { fade(time, in: $0) } ?? 1
+                       var layers: [(CGImage?, Double)] = arriving < 1 ? [(before, 1 - arriving), (base, arriving)] : [(base, 1)]
+                       if let cardShown {
+                           let alpha = fade(time, in: cardShown, 0.25) * (1 - fade(time, in: cardHidden ?? .infinity, 0.2))
+                           if alpha > 0 { layers.append((hud(DeskRequestLayer(controller: controller, scene: scene), dark: dark), alpha)) }
+                       }
+                       return try layer(image, layers)
                    })
+    }
+}
+
+/// Stream-JSON lines shaped like the CLI's own, so a reel runs through the same reducer as a real job.
+@MainActor
+private final class Wire {
+    struct Use {
+        var room: String
+        var tool: String
+        var input: [String: Any]
+        var caption: String
+    }
+
+    let cwd: String
+    let session = "reel-session"
+    private var agents: [String: String] = [:]
+    private var tasks: [String: String] = [:]
+    private var tools: [String: [String: String]] = [:]
+    private var count = 0
+
+    init(cwd: String) { self.cwd = cwd }
+
+    static func json(_ object: [String: Any]) -> String {
+        String(decoding: (try? JSONSerialization.data(withJSONObject: object)) ?? Data(), as: UTF8.self)
+    }
+
+    private func id(_ prefix: String) -> String {
+        count += 1
+        return "\(prefix)_reel\(count)"
+    }
+
+    private func usage(_ output: Int) -> [String: Any] {
+        ["input_tokens": 1_800, "cache_read_input_tokens": 6_400, "output_tokens": output]
+    }
+
+    func initLine() -> String {
+        Self.json(["type": "system", "subtype": "init", "cwd": cwd, "session_id": session, "model": "claude-sonnet-5",
+                   "mcp_servers": [["name": "specification-website", "status": "connected", "source": "user"]]])
+    }
+
+    func assign(_ room: String, _ description: String) -> [String] {
+        let toolUse = id("toolu"), task = id("task")
+        agents[room] = toolUse
+        tasks[room] = task
+        return [
+            Self.json(["type": "assistant", "parent_tool_use_id": NSNull(), "session_id": session,
+                       "message": ["id": id("msg"), "model": "claude-sonnet-5", "usage": usage(240), "content": [
+                           ["type": "tool_use", "id": toolUse, "name": "Agent",
+                            "input": ["description": description, "subagent_type": room, "prompt": description]],
+                       ]] as [String: Any]]),
+            Self.json(["type": "system", "subtype": "task_started", "task_id": task, "tool_use_id": toolUse,
+                       "description": description, "subagent_type": room, "session_id": session]),
+        ]
+    }
+
+    func use(_ use: Use) -> [String] {
+        guard let parent = agents[use.room] else { return [] }
+        let toolUse = id("toolu")
+        tools[use.room, default: [:]][use.tool] = toolUse
+        tools[use.room, default: [:]]["last"] = toolUse
+        return [
+            Self.json(["type": "system", "subtype": "task_progress", "task_id": tasks[use.room] ?? "", "tool_use_id": parent, "description": use.caption,
+                       "subagent_type": use.room, "last_tool_name": use.tool, "session_id": session]),
+            Self.json(["type": "assistant", "parent_tool_use_id": parent, "session_id": session,
+                       "message": ["id": id("msg"), "model": "claude-haiku-4-5-20251001", "usage": usage(420), "content": [
+                           ["type": "tool_use", "id": toolUse, "name": use.tool, "input": use.input],
+                       ]] as [String: Any]]),
+        ]
+    }
+
+    func finish(_ room: String, tool: String = "last") -> String {
+        let toolUse = tools[room]?[tool] ?? ""
+        return Self.json(["type": "user", "parent_tool_use_id": agents[room] ?? NSNull(), "session_id": session,
+                          "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": toolUse, "content": "ok"]]] as [String: Any]])
+    }
+
+    func handBack(_ room: String) -> [String] {
+        guard let toolUse = agents[room] else { return [] }
+        return [Self.json(["type": "user", "parent_tool_use_id": NSNull(), "session_id": session,
+                           "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": toolUse, "content": [["type": "text", "text": "Done."]]]]] as [String: Any]])]
+    }
+
+    func approval(room: String, command: String, rule: String) -> String {
+        Self.json(["type": "control_request", "request_id": id("req"), "request": [
+            "subtype": "can_use_tool", "tool_name": "Bash", "display_name": "Bash", "input": ["command": command],
+            "permission_suggestions": [["type": "addRules", "rules": [["toolName": "Bash", "ruleContent": rule]], "behavior": "allow", "destination": "localSettings"]],
+            "tool_use_id": id("toolu"), "agent_id": tasks[room] ?? "",
+        ] as [String: Any]])
+    }
+
+    func done(summary: String, cost: Double) -> String {
+        Self.json(["type": "result", "subtype": "success", "is_error": false, "result": summary, "terminal_reason": "completed",
+                   "total_cost_usd": cost, "duration_ms": 94_000, "num_turns": 4, "session_id": session])
     }
 }

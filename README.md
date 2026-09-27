@@ -6,7 +6,7 @@ A macOS app that shows Claude Code runs as a city of robot-staffed offices. Ever
 
 The City starts its own Claude Code runs using the `claude` you already have installed, and they count towards your plan as usual. It doesn't show sessions you started in a terminal.
 
-![Breaking ground on a new project, then walking into its building and up to a floor where the robots are working](Docs/Media/city.gif)
+![Breaking ground on a new project, walking into its building, asking reception for a password reset flow, then going up to the floor it picks, where the robots start work](Docs/Media/city.gif)
 
 ## Requirements
 
@@ -30,7 +30,7 @@ The app uses [Sparkle](https://sparkle-project.org) to check for new releases an
 
 ## How it works
 
-![A floor at work: the manager hands folders to each desk, a robot raises its hand for approval to run a command, then the finished job goes to the outbox](Docs/Media/office.gif)
+![A floor at work: the manager hands a folder to each desk while the step bar and counter tick along, the build robot asks for approval to run npm test, then the delivery card lists the finished file](Docs/Media/office.gif)
 
 - **City:** each project folder is a building (File › New Project…, ⇧⌘N). Beacons show which buildings are working or need you, and a "Needs you" list jumps to the waiting floor. ⌘0 returns to the city.
 - **Reception:** tell the receptionist what you need. It sends the job to the floor whose team fits, taking into account work already running on other floors, or proposes a new floor. A busy floor queues the job.

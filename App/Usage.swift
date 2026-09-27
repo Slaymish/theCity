@@ -42,13 +42,13 @@ final class UsageStore {
         return "\(name) — \(hasNoLimits(directory) ? "no plan limits" : "no reading yet")"
     }
 
-    func record(_ limit: RateLimit, configDirectory: URL?) {
+    func record(_ limit: RateLimit, configDirectory: URL?, persist: Bool = true) {
         guard !limit.windows.isEmpty else { return }
         let id = Self.key(configDirectory)
         readings[id] = Reading(session: limit.windows["five_hour"], week: limit.windows["seven_day"], asOf: .now)
         noLimits.remove(id)
         errors[id] = nil
-        if let data = try? JSONEncoder().encode(readings) { UserDefaults.standard.set(data, forKey: key) }
+        if persist, let data = try? JSONEncoder().encode(readings) { UserDefaults.standard.set(data, forKey: key) }
     }
 
     func refresh(_ directories: [URL?]) {
@@ -98,8 +98,9 @@ final class UsageStore {
 struct UsageHUD: View {
     let usage = UsageStore.shared
     var configDirectory: URL?
+    @Environment(\.rendersOffscreen) private var rendersOffscreen
 
-    private var accounts: [URL?] { Preferences.shared.visibleAccounts(including: configDirectory) }
+    private var accounts: [URL?] { rendersOffscreen ? [configDirectory] : Preferences.shared.visibleAccounts(including: configDirectory) }
 
     var body: some View {
         let accounts = accounts

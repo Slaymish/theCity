@@ -18,7 +18,9 @@ The README's GIFs are real scenes played from a script, not screen recordings, s
 
 - `TheCity -render-reel <name> <dir> [-fps n] [-theme light|dark] [-workspace <dir>]` dispatches from `AppDelegate` (`App/Attention.swift`) to `ReadmeReel.run`, writes `frame-00000.png`… at 1600 × 1000, then exits.
 - Each reel builds real scene objects (`World`, `CityScene`, `BuildingScene`, `OfficeScene`) with sample data and passes `record` a list of **cues**: `(at: seconds, run: closure)`. Cues call the same APIs the app uses: `scene.apply([OfficeEvent…])`, `focus(room:)`, `showOverview()`, `world.enter`, `building.enter(floor:)`, `city.riseBuilding`, `flyTowards`.
-- `record` steps the scene in simulated time (two half-steps a frame) and captures with one reused `FrameRecorder` (`App/OffscreenRenderer.swift`). The `overlay` closure composites SwiftUI views such as `DeskCard` onto frames with `OffscreenRenderer.composite(_:card:leadingAt:)`. Pre-render the card once.
+- `record` steps the scene in simulated time (two half-steps a frame) and captures with one reused `FrameRecorder` (`App/OffscreenRenderer.swift`). It also sets `RunController.now` to simulated time, so step timers and the counter match the reel.
+- **The HUD is the app's own.** Each frame, the `overlay` closure renders the real views (`TitleHUD`, `BuildingHUD`, `OfficeOverlay`, `DeskRequestLayer`) with `hud(_:)` at a 1000 × 625 pt window scaled up to 1600 × 1000, then blends them over the frame with `layer(_:_:)`, fading layers with `fade`. Scenes are fitted to `points`, so `screenPoint` lines up with the HUD.
+- **Floors run through the real reducer.** `Wire` writes stream-JSON lines shaped like the CLI's, and `RunController.beginScript` and `feed` push them through the same reducer as a live job, so the step bar, counter, desk cards and delivery card all update. `endScript()` ends the job the way a process exit does. Reels work in a throwaway copy of the sample workspace named `theCity`, so addresses and file rows read like a real project.
 - The script renders at 20 fps, then ffmpeg drops to each reel's GIF rate (`fps` map in the script), scales to 800 px wide, builds a 128-colour palette, and gifsicle compresses with `--lossy=40`.
 
 ## Workflow
@@ -38,7 +40,7 @@ The README's GIFs are real scenes played from a script, not screen recordings, s
 
 ## Budgets
 
-- Keep each GIF under about 8 MB. Before this skill existed, the city reel came to 7.2 MB at 12 fps and the office reel to 3.3 MB at 15 fps.
+- Keep each GIF under about 8 MB. With the live HUD, the city reel is 6.2 MB at 12 fps and the office reel 3.0 MB at 15 fps (September 2026).
 - Camera motion and trees are what cost bytes. To shrink a GIF, try these in order: shorten or hold still shots, lower the fps, raise `--lossy`, reduce width to 720. Dithering adds about 5%. Leaving it off causes slight banding on flat surfaces.
 - One theme (light) is published. A dark variant through `<picture>`/`prefers-color-scheme` would double the weight, so ask first.
 
@@ -62,5 +64,9 @@ Check it at 512 px and at 32 px (`magick icon.png -resize 32x32 -scale 128x128 s
 - The office overview is framed with room for the live HUD, so the reel tightens it with `camera.overview.distance *= 0.72`. The card is rendered at `scale = 1.5` so it survives the downscale to 800 px.
 - `building.show` at the moment of entering flashes the tower labels for a frame over the façade. It's barely visible, but fix it here first if you're polishing.
 - Robot poses: a raised arm hides behind the head when seen from the front, and a small robot's wave doesn't read. Idle updates turn the head, so for stills either don't call `worker.update` or pass `reduceMotion: true`. Props behind the tower (the camera looks from +x, +z) are hidden.
+- `ImageRenderer` can't draw a `TextField` either. `PromptEditor` draws its text as a `Text` under `\.rendersOffscreen`, which `hud(_:)` sets. `UsageHUD` also uses that flag to show only the current account.
+- Glass is `.ultraThinMaterial`, which renders translucent without the blur, so a pill over a dark part of the scene can lose contrast. Frame shots so the top bar sits over light areas.
+- Replays and scripted jobs never write plan usage to disk or post notifications. Reels put in a reading with `UsageStore.record(…, persist: false)`, so the README never shows the owner's real usage or account names.
+- Don't call `building.focusLobby()` in a reel. Its camera move passes through the floor slabs, and a street tree fills the frame.
 - There's no `timeout` on this Mac, so use `perl -e 'alarm N; exec @ARGV' …`. In zsh, brace variables inside ffmpeg filter strings (`${3}`, not `$3:`), or zsh reads them as modifiers.
 - The scene sizes, lens and colours come from the app, so never hard-code colours in a reel. Use `Palette` tokens (owner's rule).

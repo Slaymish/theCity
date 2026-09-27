@@ -291,6 +291,7 @@ struct BuildingHUD: View {
     let building: CityStore.Building
     var since: Date?
     let scene: BuildingScene
+    var composer: ReceptionComposer?
     @State private var composerSize = CGSize(width: 592, height: 120)
 
     var body: some View {
@@ -335,7 +336,7 @@ struct BuildingHUD: View {
                                 .onAppear { scene.receptionist(thinking: false, pointingAt: nil, scaffold: true) }
                                 .onDisappear { scene.receptionist(thinking: false, pointingAt: nil, scaffold: false) }
                         } else {
-                            ReceptionComposer(city: city, building: building, scene: scene)
+                            composer ?? ReceptionComposer(city: city, building: building, scene: scene)
                         }
                     }
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { composerSize = $0 }
@@ -436,8 +437,8 @@ struct ReceptionComposer: View {
     let city: CityStore
     let building: CityStore.Building
     var scene: BuildingScene?
-    @State private var text = RunController.launchArgument("-request") ?? ""
-    @State private var suggestion: RoutingSuggestion?
+    @State var text = RunController.launchArgument("-request") ?? ""
+    @State var suggestion: RoutingSuggestion?
     @State private var thinking = false
     @State private var asked = ""
     @State private var routing: Task<Void, Never>?

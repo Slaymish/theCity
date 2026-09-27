@@ -18,6 +18,7 @@ struct PromptEditor<Actions: View>: View {
     @State private var images: [URL] = []
     @State private var pasteMonitor: Any?
     @FocusState private var focused: Bool
+    @Environment(\.rendersOffscreen) private var rendersOffscreen
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -68,36 +69,47 @@ struct PromptEditor<Actions: View>: View {
                 }
             }
 
-            TextField(placeholder, text: $text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(Typography.body)
-                .lineLimit(expanded ? 14...30 : 2...8)
-                // macOS ignores a changed lineLimit on a live vertical TextField, so rebuild it on toggle.
-                .id(expanded)
-                .focused($focused)
-                .padding(10)
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(Palette.hairline), lineWidth: 1))
-                .onKeyPress(.upArrow) { move(-1) }
-                .onKeyPress(.downArrow) { move(1) }
-                .onKeyPress(.tab) { accept() }
-                .onKeyPress(.escape) { mention == nil ? .ignored : dismissMention() }
-                .onKeyPress(.return, phases: .down) { press in
-                    if !matches.isEmpty { return accept() }
-                    if press.modifiers.contains(.shift) || press.modifiers.contains(.option) {
-                        text += "\n"
+            if rendersOffscreen {
+                // ImageRenderer can't draw a TextField, so offscreen renders show its text instead.
+                Text(text.isEmpty ? placeholder : text)
+                    .font(Typography.body)
+                    .foregroundStyle(Color(text.isEmpty ? Palette.muted : Palette.text))
+                    .lineLimit(2, reservesSpace: true)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(10)
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(Palette.hairline), lineWidth: 1))
+            } else {
+                TextField(placeholder, text: $text, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(Typography.body)
+                    .lineLimit(expanded ? 14...30 : 2...8)
+                    // macOS ignores a changed lineLimit on a live vertical TextField, so rebuild it on toggle.
+                    .id(expanded)
+                    .focused($focused)
+                    .padding(10)
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(Palette.hairline), lineWidth: 1))
+                    .onKeyPress(.upArrow) { move(-1) }
+                    .onKeyPress(.downArrow) { move(1) }
+                    .onKeyPress(.tab) { accept() }
+                    .onKeyPress(.escape) { mention == nil ? .ignored : dismissMention() }
+                    .onKeyPress(.return, phases: .down) { press in
+                        if !matches.isEmpty { return accept() }
+                        if press.modifiers.contains(.shift) || press.modifiers.contains(.option) {
+                            text += "\n"
+                            return .handled
+                        }
+                        submit()
                         return .handled
                     }
-                    submit()
-                    return .handled
-                }
-                .dropDestination(for: URL.self) { urls, _ in
-                    let pictures = urls.filter { UTType(filenameExtension: $0.pathExtension)?.conforms(to: .image) == true }
-                    images += pictures
-                    let others = urls.filter { !pictures.contains($0) }
-                    if !others.isEmpty { text += others.map { " @" + relative($0) }.joined() + " " }
-                    return true
-                }
-                .onChange(of: text) { selection = 0 }
+                    .dropDestination(for: URL.self) { urls, _ in
+                        let pictures = urls.filter { UTType(filenameExtension: $0.pathExtension)?.conforms(to: .image) == true }
+                        images += pictures
+                        let others = urls.filter { !pictures.contains($0) }
+                        if !others.isEmpty { text += others.map { " @" + relative($0) }.joined() + " " }
+                        return true
+                    }
+                    .onChange(of: text) { selection = 0 }
+            }
 
             if !matches.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
@@ -226,4 +238,8 @@ enum FileIndex {
             return paths
         }.value
     }
+}
+
+extension EnvironmentValues {
+    @Entry var rendersOffscreen = false
 }

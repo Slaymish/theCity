@@ -383,9 +383,9 @@ struct JobCard: View {
             Text("Job ticket").eyebrow()
             Text(controller.request)
                 .font(Typography.caption)
-                .lineLimit(4)
                 .help(controller.request)
                 .textSelection(.enabled)
+                .cappedScroll()
             ForEach(Array(controller.followUps.enumerated()), id: \.offset) { _, text in
                 Text("Then: \(text)")
                     .font(Typography.caption)
@@ -692,17 +692,19 @@ struct HandoffDetail: View {
             Text(showRoom ? "\(handoff.room): \(handoff.brief ?? "")" : handoff.brief ?? "Brief").font(Typography.bodyMedium)
             Text(status).eyebrow()
             if let prompt = handoff.prompt {
-                Text(prompt).font(Typography.caption).foregroundStyle(Color(Palette.muted)).lineLimit(6).textSelection(.enabled)
+                Text(prompt).font(Typography.caption).foregroundStyle(Color(Palette.muted)).textSelection(.enabled)
+                    .cappedScroll()
             }
             if !handoff.tools.isEmpty {
                 Text("Tools").eyebrow()
-                ForEach(Array(handoff.tools.enumerated()), id: \.offset) { _, tool in
-                    Text("\(friendly(tool.name))  \(tool.summary ?? "")")
-                        .font(Typography.code)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(tool.summary ?? tool.name)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(handoff.tools.enumerated()), id: \.offset) { _, tool in
+                        Text("\(friendly(tool.name))  \(tool.summary ?? "")")
+                            .font(Typography.code)
+                            .help(tool.summary ?? tool.name)
+                    }
                 }
+                .cappedScroll(pinnedToTail: true)
             }
             if let report = handoff.report {
                 Text("Report").eyebrow()

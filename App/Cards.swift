@@ -177,6 +177,7 @@ struct DeskCard: View {
                     .font(Typography.code)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .cappedScroll()
                     .glass(radius: 9, padding: 8)
                 let rules = pending.request.suggestedRules
                 HStack {

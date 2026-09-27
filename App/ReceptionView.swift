@@ -191,6 +191,33 @@ extension View {
             ScrollView { self }
         }
     }
+
+    func cappedScroll(pinnedToTail: Bool = false) -> some View {
+        HeightCap {
+            ViewThatFits(in: .vertical) {
+                self
+                ScrollView { frame(maxWidth: .infinity, alignment: .leading) }
+                    .defaultScrollAnchor(pinnedToTail ? .bottom : nil)
+            }
+        }
+    }
+}
+
+struct HeightCap: Layout {
+    static let maxHeight: CGFloat = 240
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        subviews.first?.sizeThatFits(capped(proposal)) ?? .zero
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: capped(proposal).height))
+    }
+
+    // An outer ScrollView proposes no height, which would let ViewThatFits always pick the unscrolled branch.
+    private func capped(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        ProposedViewSize(width: proposal.width, height: min(proposal.height ?? .infinity, Self.maxHeight))
+    }
 }
 
 struct AccountMenu: View {

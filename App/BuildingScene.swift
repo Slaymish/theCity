@@ -60,6 +60,7 @@ final class BuildingScene {
             scene.root.removeFromParent()
             scene.root.position = [0, Float(index + 1) * Self.storeyHeight, 0]
             scene.isActive = false
+            scene.fit(viewSize)
             scene.sunEnabled = index == 0
             tower.addChild(scene.root)
             storeys.append((id, scene, index))

@@ -23,6 +23,9 @@ final class OfficeScene {
     static let kioskRoom = "kiosk"
     static let kioskScreen = SIMD2<Float>(1.4, 0.9)
     static let kioskScreenCorner: Float = 0.05
+    static let kioskScreenDepth: Float = 0.04
+    // RealityKit clamps a box's corner radius to half its smallest side.
+    static var kioskScreenRadius: Float { min(kioskScreenCorner, kioskScreenDepth / 2) }
 
     private var dark = true
     private var themed: [(ModelEntity, NSColor)] = []
@@ -212,7 +215,7 @@ final class OfficeScene {
         body.components.set(CollisionComponent(shapes: [.generateBox(size: size)]))
         body.components.set(InputTargetComponent())
         root.addChild(body)
-        let screen = ModelEntity(mesh: .generateBox(width: Self.kioskScreen.x, height: Self.kioskScreen.y, depth: 0.04, cornerRadius: Self.kioskScreenCorner),
+        let screen = ModelEntity(mesh: .generateBox(width: Self.kioskScreen.x, height: Self.kioskScreen.y, depth: Self.kioskScreenDepth, cornerRadius: Self.kioskScreenCorner),
                                  materials: [UnlitMaterial(color: Palette.resolved(kioskLive ? Palette.screenOn : Palette.screenOff, dark: dark))])
         screen.position = position + [0, size.y - 0.1 - Self.kioskScreen.y / 2, size.z / 2 + 0.01]
         root.addChild(screen)

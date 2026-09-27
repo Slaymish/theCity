@@ -32,7 +32,7 @@ final class KioskSession {
         environment["TERM"] = "xterm-256color"
         environment["COLORTERM"] = "truecolor"
         if environment["LANG"] == nil { environment["LANG"] = "\(Locale.current.identifier).UTF-8" }
-        view.startProcess(executable: Self.loginShell, args: ["-l", "-i", "-c", "exec /bin/zsh -f"],
+        view.startProcess(executable: Self.loginShell, args: ["-l", "-i", "-c", "exec " + command],
                           environment: environment.map { "\($0.key)=\($0.value)" }, currentDirectory: directory.path)
         isAlive = true
     }
@@ -102,7 +102,7 @@ struct KioskLayer: View {
                     if scene.camera.isArriving, let rect = scene.kioskScreenRect() {
                         KioskTerminal(session: controller.kiosk, dark: colorScheme == .dark && BrandStore.shared.current.supportsDark)
                             .frame(width: rect.width, height: rect.height)
-                            .clipShape(RoundedRectangle(cornerRadius: rect.width * CGFloat(OfficeScene.kioskScreenCorner / OfficeScene.kioskScreen.x)))
+                            .clipShape(RoundedRectangle(cornerRadius: rect.width * CGFloat(OfficeScene.kioskScreenRadius / OfficeScene.kioskScreen.x)))
                             .position(x: rect.midX, y: rect.midY)
                     }
                 }

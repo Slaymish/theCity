@@ -139,6 +139,18 @@ final class DictationStore {
         }
     }
 
+    func cancel(_ id: UUID) {
+        guard recordingTarget == id else { return }
+        recordingTarget = nil
+        insert = nil
+        let transcriber = transcriber
+        let starting = starting
+        Task {
+            _ = await starting?.value
+            await transcriber.cancel()
+        }
+    }
+
     private func stop() {
         recordingTarget = nil
         isTranscribing = true
@@ -187,6 +199,7 @@ extension View {
 private struct Dictation: ViewModifier {
     @Binding var text: String
     @State private var id = UUID()
+    @Environment(\.isEnabled) private var isEnabled
     private var store: DictationStore { .shared }
 
     func body(content: Content) -> some View {
@@ -194,7 +207,9 @@ private struct Dictation: ViewModifier {
             content
             if store.isAvailable { button }
         }
-        .focusedValue(\.dictationTarget, store.isAvailable ? DictationTarget(id: id, toggle: toggle) : nil)
+        .focusedValue(\.dictationTarget, store.isAvailable && isEnabled ? DictationTarget(id: id, toggle: toggle) : nil)
+        .onChange(of: isEnabled) { if !isEnabled { store.cancel(id) } }
+        .onDisappear { store.cancel(id) }
     }
 
     private var button: some View {
@@ -226,7 +241,7 @@ struct DictationSettings: View {
     var body: some View {
         Section {
             Picker("Model", selection: Binding(get: { Preferences.shared.dictationModel }, set: { store.choose($0) })) {
-                Text("Off").tag(String?.none)
+                Text("None").tag(String?.none)
                 ForEach(DictationStore.models.keys.sorted(), id: \.self) { name in
                     Text("Whisper \(name) (632 MB)").tag(String?.some(name))
                 }

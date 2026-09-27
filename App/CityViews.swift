@@ -40,6 +40,16 @@ struct TitleHUD: View {
                 .buttonStyle(PillButtonStyle())
                 .keyboardShortcut(.defaultAction)
                 .disabled(city.groundBreaking != nil)
+            Button("Watch a Demo") {
+                if let url = Bundle.main.url(forResource: "three-rooms", withExtension: "jsonl") {
+                    city.startReplay(url)
+                }
+            }
+            .buttonStyle(PillButtonStyle())
+
+            Text("Replays a recording — no tokens used.")
+                .font(Typography.body)
+                .foregroundStyle(Color(Palette.muted))
             Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)

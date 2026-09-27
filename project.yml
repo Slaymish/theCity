@@ -25,6 +25,8 @@ targets:
       - path: App/Brands
         type: folder
         buildPhase: resources
+      - path: fixtures/three-rooms.jsonl
+        buildPhase: resources
     dependencies:
       - package: OfficeCore
       - package: Sparkle

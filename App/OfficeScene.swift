@@ -315,7 +315,9 @@ final class OfficeScene {
 
     private func applyReceivers() {
         let receiver = ImageBasedLightReceiverComponent(imageBasedLight: lighting)
+        // Runs after every batch of stream events, so only entities added since the last pass are touched.
         for entity in [root] + root.descendants where entity.components.has(ModelComponent.self) {
+            if entity.components[ImageBasedLightReceiverComponent.self]?.imageBasedLight === lighting { continue }
             entity.components.set(receiver)
             if !entity.components.has(BillboardComponent.self) {
                 entity.components.set(GroundingShadowComponent(castsShadow: true, receivesShadow: true))

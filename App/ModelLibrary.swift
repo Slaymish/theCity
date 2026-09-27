@@ -44,8 +44,9 @@ enum ModelLibrary {
 
     /// Recolours every model part whose name starts with one of `prefixes`.
     static func tint(_ entity: Entity, parts prefixes: [String], colour: NSColor, emissive: Bool = false) {
+        var seen = Set<ObjectIdentifier>()
         let matched = entity.descendants.filter { child in prefixes.contains { child.name.hasPrefix($0) } }
-        for child in Set(matched.flatMap { [$0] + $0.descendants }.map(ObjectIdentifier.init)).compactMap({ id in entity.descendants.first { ObjectIdentifier($0) == id } }) {
+        for child in matched.flatMap({ [$0] + $0.descendants }) where seen.insert(ObjectIdentifier(child)).inserted {
             guard var model = child.components[ModelComponent.self] else { continue }
             var material = PhysicallyBasedMaterial()
             material.baseColor = .init(tint: colour)
@@ -61,11 +62,24 @@ enum ModelLibrary {
 }
 
 extension Entity {
+    /// Depth-first, parents before their children, in one array rather than one per level.
     var descendants: [Entity] {
-        children.flatMap { [$0] + $0.descendants }
+        var found: [Entity] = []
+        var stack = Array(children.reversed())
+        while let next = stack.popLast() {
+            found.append(next)
+            stack.append(contentsOf: next.children.reversed())
+        }
+        return found
     }
 
+    /// The first match in `descendants` order, stopping as soon as it's found.
     func descendant(named name: String) -> Entity? {
-        descendants.first { $0.name == name }
+        var stack = Array(children.reversed())
+        while let next = stack.popLast() {
+            if next.name == name { return next }
+            stack.append(contentsOf: next.children.reversed())
+        }
+        return nil
     }
 }

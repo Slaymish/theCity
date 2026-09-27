@@ -48,6 +48,25 @@ struct ReducerTests {
         #expect(!reducer.state.tally.isFinal)
     }
 
+    @Test func liveTallyMatchesAFreshSumAtEveryStep() throws {
+        var reducer = OfficeReducer()
+        var usageByMessage: [String: TokenUsage] = [:], modelByMessage: [String: String] = [:]
+        for event in try Fixture.events("three-rooms.jsonl") {
+            if case .result = event { break }
+            _ = reducer.apply(.wire(event))
+            guard case .assistant(let message) = event, let id = message.messageID, let usage = message.usage else { continue }
+            usageByMessage[id] = usage
+            if let model = message.model, model != "<synthetic>" { modelByMessage[id] = model }
+            let byModel = usageByMessage.reduce(into: [String: TokenUsage]()) { sums, entry in
+                guard let model = modelByMessage[entry.key] else { return }
+                sums[model, default: .zero] = sums[model, default: .zero] + entry.value
+            }
+            #expect(reducer.state.tally.usage == usageByMessage.values.reduce(.zero, +))
+            #expect(reducer.state.models.mapValues(\.usage) == byModel)
+        }
+        #expect(Set(modelByMessage.values).count > 1)
+    }
+
     @Test func tallySnapsToResultTotals() throws {
         var reducer = OfficeReducer()
         _ = reducer.run(try Fixture.events("three-rooms.jsonl"))

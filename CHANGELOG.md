@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+
+- Each floor has a terminal kiosk: click it, or choose Take over, to carry on the floor's Claude Code session in a terminal, and Leave (esc) goes back to the floor while the terminal keeps running.
+- Floor History (⌘Y, or the History button) lists a floor's past requests and results, with a Copy button.
+- Press ⌥Space in a prompt to dictate; speech is turned into text on this Mac, after you download the Whisper model in Settings › Dictation.
+- The city, buildings and offices follow the time of day on your Mac, with sunrise from 06:00 to 07:00 and dusk from 18:00 to 19:30.
+- At night the streetlights, car headlights, office windows, desk lamps and standing lamps light up.
+- The city is surrounded by meadow, rocks and woodland, and parks have grass and flowers.
+- Parks and the empty lot have a streetlight, like the building lots.
+
+### Changed
+
+- The camera flies in an arc when you go into or out of a building and when you reset the view.
+- Daytime light comes more from the sun, so shadows are crisper.
+
 ## 0.5.0
 
 - ⌘↩ accepts Reception's suggested action once it's showing.

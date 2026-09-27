@@ -83,6 +83,16 @@ final class DictationStore {
         try? FileManager.default.removeItem(at: Self.base)
     }
 
+    /// Starts the chosen model's download again from nothing, since a failed load usually means a download was cut short.
+    func retry() {
+        guard let name = Preferences.shared.dictationModel, let variant = Self.models[name] else { return }
+        modelTask?.cancel()
+        let transcriber = transcriber
+        Task { await transcriber.unload() }
+        try? FileManager.default.removeItem(at: Self.base)
+        download(variant)
+    }
+
     private func download(_ variant: String) {
         modelTask?.cancel()
         state = .downloading(0)
@@ -266,7 +276,9 @@ struct DictationSettings: View {
             case .downloading(let fraction): ProgressView("Downloading…", value: fraction)
             case .loading: LabeledContent("Status") { ProgressView().controlSize(.small) }
             case .ready: LabeledContent("Status", value: "Ready")
-            case .failed(let message): Text(message).font(.caption).foregroundStyle(Color(Palette.error))
+            case .failed(let message):
+                Text(message).font(.caption).foregroundStyle(Color(Palette.error))
+                Button("Download Again") { store.retry() }
             }
             if let problem = store.problem {
                 Text(problem).font(.caption).foregroundStyle(Color(Palette.error))

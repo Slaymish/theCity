@@ -385,7 +385,7 @@ struct FloorComposer: View {
         }
     }
 
-    private var continues: Bool { compact && (controller.resumeSession != nil || controller.state.sessionID != nil) }
+    private var continues: Bool { compact && controller.canContinue }
 
     private func continueLast() {
         controller.followUp(text.isEmpty ? "Please continue where you left off." : text)

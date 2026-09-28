@@ -531,8 +531,8 @@ struct HistorySheet: View {
 
     private func label(_ entry: HistoryEntry) -> String {
         switch entry.kind {
-        case .request: "New job"
-        case .followUp: "Follow-up"
+        case .request: entry.title ?? "New job"
+        case .followUp: entry.title ?? "Follow-up"
         case .outcome: entry.title ?? "Outcome"
         }
     }

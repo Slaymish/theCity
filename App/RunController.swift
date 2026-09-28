@@ -143,6 +143,9 @@ final class RunController {
     private(set) var history: [HistoryEntry] = []
     var showHistory = false
     private(set) var resumeSession: String?
+    /// A session the terminal worked in, which follow-ups continue until the floor's next job starts.
+    private(set) var terminalSession: String?
+    @ObservationIgnored private var terminalOpened: (session: String, directory: URL, date: Date, fresh: Bool)?
     /// Where this floor's session runs, which may be a worktree; follow-ups must resume there.
     private(set) var jobDirectory: URL?
     private(set) var branch: String?
@@ -646,7 +649,9 @@ final class RunController {
         }
     }
 
-    var canContinue: Bool { (state.sessionID ?? resumeSession) != nil }
+    var canContinue: Bool { sessionToContinue != nil }
+
+    private var sessionToContinue: String? { terminalSession ?? state.sessionID ?? resumeSession }
 
     func tryAgain() {
         if let last = followUps.last, canContinue {
@@ -659,7 +664,7 @@ final class RunController {
 
     func followUp(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !isRunning, !text.isEmpty, let session = state.sessionID ?? resumeSession else { return }
+        guard !isRunning, !text.isEmpty, let session = sessionToContinue else { return }
         guard !kiosk.isAlive else { return queue(text, continuing: true) }
         followUps.append(text)
         start(message: text, resume: session, place: nil)
@@ -671,9 +676,13 @@ final class RunController {
     func takeOver() {
         guard canTakeOver, let workingDirectory else { return }
         if !kiosk.isAlive {
-            let resume = jobDirectoryIsGone ? nil : state.sessionID ?? resumeSession
+            let resume = jobDirectoryIsGone ? nil : sessionToContinue
             let directory = resume == nil ? workingDirectory : jobDirectory ?? workingDirectory
-            kiosk.start(directory: directory, resume: resume, model: model, configDirectory: configDirectory) { [weak self] in self?.kioskEnded() }
+            // A fresh session gets its ID up front, since the terminal never reports it.
+            let session = resume ?? UUID().uuidString.lowercased()
+            kiosk.start(directory: directory, resume: resume, sessionID: resume == nil ? session : nil, model: model,
+                        configDirectory: configDirectory) { [weak self] in self?.kioskEnded() }
+            terminalOpened = (session, directory, .now, resume == nil)
             scene.setKioskLive(true)
             Task { checkout = await Self.checkout(of: directory) }
             if jobDirectoryIsGone { appLog("The last job’s worktree is gone, so the terminal starts a fresh session") }
@@ -686,7 +695,34 @@ final class RunController {
     private func kioskEnded() {
         scene.setKioskLive(false)
         appLog("Terminal session ended")
-        if !queueHeld { startNextQueued() }
+        guard let opened = terminalOpened else {
+            if !queueHeld { startNextQueued() }
+            return
+        }
+        terminalOpened = nil
+        let configDirectory = configDirectory
+        Task {
+            let turns = await Task.detached {
+                guard let file = SessionTranscript.file(for: opened.session, configDirectory: configDirectory),
+                      let data = try? Data(contentsOf: file) else { return [SessionTranscript.Turn]() }
+                return SessionTranscript.turns(in: data, since: opened.date)
+            }.value
+            if !turns.isEmpty { adoptTerminalWork(turns, session: opened.session, directory: opened.directory, fresh: opened.fresh) }
+            if !queueHeld { startNextQueued() }
+        }
+    }
+
+    private func adoptTerminalWork(_ turns: [SessionTranscript.Turn], session: String, directory: URL, fresh: Bool) {
+        terminalSession = session
+        resumeSession = session
+        if let floorID, let buildingID { CityStore.shared.update(floor: floorID, in: buildingID) { $0.sessionID = session } }
+        if fresh { settle(in: directory) }
+        appLog("Follow-ups continue the terminal’s session \(session)")
+        for (index, turn) in turns.enumerated() {
+            let starts = fresh && index == 0
+            remember(starts ? .request : .followUp, title: starts ? "New job in the terminal" : "Follow-up in the terminal", turn.prompt, date: turn.date)
+        }
+        if let reply = turns.last?.reply { remember(.outcome, title: "Terminal reply", reply, date: turns.last?.date ?? .now) }
     }
 
     // MARK: Running
@@ -1109,6 +1145,7 @@ final class RunController {
 
     private func forgetSession() {
         resumeSession = nil
+        terminalSession = nil
         guard let floorID, let buildingID else { return }
         CityStore.shared.update(floor: floorID, in: buildingID) { $0.sessionID = nil }
     }
@@ -1128,12 +1165,12 @@ final class RunController {
         }
     }
 
-    private func remember(_ kind: HistoryEntry.Kind, title: String? = nil, _ text: String) {
+    private func remember(_ kind: HistoryEntry.Kind, title: String? = nil, _ text: String, date: Date = .now) {
         // A cancelled job can end after its floor is removed; don't write the history back.
         guard let floorID, let buildingID, !isReplay, !isDemo,
               CityStore.shared.floor(floorID, in: buildingID) != nil else { return }
         let job = kind == .request ? UUID() : history.last?.job ?? UUID()
-        history.append(HistoryEntry(date: .now, job: job, kind: kind, title: title, text: text))
+        history.append(HistoryEntry(date: date, job: job, kind: kind, title: title, text: text))
         FloorHistory.save(history, for: floorID)
     }
 
@@ -1164,6 +1201,7 @@ final class RunController {
     private func reset(keepLog: Bool) {
         reducer = OfficeReducer()
         state = reducer.state
+        terminalSession = nil
         if !keepLog { log = [] }
         steps = hired.map { Step(room: $0.name, colour: colour(for: $0.name), isContractor: false) }
         activity = []

@@ -13,7 +13,7 @@ final class KioskSession {
     @ObservationIgnored private(set) var view: KioskTerminalView?
     @ObservationIgnored private var dark: Bool?
 
-    func start(directory: URL, resume: String?, model: String?, configDirectory: URL?, ended: @escaping () -> Void) {
+    func start(directory: URL, resume: String?, sessionID: String? = nil, model: String?, configDirectory: URL?, ended: @escaping () -> Void) {
         guard !isAlive else { return }
         let view = KioskTerminalView(frame: CGRect(x: 0, y: 0, width: 800, height: 480))
         view.font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
@@ -27,6 +27,7 @@ final class KioskSession {
         dark = nil
         var command = "claude"
         if let resume { command += " --resume " + Self.quoted(resume) }
+        if let sessionID { command += " --session-id " + Self.quoted(sessionID) }
         if let model { command += " --model " + Self.quoted(model) }
         var environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
         environment["TERM"] = "xterm-256color"

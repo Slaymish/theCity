@@ -80,6 +80,9 @@ final class RunController {
     private(set) var limitNotice: LimitNotice?
     private(set) var catalogueNames: [String] = []
     private(set) var hiringIsSlow = false
+    var receptionNote: String {
+        Preferences.shared.receptionist == .claude ? "The receptionist is asking Claude Haiku about your request…" : "The receptionist is reading your request on this Mac…"
+    }
     var workingDirectory: URL? {
         didSet {
             if !isDemo { UserDefaults.standard.set(workingDirectory?.path, forKey: "workingDirectory") }
@@ -441,7 +444,7 @@ final class RunController {
             let kit = if let kit = self.kit { kit } else { await Self.value(of: kitTask, within: .seconds(3)) }
             let slash = SlashCommand.parse(request, commands: kit?.commands ?? [])
             let brief = slash.map { [$0.command.description, $0.arguments].filter { !$0.isEmpty }.joined(separator: ": ") } ?? request
-            var outcome = await HiringDesk.propose(request: brief, catalogue: catalogue, kit: kit)
+            var outcome = await HiringDesk.propose(request: brief, catalogue: catalogue, kit: kit, configDirectory: configDirectory)
             if let preset = pendingPreset { outcome = HiringDesk.staff(outcome, with: preset, catalogue: catalogue) }
             guard screen == .hiring else { return }
             switch outcome {

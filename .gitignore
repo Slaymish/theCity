@@ -7,6 +7,7 @@ xcuserdata/
 *.xcuserstate
 
 .claude/settings.local.json
+.claude/worktrees/
 CLAUDE.local.md
 .claude/hooks/__pycache__/
 .claude/hooks/.stop-gate-state.json

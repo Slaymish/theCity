@@ -14,7 +14,7 @@ The City starts its own Claude Code runs using the `claude` you already have ins
 
 - macOS 26 or later.
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) 2.1.163 or later, installed and signed in. Older versions have known security issues and the app won't run jobs with them. The app looks for `claude` on your `PATH` and in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` and `~/.claude/local`. You can also point it at the binary in Settings. Before each job it checks that Claude Code is installed and signed in, and offers Install…, Locate… or Sign In… if not.
-- Apple Intelligence enabled, for the on-device model that picks departments and routes work. A word-overlap check is used as a fallback.
+- Apple Intelligence enabled, for the on-device model that picks departments and routes work. Without it, choose Claude Haiku under Settings › Reception (it counts towards the account's usage limits). A word-overlap check is used as a fallback.
 
 ## Install
 

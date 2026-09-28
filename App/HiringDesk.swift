@@ -20,6 +20,17 @@ struct Hire {
     var reason: String
 }
 
+/// HiringPlan's shape for Claude, which answers in JSON.
+struct HiringReply: Decodable {
+    struct Hire: Decodable {
+        var department: String
+        var reason: String
+    }
+    var hires: [Hire]
+
+    static let schema = #"{"type":"object","properties":{"hires":{"type":"array","description":"The departments this request needs, in the order they should work. Leave out any it does not need.","items":{"type":"object","properties":{"department":{"type":"string","description":"A department name copied exactly from the list"},"reason":{"type":"string","description":"Why this department is needed, in under twelve words"}},"required":["department","reason"],"additionalProperties":false}}},"required":["hires"],"additionalProperties":false}"#
+}
+
 struct Candidate: Identifiable, Equatable {
     var id: String { department.name }
     var department: Department
@@ -47,40 +58,50 @@ enum HiringDesk {
         return Double(said.intersection(words(description)).count) / Double(said.count) >= 0.6
     }
 
-    static func propose(request: String, catalogue: [Department], kit: Kit?) async -> Outcome {
+    @MainActor static func propose(request: String, catalogue: [Department], kit: Kit?, configDirectory: URL?) async -> Outcome {
         let everyone = catalogue.map { Candidate(department: $0, reason: nil, hired: false) }
-        let model = SystemLanguageModel.default
-        guard case .available = model.availability else {
-            return .unavailable("The on-device model isn’t available on this Mac (\(model.availability)). Choose departments yourself.", everyone)
+        let picks: [(department: String, reason: String)]
+        switch Preferences.shared.receptionist {
+        case .onDevice:
+            let model = SystemLanguageModel.default
+            guard case .available = model.availability else {
+                return .unavailable("The on-device model isn’t available on this Mac (\(model.availability)). Choose departments yourself.", everyone)
+            }
+            let session = takeSession(for: catalogue)
+            do {
+                picks = try await session.respond(to: request, generating: HiringPlan.self).content.hires.map { ($0.department, $0.reason) }
+            } catch {
+                return .unavailable("The on-device model couldn’t make a plan: \(error.localizedDescription). Choose departments yourself.", everyone)
+            }
+        case .claude:
+            guard let reply = await Haiku.ask(HiringReply.self, prompt: request, system: instructions(for: catalogue),
+                                              schema: HiringReply.schema, configDirectory: configDirectory) else {
+                return .unavailable("Reception couldn’t get a plan from Claude. Choose departments yourself.", everyone)
+            }
+            picks = reply.hires.map { ($0.department, $0.reason) }
         }
-        let session = await takeSession(for: catalogue)
-        do {
-            let plan = try await session.respond(to: request, generating: HiringPlan.self).content
-            var seen = Set<String>()
-            let hires = plan.hires.filter { hire in
-                catalogue.contains { $0.name == hire.department } && seen.insert(hire.department).inserted
-            }
-            let hired = hires.compactMap { hire in
-                catalogue.first { $0.name == hire.department }.map {
-                    Candidate(department: $0, reason: Self.repeats(hire.reason, $0.description) ? nil : hire.reason, hired: true)
-                }
-            }
-            let rest = everyone.filter { !seen.contains($0.department.name) }
-            let kitPlan = kit.map { kit in
-                let matched = kit.matching(request)
-                return KitPlan(servers: matched.servers, skills: matched.skills, reasons: [:])
-            }
-            return .proposed(hired + rest, kitPlan)
-        } catch {
-            return .unavailable("The on-device model couldn’t make a plan: \(error.localizedDescription). Choose departments yourself.", everyone)
+        var seen = Set<String>()
+        let hires = picks.filter { hire in
+            catalogue.contains { $0.name == hire.department } && seen.insert(hire.department).inserted
         }
+        let hired = hires.compactMap { hire in
+            catalogue.first { $0.name == hire.department }.map {
+                Candidate(department: $0, reason: Self.repeats(hire.reason, $0.description) ? nil : hire.reason, hired: true)
+            }
+        }
+        let rest = everyone.filter { !seen.contains($0.department.name) }
+        let kitPlan = kit.map { kit in
+            let matched = kit.matching(request)
+            return KitPlan(servers: matched.servers, skills: matched.skills, reasons: [:])
+        }
+        return .proposed(hired + rest, kitPlan)
     }
 
     @MainActor private static var warm: (key: String, session: LanguageModelSession)?
 
     /// Loads the model with this building's departments while the request is still being typed.
     @MainActor static func prewarm(catalogue: [Department]) {
-        guard !catalogue.isEmpty, case .available = SystemLanguageModel.default.availability else { return }
+        guard !catalogue.isEmpty, Preferences.shared.receptionist == .onDevice, case .available = SystemLanguageModel.default.availability else { return }
         let key = instructions(for: catalogue)
         guard warm?.key != key else { return }
         let session = LanguageModelSession(instructions: key)
@@ -130,6 +151,14 @@ struct Routing {
     var newFloorName: String
 }
 
+/// Routing's shape for Claude, which answers in JSON.
+struct RoutingReply: Decodable {
+    var floor: String
+    var newFloorName: String
+
+    static let schema = #"{"type":"object","properties":{"floor":{"type":"string","description":"Exact name of the existing floor whose kind of work matches this request, or an empty string if none does"},"newFloorName":{"type":"string","description":"If no floor matches: a name for a new floor describing the kind of work, two or three words, e.g. 'Slide decks' or 'Payments'"}},"required":["floor","newFloorName"],"additionalProperties":false}"#
+}
+
 struct RoutingSuggestion: Equatable {
     var floorID: UUID?
     var newFloorName: String
@@ -146,26 +175,37 @@ enum ReceptionDesk {
         guard !floors.isEmpty else {
             return newFloor(for: request, preset: guess, proposed: "", floors: floors, reason: "There are no floors yet, so this needs a new one.")
         }
-        guard case .available = SystemLanguageModel.default.availability else {
-            return newFloor(for: request, preset: guess, proposed: "", floors: floors, reason: "Choose a floor, or set up a new one.")
-        }
-        let session = takeSession(for: floors)
-        do {
-            guard let routing = try await withTimeout(seconds: 12, { try await session.respond(to: request, generating: Routing.self).content }) else {
-                return newFloor(for: request, preset: guess, proposed: "", floors: floors, reason: "Reception is taking too long. Choose a floor, or set up a new one.")
+        let routing: (floor: String, newFloorName: String)
+        switch Preferences.shared.receptionist {
+        case .onDevice:
+            guard case .available = SystemLanguageModel.default.availability else {
+                return newFloor(for: request, preset: guess, proposed: "", floors: floors, reason: "Choose a floor, or set up a new one.")
             }
-            let named = floors.first { $0.name.caseInsensitiveCompare(routing.floor.trimmingCharacters(in: .whitespaces)) == .orderedSame }
-            if let match = (named ?? closest(to: request, proposed: routing.newFloorName, in: floors))
-                .flatMap({ supports($0, request: request, preset: guess) ? $0 : nil }) {
-                let last = match.lastRequest.map { " Its last job: “\($0.prefix(80))”." } ?? ""
-                return RoutingSuggestion(floorID: match.id, newFloorName: fallbackName,
-                                         reason: "\(match.name) looks like the right team.\(last)")
+            let session = takeSession(for: floors)
+            do {
+                guard let answer = try await withTimeout(seconds: 12, { try await session.respond(to: request, generating: Routing.self).content }) else {
+                    return newFloor(for: request, preset: guess, proposed: "", floors: floors, reason: "Reception is taking too long. Choose a floor, or set up a new one.")
+                }
+                routing = (answer.floor, answer.newFloorName)
+            } catch {
+                return newFloor(for: request, preset: guess, proposed: "", floors: floors, reason: "Choose a floor, or set up a new one.")
             }
-            return newFloor(for: request, preset: guess, proposed: routing.newFloorName, floors: floors,
-                            reason: "None of the floors does this kind of work yet.")
-        } catch {
-            return newFloor(for: request, preset: guess, proposed: "", floors: floors, reason: "Choose a floor, or set up a new one.")
+        case .claude:
+            guard let answer = await Haiku.ask(RoutingReply.self, prompt: request, system: instructions(for: floors),
+                                               schema: RoutingReply.schema, configDirectory: Preferences.shared.configDirectory) else {
+                return newFloor(for: request, preset: guess, proposed: "", floors: floors, reason: "Reception couldn’t reach Claude. Choose a floor, or set up a new one.")
+            }
+            routing = (answer.floor, answer.newFloorName)
         }
+        let named = floors.first { $0.name.caseInsensitiveCompare(routing.floor.trimmingCharacters(in: .whitespaces)) == .orderedSame }
+        if let match = (named ?? closest(to: request, proposed: routing.newFloorName, in: floors))
+            .flatMap({ supports($0, request: request, preset: guess) ? $0 : nil }) {
+            let last = match.lastRequest.map { " Its last job: “\($0.prefix(80))”." } ?? ""
+            return RoutingSuggestion(floorID: match.id, newFloorName: fallbackName,
+                                     reason: "\(match.name) looks like the right team.\(last)")
+        }
+        return newFloor(for: request, preset: guess, proposed: routing.newFloorName, floors: floors,
+                        reason: "None of the floors does this kind of work yet.")
     }
 
     /// "@Floor name request" skips routing; the longest matching floor name wins.
@@ -207,7 +247,7 @@ enum ReceptionDesk {
 
     /// Loads the model while the request is still being typed, so asking doesn't wait for it.
     static func prewarm(floors: [CityStore.Floor]) {
-        guard !floors.isEmpty, case .available = SystemLanguageModel.default.availability else { return }
+        guard !floors.isEmpty, Preferences.shared.receptionist == .onDevice, case .available = SystemLanguageModel.default.availability else { return }
         let key = instructions(for: floors)
         guard warm?.key != key else { return }
         let session = LanguageModelSession(instructions: key)

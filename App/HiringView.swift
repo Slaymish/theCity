@@ -21,7 +21,7 @@ struct HiringView: View {
             HStack(spacing: 10) {
                 if controller.isHiring {
                     ProgressView().controlSize(.small)
-                    Text(controller.hiringIsSlow ? "Still reading. You can pick departments yourself." : "The receptionist is reading your request on this Mac…")
+                    Text(controller.hiringIsSlow ? "Still reading. You can pick departments yourself." : controller.receptionNote)
                         .font(Typography.caption)
                         .foregroundStyle(Color(Palette.muted))
                 } else {

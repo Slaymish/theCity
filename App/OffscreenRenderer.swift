@@ -10,6 +10,8 @@ final class FrameRecorder {
     private let renderer: RealityRenderer
     private let texture: MTLTexture
     private let graded: MTLTexture
+    private let focused: MTLTexture
+    private let quality = GraphicsQuality.forced
     private let queue: MTLCommandQueue
     private let grader: Grader?
     private let output: RealityRenderer.CameraOutput
@@ -24,6 +26,7 @@ final class FrameRecorder {
         if camera.parent == nil { renderer.entities.append(camera) }
         renderer.activeCamera = camera
         renderer.cameraSettings.colorBackground = .color(background)
+        if let quality { renderer.cameraSettings.antialiasing = quality.antialiasing }
         if let environment {
             renderer.lighting.resource = environment
             renderer.lighting.intensityExponent = exposure
@@ -35,9 +38,11 @@ final class FrameRecorder {
         gradedDescriptor.usage = [.shaderRead, .shaderWrite]
         gradedDescriptor.storageMode = .shared
         guard let texture = device.makeTexture(descriptor: descriptor), let graded = device.makeTexture(descriptor: gradedDescriptor),
+              let focused = device.makeTexture(descriptor: gradedDescriptor),
               let queue = device.makeCommandQueue() else { throw CocoaError(.featureUnsupported) }
         self.texture = texture
         self.graded = graded
+        self.focused = focused
         self.queue = queue
         grader = Grader(device: device)
         output = try RealityRenderer.CameraOutput(.singleProjection(colorTexture: texture))
@@ -64,9 +69,16 @@ final class FrameRecorder {
             buffer.waitUntilCompleted()
             output = graded
         }
+        if let grader, var focus = quality?.focus, let buffer = queue.makeCommandBuffer() {
+            focus.encodeSRGB = output === texture ? 1 : 0
+            grader.focus(source: output, target: focused, into: buffer, focus: focus)
+            buffer.commit()
+            buffer.waitUntilCompleted()
+            output = focused
+        }
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
         output.getBytes(&bytes, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
-        let layout = output === graded ? CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        let layout = output !== texture ? CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
             : CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         return CGContext(data: &bytes, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
                          space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layout)!.makeImage()!
@@ -370,7 +382,7 @@ enum PreviewStage {
                     let started = Date()
                     let kit = await RunController.kitLoader(for: workspace, configDirectory: Preferences.shared.configDirectory)?()
                     let loaded = Date()
-                    let outcome = await HiringDesk.propose(request: request, catalogue: AgentCatalogue.load(workingDirectory: workspace), kit: kit)
+                    let outcome = await HiringDesk.propose(request: request, catalogue: AgentCatalogue.load(workingDirectory: workspace), kit: kit, configDirectory: Preferences.shared.configDirectory)
                     let hired = switch outcome {
                     case .proposed(let candidates, let plan): candidates.filter(\.hired).map { "\($0.department.name) (\($0.reason ?? "-"))" }.joined(separator: ", ")
                         + " | services \(plan?.servers.sorted() ?? []) | skills \(plan?.skills.sorted() ?? [])"

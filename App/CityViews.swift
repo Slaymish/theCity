@@ -158,13 +158,15 @@ struct WorldView: View {
     var body: some View {
         let buildingID = buildingID, floorID = floorID
         let session = floorID.flatMap { id in buildingID.flatMap { city.session(for: id, in: $0) } }
+        let quality = GraphicsQuality.current
         ZStack {
             GeometryReader { geometry in
                 RealityView { content in
                     content.add(world.root)
-                    content.renderingEffects.antialiasing = .multisample4X
-                    if RunController.launchArgument("-depth-of-field") == "on" { content.renderingEffects.depthOfField = .enabled }
                     world.updates = content.subscribe(to: SceneEvents.Update.self) { [world] event in world.update(event.deltaTime) }
+                } update: { content in
+                    content.renderingEffects.antialiasing = quality.antialiasing
+                    content.renderingEffects.depthOfField = quality.depthOfField ? .enabled : .disabled
                 }
                 .realityViewCameraControls(.none)
                 .gesture(SpatialTapGesture().targetedToAnyEntity().onEnded { value in tapped(value.entity) })

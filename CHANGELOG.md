@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.1
+
+- Floors do less rendering work each frame, so The City uses less CPU while robots are working.
+- When a project's services finish loading after a floor opens, only the service terminals are redrawn instead of the whole office being rebuilt.
+- The app download is smaller, as unused city, furniture and nature models are no longer bundled.
+
 ## 0.10.0
 
 - Reception, a floor's prompt and the new-floor screen have a Branch menu: run a job on any local branch, or in a new worktree Claude makes. A branch that isn't checked out gets its own worktree, so your project folder never switches branch.

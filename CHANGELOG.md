@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0
+
+- Reception, a floor's prompt and the new-floor screen have a Branch menu: run a job on any local branch, or in a new worktree Claude makes. A branch that isn't checked out gets its own worktree, so your project folder never switches branch.
+- A floor remembers the branch and folder its job ran in; follow-ups, Try Again and the terminal carry on there, and the job ticket shows the branch.
+- A floor whose job finished or failed shows Needs you until you open it, across the city list, building and floor pills, storey labels, the menu bar and the Dock badge.
+- Hiring a team is quicker: the receptionist picks only departments, skills and services are matched to the request's words, and each project's kit is remembered between floors.
+- The Dock badge counts everything waiting across the city, not just the most recently active floor.
+- The city is brighter in the daytime.
+- Clicking anywhere on a storey in the building view enters that floor, not just its room tiles.
+- Robots can be clicked to select their room, including when they're away from their desk.
+- Unlit lamps no longer cost rendering time in the daytime.
+
 ## 0.9.0
 
 - The menu bar lists permission requests under Waiting for you, where you can allow, always allow in the project, allow and switch the job to Auto, or deny without opening the window; questions open their floor.

@@ -189,7 +189,7 @@ final class CityScene {
         let beacon = ModelEntity(mesh: .generateSphere(radius: 0.14), materials: [OfficeScene.material(Palette.resolved(Palette.manager, dark: dark))])
         beacon.scale = [1, 1.15, 1]
         beacon.position = [position.x, bounds.max.y + 0.45, position.z]
-        let string = ModelEntity(mesh: .generateBox(width: 0.012, height: 0.4, depth: 0.012),
+        let string = ModelEntity(mesh: ModelLibrary.box(width: 0.012, height: 0.4, depth: 0.012),
                                  materials: [OfficeScene.material(Palette.resolved(Palette.text, dark: dark))])
         string.position = [0, -0.33, 0]
         beacon.addChild(string)
@@ -288,7 +288,7 @@ final class CityScene {
     private func addEmptyLot(at position: SIMD3<Float>) {
         emptyLot = position
         addStreetlight(at: position)
-        let pad = ModelEntity(mesh: .generateBox(width: 1.6, height: 0.04, depth: 1.6, cornerRadius: 0.2),
+        let pad = ModelEntity(mesh: ModelLibrary.box(width: 1.6, height: 0.04, depth: 1.6, cornerRadius: 0.2),
                               materials: [OfficeScene.material(Palette.resolved(Palette.sceneFloor, dark: dark))])
         pad.position = position + [0, 0.12, 0]
         pad.name = "lot:new"

@@ -226,8 +226,13 @@ final class RunController {
         allowedServers = floor?.allowedServers.map(Set.init) ?? Set(loaded.usableServers.map(\.name))
         allowedSkills = floor?.allowedSkills.map(Set.init) ?? Set(loaded.skills.map(\.name))
         kitReasons = [:]
-        let servers = loaded.usableServers.filter { allowedServers.contains($0.name) }.map(\.name)
-        if screen == .office && !isRunning, builtFor.map({ $0 != (hired.map(\.name), servers, Preferences.shared.isDark) }) ?? true { buildScene() }
+        let servers = loaded.usableServers.filter { allowedServers.contains($0.name) }
+        guard screen == .office && !isRunning else { return }
+        let names = servers.map(\.name), dark = Preferences.shared.isDark
+        guard let builtFor, builtFor.hires == hired.map(\.name), builtFor.dark == dark else { return buildScene() }
+        guard builtFor.servers != names else { return }
+        scene.setServers(servers)
+        self.builtFor = (builtFor.hires, names, dark)
     }
 
     func toggleServer(_ name: String) {

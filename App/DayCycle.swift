@@ -81,11 +81,7 @@ enum NightLight {
         _ = registered
         let light = Entity()
         light.position = offset
-        var material = PhysicallyBasedMaterial()
-        material.baseColor = .init(tint: colour)
-        material.emissiveColor = .init(color: colour)
-        material.emissiveIntensity = 3
-        let bulb = ModelEntity(mesh: .generateSphere(radius: size), materials: [material])
+        let bulb = ModelEntity(mesh: .generateSphere(radius: size), materials: [ModelLibrary.material(colour, roughness: nil, emissive: 3)])
         light.addChild(bulb)
         let lamp = NightLightComponent(intensity: intensity, colour: colour, radius: radius, bulb: bulb)
         light.components.set(lamp)

@@ -46,18 +46,40 @@ enum ModelLibrary {
     static func tint(_ entity: Entity, parts prefixes: [String], colour: NSColor, emissive: Bool = false) {
         var seen = Set<ObjectIdentifier>()
         let matched = entity.descendants.filter { child in prefixes.contains { child.name.hasPrefix($0) } }
+        let material = material(colour, roughness: 0.35, emissive: emissive ? 2 : 0)
         for child in matched.flatMap({ [$0] + $0.descendants }) where seen.insert(ObjectIdentifier(child)).inserted {
             guard var model = child.components[ModelComponent.self] else { continue }
-            var material = PhysicallyBasedMaterial()
-            material.baseColor = .init(tint: colour)
-            material.roughness = 0.35
-            if emissive {
-                material.emissiveColor = .init(color: colour)
-                material.emissiveIntensity = 2
-            }
             model.materials = model.materials.map { _ in material }
             child.components.set(model)
         }
+    }
+
+    private static var materials: [String: PhysicallyBasedMaterial] = [:]
+    private static var boxes: [SIMD4<Float>: MeshResource] = [:]
+
+    /// Setting a material's colour or roughness is the slowest part of building a scene, so each finish is made once and shared.
+    static func material(_ colour: NSColor, roughness: Float?, emissive: Float = 0) -> PhysicallyBasedMaterial {
+        let rgb = colour.usingColorSpace(.sRGB) ?? colour
+        let key = "\(rgb.redComponent),\(rgb.greenComponent),\(rgb.blueComponent),\(rgb.alphaComponent)|\(roughness ?? -1)|\(emissive)"
+        if let cached = materials[key] { return cached }
+        var material = PhysicallyBasedMaterial()
+        material.baseColor = .init(tint: rgb)
+        if let roughness { material.roughness = .init(floatLiteral: roughness) }
+        if emissive > 0 {
+            material.emissiveColor = .init(color: rgb)
+            material.emissiveIntensity = emissive
+        }
+        materials[key] = material
+        return material
+    }
+
+    /// Scenes repeat the same few box sizes, and generating each mesh is slow.
+    static func box(width: Float, height: Float, depth: Float, cornerRadius: Float = 0) -> MeshResource {
+        let key = SIMD4(width, height, depth, cornerRadius)
+        if let cached = boxes[key] { return cached }
+        let mesh = MeshResource.generateBox(width: width, height: height, depth: depth, cornerRadius: cornerRadius)
+        boxes[key] = mesh
+        return mesh
     }
 }
 

@@ -123,6 +123,8 @@ final class RunController {
     private(set) var resumeSession: String?
     private(set) var currentJob: UUID?
     private(set) var timings: [String: HandoffTiming] = [:]
+    /// What the companion app needs beyond `state`: captions, last tools and service calls in flight.
+    private(set) var mirror = FloorMirror()
     /// Context windows seen on this floor, so a follow-up's gauge shows before its first `result`.
     private(set) var contextWindows: [String: Int] = [:]
 
@@ -332,11 +334,7 @@ final class RunController {
         "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    static func launchArgument(_ name: String) -> String? {
-        let arguments = ProcessInfo.processInfo.arguments
-        guard let i = arguments.firstIndex(of: name), i + 1 < arguments.count else { return nil }
-        return arguments[i + 1]
-    }
+    static func launchArgument(_ name: String) -> String? { LaunchArgument.value(name) }
 
     static var defaultWorkspace: URL? {
         launchArgument("-workspace").map { URL(fileURLWithPath: $0) }
@@ -506,10 +504,7 @@ final class RunController {
         return nil
     }
 
-    static func clock(_ seconds: TimeInterval) -> String {
-        let whole = Int(seconds.rounded())
-        return String(format: "%d:%02d", whole / 60, whole % 60)
-    }
+    static func clock(_ seconds: TimeInterval) -> String { Wording.clock(seconds) }
 
     static func spoken(_ seconds: TimeInterval) -> String {
         spokenFormatter.string(from: seconds.rounded()) ?? clock(seconds)
@@ -827,6 +822,9 @@ final class RunController {
         if case .ended = state.phase, endedAt == nil { endedAt = Self.now() }
         if state.contextWindows.contains(where: { contextWindows[$0.key] != $0.value }) { contextWindows.merge(state.contextWindows) { $1 } }
         track(events)
+        var mirrored = mirror
+        mirrored.record(events)
+        if mirrored != mirror { mirror = mirrored }
         for path in state.outputFiles where !jobFiles.contains(path) { jobFiles.append(path) }
         if !events.isEmpty { scene.apply(events) }
     }

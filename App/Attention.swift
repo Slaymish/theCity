@@ -137,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !MainWindow.offscreen {
             DictationStore.shared.start()
             SleepGuard.shared.watch(.shared)
+            CompanionHost.shared.start()
         }
         #if !DEBUG
         _ = Updater.shared

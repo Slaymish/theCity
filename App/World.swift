@@ -9,7 +9,7 @@ final class World {
     var updates: EventSubscription?
     private(set) var inBuilding: UUID?
     private var generation = 0
-    static let slide: Double = 0.6
+    static let slide = BuildingScene.slide
 
     init() {
         city.hostsCamera = false

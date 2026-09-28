@@ -2,49 +2,6 @@ import AppKit
 import OfficeCore
 import SwiftUI
 
-enum RoomState: CaseIterable {
-    case waiting, working, idle
-
-    var symbol: String {
-        switch self {
-        case .waiting: "hand.raised.fill"
-        case .working: "bolt.fill"
-        case .idle: "moon.zzz.fill"
-        }
-    }
-
-    var colour: NSColor {
-        switch self {
-        case .waiting: Palette.manager
-        case .working: Palette.primaryFill
-        case .idle: Palette.muted
-        }
-    }
-
-    func spoken(_ count: Int) -> String {
-        switch self {
-        case .waiting: "\(count) \(count == 1 ? "needs" : "need") you"
-        case .working: "\(count) working"
-        case .idle: "\(count) idle"
-        }
-    }
-}
-
-extension RoomCounts {
-    func count(_ state: RoomState) -> Int {
-        switch state {
-        case .waiting: waiting
-        case .working: working
-        case .idle: idle
-        }
-    }
-
-    var spoken: String {
-        let parts = RoomState.allCases.filter { count($0) > 0 }.map { $0.spoken(count($0)) }
-        return parts.isEmpty ? "No rooms" : parts.joined(separator: ", ")
-    }
-}
-
 struct Vitals: Equatable {
     var rooms = RoomCounts()
     var running = false

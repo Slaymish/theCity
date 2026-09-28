@@ -313,6 +313,8 @@ struct SettingsView: View {
             .tabItem { Label("Alerts", systemImage: "bell") }
             page { DictationSettings() }
                 .tabItem { Label("Dictation", systemImage: "mic") }
+            page { CompanionSettings() }
+                .tabItem { Label("iPhone", systemImage: "iphone") }
             page {
                 Section("Updates") {
                     LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")

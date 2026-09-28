@@ -1,7 +1,34 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import OfficeCore
 import RealityKit
 import SwiftUI
+
+/// What a storey needs from whoever runs its floor: the Mac's `RunController`, or the phone's mirror of one.
+@MainActor
+protocol Storey: AnyObject {
+    var scene: OfficeScene { get }
+    var isRunning: Bool { get }
+    var waitingCount: Int { get }
+    var roomCounts: RoomCounts { get }
+}
+
+/// The parts of a project a tower is built from.
+struct TowerPlan: Equatable {
+    struct Floor: Equatable {
+        var id: UUID
+        var name: String
+        var lastOutcome: String?
+    }
+
+    var id: UUID
+    var name: String
+    var title: String?
+    var floors: [Floor]
+}
 
 /// A project's tower: its floors are the live office scenes, stacked, with one camera for the whole building.
 @MainActor
@@ -15,10 +42,13 @@ final class BuildingScene {
     var updates: EventSubscription?
     private(set) var buildingID: UUID?
     private var builtShell: String?
-    private var building: CityStore.Building?
+    private var plan: TowerPlan?
+    /// Where labels read a floor's latest name and session between shows; without them, the ones it was shown with.
+    var latestPlan: (UUID) -> TowerPlan? = { _ in nil }
+    var latestStorey: (UUID) -> (any Storey)? = { _ in nil }
     private(set) var activeFloor: UUID?
     private var storeys: [(id: UUID, scene: OfficeScene, index: Int)] = []
-    private var sessions: [UUID: RunController] = [:]
+    private var sessions: [UUID: any Storey] = [:]
     private var labels: [UUID: (entity: Entity, text: String)] = [:]
     private var crown: [Entity] = []
     private var fitOut: [Int: Entity] = [:]
@@ -42,6 +72,8 @@ final class BuildingScene {
     private var labelClock: Double = 0
     private var dark = false
     static let storeyHeight = OfficeScene.wallHeight + OfficeScene.floorThickness
+    /// How long the tower takes to rise out of the ground, which is also the city's slide into a building.
+    static let slide: Double = 0.6
     private static let roofThickness: Float = 0.4
 
     init() {
@@ -51,12 +83,12 @@ final class BuildingScene {
 
     /// Rebuilding the shell (lobby, glazing, roof, sign and floor labels) is the slow part of entering a building,
     /// so it's kept while the building's floors, names, theme and brand stay the same, and only the offices are re-slotted.
-    func show(_ building: CityStore.Building, sessions: [(UUID, RunController)], dark: Bool) {
+    func show(_ building: TowerPlan, storeys sessions: [(UUID, any Storey)], dark: Bool) {
         let shell = "\(building.id)|\(building.name)|\(building.title ?? "")|\(sessions.map(\.0))|\(dark)|\(BrandStore.shared.selectedID)"
         let rebuild = shell != builtShell
         self.dark = dark
         buildingID = building.id
-        self.building = building
+        plan = building
         for storey in storeys where !sessions.contains(where: { $0.1.scene === storey.scene }) {
             storey.scene.root.removeFromParent()
             storey.scene.root.components.remove(OpacityComponent.self)
@@ -92,7 +124,7 @@ final class BuildingScene {
         }
     }
 
-    private func buildShell(_ building: CityStore.Building, floors: Int) {
+    private func buildShell(_ building: TowerPlan, floors: Int) {
         lobbyParts = buildLobby(width: OfficeScene.footprint.x, depth: OfficeScene.footprint.y, floors: floors)
         lobbyParts.forEach { $0.isEnabled = true }
         tower.addChild(lobbyLight)
@@ -101,7 +133,7 @@ final class BuildingScene {
             entity.components.set(receiver)
             entity.components.set(GroundingShadowComponent(castsShadow: true, receivesShadow: true))
         }
-        let ground = CityScene.ground(dark: dark)
+        let ground = Horizon.ground(dark: dark)
         ground.position.y = -0.36
         tower.addChild(groundLight)
         ground.components.set(ImageBasedLightReceiverComponent(imageBasedLight: groundLight))
@@ -253,7 +285,7 @@ final class BuildingScene {
             lobbyLight.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: OfficeScene.studioExposure(cycle)))
         }
         if let environment = ModelLibrary.environment("sky") {
-            groundLight.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: CityScene.skyExposure(cycle)))
+            groundLight.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: Horizon.skyExposure(cycle)))
         }
         var light = DirectionalLightComponent(color: cycle.sunColour, intensity: cycle.mix(day: 2400, night: 600))
         light.isRealWorldProxy = false
@@ -459,7 +491,7 @@ final class BuildingScene {
         if lobbyFocused { storeysHidden = camera.entity.position(relativeTo: tower).y > Self.storeyHeight - OfficeScene.floorThickness }
         if let current = rise {
             let elapsed = current.elapsed + dt
-            let t = Float(min(elapsed / World.slide, 1))
+            let t = Float(min(elapsed / Self.slide, 1))
             risen = current.from + (current.to - current.from) * t
             rise = t >= 1 ? nil : (current.from, current.to, elapsed)
             applyRise()
@@ -484,11 +516,11 @@ final class BuildingScene {
     }
 
     private func refreshLabels(force: Bool) {
-        guard let buildingID, let building = CityStore.shared.building(buildingID) ?? self.building else { return }
+        guard let buildingID, let building = latestPlan(buildingID) ?? plan else { return }
         for storey in storeys {
             guard let floor = building.floors.first(where: { $0.id == storey.id }) else { continue }
-            let session = CityStore.shared.sessions[storey.id] ?? sessions[storey.id]
-            let waiting = session?.state.pendingRequests.count ?? 0
+            let session = latestStorey(storey.id) ?? sessions[storey.id]
+            let waiting = session?.waitingCount ?? 0
             let (symbol, status): (String, String) =
                 waiting > 0 ? ("hand.raised.fill", "Needs you") :
                 session?.isRunning == true ? ("bolt.fill", "Working") :

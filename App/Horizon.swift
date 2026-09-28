@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import RealityKit
 
 /// Distance haze and drifting clouds, built from geometry because RealityView post-processing crashes on macOS 26 (#44).
@@ -105,5 +109,27 @@ enum Horizon {
             let ab = simd_normalize(v[a] + v[b]), bc = simd_normalize(v[b] + v[c]), ca = simd_normalize(v[c] + v[a])
             return [[v[a], ab, ca], [v[b], bc, ab], [v[c], ca, bc], [ab, bc, ca]]
         }
+    }
+}
+
+extension Horizon {
+    static func ground(dark: Bool) -> ModelEntity {
+        ModelEntity(mesh: .generateCylinder(height: 0.1, radius: 400), materials: [OfficeScene.material(Palette.resolved(Palette.grass, dark: dark))])
+    }
+
+    static func skyExposure(_ cycle: DayCycle) -> Float { cycle.mix(day: 0.2, night: -3) }
+}
+
+struct SeededGenerator: RandomNumberGenerator {
+    private var state: UInt64
+
+    init(seed: UInt64) { state = seed &+ 0x9E37_79B9_7F4A_7C15 }
+
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
     }
 }

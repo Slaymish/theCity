@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import OfficeCore
 import RealityKit
 import SwiftUI
@@ -56,7 +60,13 @@ final class OfficeScene {
     private var strolling: Pod?
     private var strollTask: Task<Void, Never>?
 
-    static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    static var reduceMotion: Bool {
+        #if os(macOS)
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        #else
+        UIAccessibility.isReduceMotionEnabled
+        #endif
+    }
 
     init() {
         camera = CameraRig(overview: .init(target: [0, 0.5, 0], yaw: 0.62, pitch: 0.62, distance: 34))
@@ -658,7 +668,7 @@ final class OfficeScene {
         [base, stem, cup].forEach { trophy.addChild($0) }
         root.addChild(trophy)
         records.append(trophy)
-        if let label = Billboard.make(BubbleView(symbol: "trophy.fill", text: "Fastest job · \(RunController.clock(fastest))", colour: Palette.folder), dark: dark) {
+        if let label = Billboard.make(BubbleView(symbol: "trophy.fill", text: "Fastest job · \(Wording.clock(fastest))", colour: Palette.folder), dark: dark) {
             label.position = trophy.position + [0, 0.8, 0]
             label.scale = SIMD3(repeating: 0.45)
             root.addChild(label)

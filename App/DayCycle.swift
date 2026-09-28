@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import RealityKit
 
 /// The scenes' time of day in the system time zone; `-hour` pins it for renders.
@@ -11,7 +15,7 @@ struct DayCycle {
 
     @MainActor static var now: DayCycle {
         let parts = Calendar.current.dateComponents([.hour, .minute], from: .now)
-        return DayCycle(hour: RunController.launchArgument("-hour").flatMap(Double.init) ?? Double(parts.hour ?? 13) + Double(parts.minute ?? 0) / 60)
+        return DayCycle(hour: LaunchArgument.value("-hour").flatMap(Double.init) ?? Double(parts.hour ?? 13) + Double(parts.minute ?? 0) / 60)
     }
 
     /// 1 in full day, 0 in full night, eased through dawn and dusk.

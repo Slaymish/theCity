@@ -137,3 +137,23 @@ public struct Kit: Sendable, Equatable {
             + skills.filter { !allowedSkills.contains($0.name) }.map { "Skill(\($0.name))" }
     }
 }
+
+extension Kit {
+    /// The skills and services a request names or describes, matched by word so hiring needn't wait on a model.
+    public func matching(_ request: String) -> (servers: Set<String>, skills: Set<String>) {
+        let asked = Self.words(request)
+        let servers = usableServers.filter { !Self.words($0.name).isDisjoint(with: asked) }.map(\.name)
+        let skills = skills.filter { skill in
+            !Self.words(skill.name).isDisjoint(with: asked) || Self.words(skill.description).intersection(asked).count >= 2
+        }.map(\.name)
+        return (Set(servers), Set(skills))
+    }
+
+    static func words(_ text: String) -> Set<String> {
+        let stop: Set<String> = ["the", "and", "for", "with", "use", "used", "when", "this", "that", "from", "into", "your", "you",
+                                 "can", "any", "all", "are", "not", "our", "also", "asks", "asked", "user", "make", "code", "please", "want"]
+        return Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map { word in
+            word.count > 4 && word.hasSuffix("s") ? String(word.dropLast()) : String(word)
+        }.filter { $0.count > 2 && !stop.contains($0) })
+    }
+}

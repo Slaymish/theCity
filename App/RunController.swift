@@ -188,26 +188,46 @@ final class RunController {
         ([buildingID.flatMap { CityStore.shared.building($0)?.name }, displayTitle] as [String?]).compactMap { $0 }.joined(separator: " · ")
     }
 
+    /// The last kit read for each folder and account; listing it takes `claude` seconds, so a floor starts from this and refreshes behind it.
+    private static var kitCache: [String: Kit] = [:]
+
+    static func cachedKit(for workingDirectory: URL, configDirectory: URL?) -> Kit? {
+        kitCache["\(workingDirectory.path)|\(configDirectory?.path ?? "")"]
+    }
+
+    static func cacheKit(_ kit: Kit, for workingDirectory: URL, configDirectory: URL?) {
+        kitCache["\(workingDirectory.path)|\(configDirectory?.path ?? "")"] = kit
+    }
+
     func loadKit() {
         guard let workingDirectory, let load = Self.kitLoader(for: workingDirectory, configDirectory: configDirectory) else { return }
         kitTask?.cancel()
-        isLoadingKit = true
+        let configDirectory = configDirectory
+        if let cached = Self.cachedKit(for: workingDirectory, configDirectory: configDirectory), cached != kit { useKit(cached) }
+        isLoadingKit = kit == nil
         let task = Task { () -> Kit? in
             let loaded = await load()
-            return Task.isCancelled ? nil : loaded
+            guard !Task.isCancelled else { return nil }
+            Self.cacheKit(loaded, for: workingDirectory, configDirectory: configDirectory)
+            return loaded
         }
         kitTask = task
         Task {
             guard let loaded = await task.value else { return }
-            kit = loaded
-            let floor = floorID.flatMap { id in buildingID.flatMap { CityStore.shared.floor(id, in: $0) } }
-            allowedServers = floor?.allowedServers.map(Set.init) ?? Set(loaded.usableServers.map(\.name))
-            allowedSkills = floor?.allowedSkills.map(Set.init) ?? Set(loaded.skills.map(\.name))
-            kitReasons = [:]
             isLoadingKit = false
-            let servers = loaded.usableServers.filter { allowedServers.contains($0.name) }.map(\.name)
-            if screen == .office && !isRunning, builtFor.map({ $0 != (hired.map(\.name), servers, Preferences.shared.isDark) }) ?? true { buildScene() }
+            // A refresh that changes nothing mustn't undo the services and skills hiring just picked.
+            if loaded != kit { useKit(loaded) }
         }
+    }
+
+    private func useKit(_ loaded: Kit) {
+        kit = loaded
+        let floor = floorID.flatMap { id in buildingID.flatMap { CityStore.shared.floor(id, in: $0) } }
+        allowedServers = floor?.allowedServers.map(Set.init) ?? Set(loaded.usableServers.map(\.name))
+        allowedSkills = floor?.allowedSkills.map(Set.init) ?? Set(loaded.skills.map(\.name))
+        kitReasons = [:]
+        let servers = loaded.usableServers.filter { allowedServers.contains($0.name) }.map(\.name)
+        if screen == .office && !isRunning, builtFor.map({ $0 != (hired.map(\.name), servers, Preferences.shared.isDark) }) ?? true { buildScene() }
     }
 
     func toggleServer(_ name: String) {
@@ -413,7 +433,7 @@ final class RunController {
         let request = request
         let kitTask = kitTask
         Task {
-            let kit = await Self.value(of: kitTask, within: .seconds(3)) ?? self.kit
+            let kit = if let kit = self.kit { kit } else { await Self.value(of: kitTask, within: .seconds(3)) }
             let slash = SlashCommand.parse(request, commands: kit?.commands ?? [])
             let brief = slash.map { [$0.command.description, $0.arguments].filter { !$0.isEmpty }.joined(separator: ": ") } ?? request
             var outcome = await HiringDesk.propose(request: brief, catalogue: catalogue, kit: kit)

@@ -8,7 +8,11 @@ final class OfficeScene {
     let root = Entity()
     private(set) var camera: CameraRig
     private var ownsCamera = true
-    var isActive = true
+    var isActive = true {
+        didSet { storeyHit.isEnabled = !isActive }
+    }
+    /// Covers the whole storey so a click anywhere on a floor you're not in enters it; off while you're in it, so rooms and robots take clicks.
+    private let storeyHit = Entity()
     private(set) var focusedRoom: String?
     var updates: EventSubscription?
 
@@ -93,6 +97,11 @@ final class OfficeScene {
         floor.position = [0, -Self.floorThickness / 2, 0]
         root.addChild(floor)
         buildWalls(width: Self.footprint.x, depth: Self.footprint.y)
+        storeyHit.components.set(CollisionComponent(shapes: [.generateBox(width: Self.footprint.x, height: Self.wallHeight, depth: Self.footprint.y)
+            .offsetBy(translation: [0, Self.wallHeight / 2, 0])]))
+        storeyHit.components.set(InputTargetComponent())
+        storeyHit.isEnabled = !isActive
+        root.addChild(storeyHit)
 
         let ground = min(hired.count, 3)
         let loftSpots = Self.loftLayout(count: hired.count - ground)

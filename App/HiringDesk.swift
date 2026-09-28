@@ -53,24 +53,7 @@ enum HiringDesk {
         guard case .available = model.availability else {
             return .unavailable("The on-device model isn’t available on this Mac (\(model.availability)). Choose departments yourself.", everyone)
         }
-        let departments = catalogue.map { "- \($0.name): \($0.description)" }.joined(separator: "\n")
-        let services = (kit?.usableServers ?? []).map { "- \($0.name)" }.joined(separator: "\n")
-        let skills = (kit?.skills ?? []).map { "- \($0.name): \($0.description.prefix(90))" }.joined(separator: "\n")
-        let session = LanguageModelSession(instructions: """
-        You are the receptionist of an office. You read a job request and decide which departments to hire, \
-        and which services and skills the job needs. Hire the fewest departments that can finish the job, \
-        in the order they should work. A department that only reviews or designs is not needed for a small, \
-        clear task. Examples: for "fix a typo in the README", hire only the department that writes or changes files. \
-        For "research three options and write a recommendation", hire the researching department first, \
-        then the one that writes. Give each reason in your own words; do not repeat the department's description.
-        Departments:
-        \(departments)
-        Services:
-        \(services.isEmpty ? "(none)" : services)
-        Skills:
-        \(skills.isEmpty ? "(none)" : skills)
-        Only use names from these lists.
-        """)
+        let session = await takeSession(for: catalogue)
         do {
             let plan = try await session.respond(to: request, generating: HiringPlan.self).content
             var seen = Set<String>()
@@ -84,16 +67,46 @@ enum HiringDesk {
             }
             let rest = everyone.filter { !seen.contains($0.department.name) }
             let kitPlan = kit.map { kit in
-                KitPlan(
-                    servers: Set(plan.services).intersection(kit.usableServers.map(\.name)),
-                    skills: Set(plan.skills).intersection(kit.skills.map(\.name)),
-                    reasons: [:]
-                )
+                let matched = kit.matching(request)
+                return KitPlan(servers: matched.servers, skills: matched.skills, reasons: [:])
             }
             return .proposed(hired + rest, kitPlan)
         } catch {
             return .unavailable("The on-device model couldn’t make a plan: \(error.localizedDescription). Choose departments yourself.", everyone)
         }
+    }
+
+    @MainActor private static var warm: (key: String, session: LanguageModelSession)?
+
+    /// Loads the model with this building's departments while the request is still being typed.
+    @MainActor static func prewarm(catalogue: [Department]) {
+        guard !catalogue.isEmpty, case .available = SystemLanguageModel.default.availability else { return }
+        let key = instructions(for: catalogue)
+        guard warm?.key != key else { return }
+        let session = LanguageModelSession(instructions: key)
+        session.prewarm()
+        warm = (key, session)
+    }
+
+    @MainActor private static func takeSession(for catalogue: [Department]) -> LanguageModelSession {
+        let key = instructions(for: catalogue)
+        defer { warm = nil }
+        if let warm, warm.key == key { return warm.session }
+        return LanguageModelSession(instructions: key)
+    }
+
+    private static func instructions(for catalogue: [Department]) -> String {
+        """
+        You are the receptionist of an office. You read a job request and decide which departments to hire. \
+        Hire the fewest departments that can finish the job, \
+        in the order they should work. A department that only reviews or designs is not needed for a small, \
+        clear task. Examples: for "fix a typo in the README", hire only the department that writes or changes files. \
+        For "research three options and write a recommendation", hire the researching department first, \
+        then the one that writes. Give each reason in your own words; do not repeat the department's description.
+        Departments:
+        \(catalogue.map { "- \($0.name): \($0.description)" }.joined(separator: "\n"))
+        Only use names from this list.
+        """
     }
 
     /// Hires the preset's team in its order; the model's services and skills still apply, and the team stays editable.

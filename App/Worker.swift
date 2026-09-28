@@ -70,8 +70,17 @@ final class Worker {
         seatOrientation = robot.orientation
         headBase = head?.position.y ?? 0
         baseY = robot.position.y
-        let extents = robot.visualBounds(relativeTo: robot).extents
+        let bounds = robot.visualBounds(relativeTo: robot)
+        let extents = bounds.extents
         halfWidth = max(extents.x, extents.z) / 2
+        if room != "reception" {
+            // A robot away from its desk sits outside its room's tile, so it needs its own hit area to be clickable.
+            let hit = Entity()
+            hit.name = "room:\(room)"
+            hit.components.set(CollisionComponent(shapes: [.generateBox(size: extents).offsetBy(translation: bounds.center)]))
+            hit.components.set(InputTargetComponent())
+            robot.addChild(hit)
+        }
         glow.position = [0, 1.25, 0.9]
         robot.addChild(glow)
         if let anchor = robot.descendant(named: "FaceAnchor") {

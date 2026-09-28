@@ -510,7 +510,11 @@ struct ReceptionComposer: View {
         .task(id: building.path) { branches = await Git.branches(in: building.url) }
         .onChange(of: text) { if text != asked { suggestion = nil } }
         .onChange(of: text.isEmpty) {
-            if !text.isEmpty { scene?.focusLobby(); ReceptionDesk.prewarm(floors: building.floors) } else if suggestion == nil { scene?.leaveLobby() }
+            if !text.isEmpty {
+                scene?.focusLobby()
+                ReceptionDesk.prewarm(floors: building.floors)
+                HiringDesk.prewarm(catalogue: AgentCatalogue.load(workingDirectory: building.url))
+            } else if suggestion == nil { scene?.leaveLobby() }
         }
         .onChange(of: thinking) { gesture() }
         .onChange(of: suggestion) { gesture() }

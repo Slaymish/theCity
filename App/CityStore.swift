@@ -193,6 +193,7 @@ final class CityStore {
         loadingCommands.insert(building.id)
         Task {
             let kit = await load()
+            RunController.cacheKit(kit, for: building.url, configDirectory: Preferences.shared.configDirectory)
             loadingCommands.remove(building.id)
             if !kit.commands.isEmpty { commands[building.id] = kit.commands }
         }

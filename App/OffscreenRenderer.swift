@@ -364,6 +364,24 @@ enum PreviewStage {
                 }
                 return
             }
+            if let request = RunController.launchArgument("-hire-test") {
+                let workspace = URL(fileURLWithPath: RunController.launchArgument("-workspace") ?? FileManager.default.currentDirectoryPath)
+                Task { @MainActor in
+                    let started = Date()
+                    let kit = await RunController.kitLoader(for: workspace, configDirectory: Preferences.shared.configDirectory)?()
+                    let loaded = Date()
+                    let outcome = await HiringDesk.propose(request: request, catalogue: AgentCatalogue.load(workingDirectory: workspace), kit: kit)
+                    let hired = switch outcome {
+                    case .proposed(let candidates, let plan): candidates.filter(\.hired).map { "\($0.department.name) (\($0.reason ?? "-"))" }.joined(separator: ", ")
+                        + " | services \(plan?.servers.sorted() ?? []) | skills \(plan?.skills.sorted() ?? [])"
+                    case .unavailable(let note, _): note
+                    }
+                    print(String(format: "HIRE kit %.1fs, model %.1fs | %d skills, %d servers | %@", loaded.timeIntervalSince(started),
+                                 Date().timeIntervalSince(loaded), kit?.skills.count ?? 0, kit?.usableServers.count ?? 0, hired))
+                    exit(0)
+                }
+                return
+            }
             if arguments.contains("-city") || arguments.contains("-building") || arguments.contains("-title") {
                 try renderCityOrBuilding(to: path, dark: dark, arguments: arguments)
                 exit(0)

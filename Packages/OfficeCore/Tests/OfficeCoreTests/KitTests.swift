@@ -126,3 +126,24 @@ struct KitLoaderLiveTests {
         print("kit: \(kit.skills.count) skills, \(kit.servers.count) servers (\(kit.usableServers.count) connected) in \(ContinuousClock.now - start)")
     }
 }
+
+struct KitMatchTests {
+    let kit = Kit(servers: [McpServer(name: "penpot", status: "connected", source: nil), McpServer(name: "figma", status: "failed", source: nil)],
+                  skills: [CommandInfo(name: "chrome-devtools-mcp:memory-leak-debugging", description: "Diagnoses and resolves memory leaks in JavaScript applications"),
+                           CommandInfo(name: "dataviz", description: "Use whenever you are about to create any chart or graph"),
+                           CommandInfo(name: "readme-media", description: "Create, refresh or polish the README GIFs and app icon")])
+
+    @Test func namesAndDescriptionsPickSkillsAndServers() {
+        #expect(kit.matching("Fix the memory leak in the city scene") == ([], ["chrome-devtools-mcp:memory-leak-debugging"]))
+        #expect(kit.matching("Refresh the README GIFs") == ([], ["readme-media"]))
+        #expect(kit.matching("Tidy the Penpot board") == (["penpot"], []))
+    }
+
+    @Test func oneSharedDescriptionWordIsNotEnough() {
+        #expect(kit.matching("Create a new floor preset") == ([], []))
+    }
+
+    @Test func serversThatAreNotConnectedAreNeverPicked() {
+        #expect(kit.matching("Pull the Figma frame") == ([], []))
+    }
+}

@@ -135,6 +135,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let reel = RunController.launchArgument("-render-reel"), let path = RunController.launchArgument(reel) { ReadmeReel.run(reel, to: path) }
         Attention.shared.setUp()
         CityStore.shared.refreshBadge()
+        if !DataFiles.unreadable.isEmpty, !MainWindow.offscreen {
+            let alert = NSAlert()
+            alert.messageText = "The City couldn’t read some of its saved data"
+            alert.informativeText = "It moved these aside and carried on without them:\n\n" + DataFiles.unreadable.map(\.path).joined(separator: "\n")
+            alert.runModal()
+        }
         if !MainWindow.offscreen {
             DictationStore.shared.start()
             SleepGuard.shared.watch(.shared)

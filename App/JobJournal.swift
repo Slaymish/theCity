@@ -20,26 +20,11 @@ struct JobRecord: Codable, Identifiable, Equatable {
 }
 
 enum JobJournal {
-    static var url: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("The City/jobs.json")
-    }
+    static var url: URL { DataFiles.url("jobs.json") }
 
-    static func load() -> [JobRecord] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return (try? decoder.decode([JobRecord].self, from: data)) ?? []
-    }
+    static func load() -> [JobRecord] { DataFiles.load([JobRecord].self, from: url) ?? [] }
 
-    static func save(_ records: [JobRecord]) {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(Array(records.suffix(200))) else { return }
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: url, options: .atomic)
-    }
+    static func save(_ records: [JobRecord]) { DataFiles.save(Array(records.suffix(200)), to: url) }
 }
 
 /// Running totals for one floor, kept apart from the journal so they survive its 200-record cap.
@@ -75,11 +60,11 @@ struct JobTotals: Codable, Equatable {
                   spendUSD: lhs.spendUSD + rhs.spendUSD, tokens: lhs.tokens + rhs.tokens, duration: lhs.duration + rhs.duration)
     }
 
-    static var url: URL { JobJournal.url.deletingLastPathComponent().appendingPathComponent("totals.json") }
+    static var url: URL { DataFiles.url("totals.json") }
 
     /// The first launch with totals starts them from whatever the journal still holds.
     static func load(seed journal: [JobRecord]) -> [UUID: JobTotals] {
-        if let data = try? Data(contentsOf: url), let totals = try? JSONDecoder().decode([UUID: JobTotals].self, from: data) { return totals }
+        if let totals = DataFiles.load([UUID: JobTotals].self, from: url, decoder: JSONDecoder()) { return totals }
         return journal.reduce(into: [:]) { totals, job in
             guard let floor = job.floorID else { return }
             totals[floor, default: JobTotals()].add(isNew: true, outcome: job.outcome, replacing: nil, costUSD: job.costUSD ?? 0,
@@ -87,11 +72,7 @@ struct JobTotals: Codable, Equatable {
         }
     }
 
-    static func save(_ totals: [UUID: JobTotals]) {
-        guard let data = try? JSONEncoder().encode(totals) else { return }
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: url, options: .atomic)
-    }
+    static func save(_ totals: [UUID: JobTotals]) { DataFiles.save(totals, to: url, encoder: JSONEncoder()) }
 }
 
 /// Jobs on a set of floors: today's from the journal, all-time from the running totals.

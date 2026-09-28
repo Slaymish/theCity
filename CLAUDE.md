@@ -25,7 +25,7 @@ A macOS 26 app (SwiftUI + RealityKit) that shows Claude Code runs as a city of r
 - `-route-test "<request>"` prints Reception's routing decision (on-device, free; add `-receptionist claude` to ask Haiku instead).
 - `-graphics low|medium|high|ultra` forces a quality level, including in offscreen renders.
 - `-parallel-test` spends real money. Ask first.
-- For the live window, use `Tools/Dev/relaunch.sh <args>`. To quit, use `osascript -e 'tell application "TheCity" to quit'`.
+- For the live window, use `Tools/Dev/relaunch.sh <args>`, and `Tools/Dev/relaunch.sh --quit` to quit it. It runs this checkout's dev build on its own data (`build/data`), next to the installed app. Never quit `TheCity` by name, because that also quits the user's city and cancels its jobs, this one included.
 
 ## Layout
 

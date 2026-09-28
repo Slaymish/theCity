@@ -701,7 +701,7 @@ struct CloseFloorConfirmation: ViewModifier {
             Button(running ? "Cancel Job and Close" : "Close Floor", role: .destructive) { close(floor) }
             Button("Keep", role: .cancel) {}
         } message: { _ in
-            Text(running ? "Its current job will be cancelled. Past jobs stay in the building's history." : "The floor and its team are removed from the building. Past jobs stay in the building's history.")
+            Text(running ? "Its current job will be cancelled. Past jobs stay in the building's history." : "The floor and its team are removed from the building, along with its worktree if that has no uncommitted changes. Past jobs stay in the building's history.")
         }
     }
 }

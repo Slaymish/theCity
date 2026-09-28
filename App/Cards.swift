@@ -290,6 +290,26 @@ struct OptionButton: View {
     }
 }
 
+/// Jobs that arrived while the floor was busy, held after one that didn't finish until the user sends them on.
+struct QueuedJobsRow: View {
+    let controller: RunController
+
+    var body: some View {
+        if controller.queueHeld, !controller.queued.isEmpty {
+            let count = controller.queued.count
+            HStack(spacing: 8) {
+                Button("Start \(count) Queued Job\(count == 1 ? "" : "s")", systemImage: "play.fill") { controller.resumeQueue() }
+                    .buttonStyle(PillButtonStyle())
+                    .disabled(controller.readiness != .ready)
+                Button("Discard Queue", systemImage: "trash") { controller.discardQueue() }
+                    .buttonStyle(PillButtonStyle(kind: .secondary))
+            }
+            .disabled(controller.isRunning)
+            .help(controller.queued.map(\.text).joined(separator: "\n"))
+        }
+    }
+}
+
 struct EndCard: View {
     let controller: RunController
     let outcome: RunOutcome
@@ -372,6 +392,7 @@ struct EndCard: View {
                     .buttonStyle(PillButtonStyle())
                     .disabled(controller.readiness != .ready || controller.isRunning)
             }
+            QueuedJobsRow(controller: controller)
             if !controller.jobFiles.isEmpty {
                 Text("Files").eyebrow()
                 ForEach(controller.jobFiles, id: \.self) { path in

@@ -2,7 +2,7 @@ import OfficeCore
 import SwiftUI
 
 /// Where a new job runs: on a branch (in whichever folder has it checked out, or a worktree made for it), or in a fresh worktree Claude makes.
-enum JobPlace: Hashable {
+enum JobPlace: Hashable, Codable {
     case branch(String)
     case newWorktree
 }

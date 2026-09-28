@@ -4,10 +4,10 @@ APP := $(DERIVED)/Build/Products/Debug/TheCity.app
 .PHONY: run build install test project replay clean companion
 
 run: build
-	open $(APP) --args -workspace "$(CURDIR)/SampleWorkspace"
+	Tools/Dev/relaunch.sh -workspace "$(CURDIR)/SampleWorkspace"
 
 replay: build
-	open $(APP) --args -workspace "$(CURDIR)/SampleWorkspace" -replay "$(CURDIR)/fixtures/three-rooms.jsonl"
+	Tools/Dev/relaunch.sh -workspace "$(CURDIR)/SampleWorkspace" -replay "$(CURDIR)/fixtures/three-rooms.jsonl"
 
 build: project
 	xcodebuild -project TheCity.xcodeproj -scheme TheCity -configuration Debug -derivedDataPath $(DERIVED) -quiet build

@@ -40,11 +40,12 @@ public struct RunConfig: Sendable, Equatable {
     public var resumeSessionID: String?
     public var blockedTools: [String]
     public var permissionMode: PermissionMode
-    public var createsWorktree: Bool
+    /// Named so the app picks a fresh one; `claude --worktree` alone has been seen to put two jobs in one tree.
+    public var worktreeName: String?
 
     public init(request: String, workingDirectory: URL, claudeConfigDirectory: URL?, model: String?,
                 maxBudgetUSD: Double?, appendSystemPrompt: String? = nil, agents: String? = nil, resumeSessionID: String? = nil,
-                blockedTools: [String] = [], permissionMode: PermissionMode = .manual, createsWorktree: Bool = false) {
+                blockedTools: [String] = [], permissionMode: PermissionMode = .manual, worktreeName: String? = nil) {
         self.request = request
         self.workingDirectory = workingDirectory
         self.claudeConfigDirectory = claudeConfigDirectory
@@ -55,7 +56,7 @@ public struct RunConfig: Sendable, Equatable {
         self.resumeSessionID = resumeSessionID
         self.blockedTools = blockedTools
         self.permissionMode = permissionMode
-        self.createsWorktree = createsWorktree
+        self.worktreeName = worktreeName
     }
 
     /// `AskUserQuestion` only exists when a host answers `can_use_tool` over stdio; plain `-p` leaves it out.
@@ -68,7 +69,7 @@ public struct RunConfig: Sendable, Equatable {
             "--permission-mode", permissionMode.rawValue,
             "--permission-prompt-tool", "stdio",
         ]
-        if createsWorktree { args.append("--worktree") }
+        if let worktreeName { args += ["--worktree", worktreeName] }
         if let resumeSessionID { args += ["--resume", resumeSessionID] }
         if !blockedTools.isEmpty { args += ["--disallowedTools", blockedTools.joined(separator: ",")] }
         if let model { args += ["--model", model] }
@@ -276,7 +277,7 @@ public final class ClaudeProcess: @unchecked Sendable {
     }
 }
 
-private final class StderrBox: @unchecked Sendable {
+final class StderrBox: @unchecked Sendable {
     var data = Data()
 }
 #endif

@@ -207,6 +207,16 @@ struct OfficeOverlay: View {
         }
         .sheet(isPresented: $controller.showHistory) { HistorySheet(controller: controller) }
         .modifier(CloseFloorConfirmation(floor: $closing, running: controller.isRunning) { _ in onClose?() })
+        .confirmationDialog("\(controller.clash?.holder ?? "Another floor") is working in \(controller.clash?.folder ?? "this folder")",
+                            isPresented: Binding(get: { controller.clash != nil }, set: { _ in }), presenting: controller.clash) { clash in
+            if let base = clash.base { Button("Make a Worktree off \(base)") { controller.answerClash(.worktree) } }
+            Button("Share the Folder Anyway") { controller.answerClash(.share) }
+            Button("Cancel Job", role: .cancel) { controller.cancel() }
+        } message: { clash in
+            Text(clash.base == nil
+                 ? "This follow-up has to resume where its session ran. Sharing means both jobs edit the same files at once."
+                 : "Two jobs in one checkout edit the same files at once. A worktree gives this job its own copy of the branch.")
+        }
         .overlay(alignment: .top) {
             if controller.selectedRoom != nil {
                 Button("Back to floor", systemImage: "chevron.backward") { controller.selectedRoom = nil }
@@ -362,6 +372,7 @@ struct FloorComposer: View {
                 }
             }
             ReadinessRow(controller: controller)
+            QueuedJobsRow(controller: controller)
         }
         .frame(width: 620, alignment: .leading)
         .glass(padding: 16)

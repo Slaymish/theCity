@@ -27,6 +27,7 @@ final class CityStore {
         var branch: String?
         /// A finished job the user hasn't looked at yet, which counts as needing them.
         var unseen: Bool?
+        var queued: [QueuedJob]?
     }
 
     struct Building: Codable, Identifiable, Equatable {
@@ -70,18 +71,11 @@ final class CityStore {
     private(set) var commands: [UUID: [CommandInfo]] = [:]
     private var loadingCommands: Set<UUID> = []
 
-    static var fileURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("The City/city.json")
-    }
+    static var fileURL: URL { DataFiles.url("city.json") }
 
     private init() {
         totals = JobTotals.load(seed: journal)
-        if let data = try? Data(contentsOf: Self.fileURL) {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            buildings = (try? decoder.decode([Building].self, from: data)) ?? []
-        }
+        buildings = DataFiles.load([Building].self, from: Self.fileURL) ?? []
         if buildings.isEmpty, let path = RunController.launchArgument("-workspace") ?? UserDefaults.standard.string(forKey: "workingDirectory") {
             _ = addBuilding(at: URL(fileURLWithPath: path))
         }
@@ -126,9 +120,11 @@ final class CityStore {
 
     func removeBuilding(_ id: UUID) {
         guard let building = building(id), !building.floors.contains(where: { sessions[$0.id]?.isRunning == true }) else { return }
+        let floors = building.floors.map { ($0, sessions[$0.id]) }
         building.floors.forEach { sessions[$0.id]?.kiosk.end(); sessions[$0.id] = nil; FloorHistory.delete($0.id) }
         hiringHeadless[id] = nil
         buildings.removeAll { $0.id == id }
+        floors.forEach { removeWorktree(of: $0.0, session: $0.1) }
         if case .building(id) = route { route = .city }
         save()
         refreshBadge()
@@ -136,14 +132,28 @@ final class CityStore {
 
     func removeFloor(_ id: UUID, in buildingID: UUID) {
         guard let index = buildings.firstIndex(where: { $0.id == buildingID }) else { return }
-        sessions[id]?.cancel()
-        sessions[id]?.kiosk.end()
+        let floor = floor(id, in: buildingID), session = sessions[id]
+        session?.cancel()
+        session?.kiosk.end()
         if route == .floor(building: buildingID, floor: id) { route = .building(buildingID) }
         buildings[index].floors.removeAll { $0.id == id }
         sessions[id] = nil
         FloorHistory.delete(id)
         save()
         refreshBadge()
+        if let floor { removeWorktree(of: floor, session: session) }
+    }
+
+    /// A closed floor's own worktree goes too, unless another floor still works there or git would lose something.
+    private func removeWorktree(of floor: Floor, session: RunController?) {
+        guard let path = floor.jobDirectory, path.contains("/.claude/worktrees/") else { return }
+        let others = buildings.flatMap(\.floors).compactMap(\.jobDirectory)
+        Task {
+            await session?.shutDown()
+            guard let root = await Git.checkout(of: URL(fileURLWithPath: path)),
+                  !others.contains(where: { $0 == root || $0.hasPrefix(root + "/") }) else { return }
+            await Git.removeWorktree(at: root)
+        }
     }
 
     func renameFloor(_ id: UUID, in buildingID: UUID, to name: String) {
@@ -515,8 +525,11 @@ final class CityStore {
         allSessions.first { $0.state.pendingRequests.contains { $0.id == requestID } }
     }
 
+    /// Cancels every job at once, so quitting waits for the slowest rather than for each in turn.
     func shutDown() async {
-        for session in allSessions where session.isRunning { await session.shutDown() }
+        await withTaskGroup(of: Void.self) { group in
+            for session in allSessions where session.isRunning { group.addTask { await session.shutDown() } }
+        }
     }
 
     // MARK: Journal
@@ -558,12 +571,7 @@ final class CityStore {
     // MARK: Persistence
 
     func save() {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(buildings.filter { $0.id != demoID }) else { return }
-        try? FileManager.default.createDirectory(at: Self.fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: Self.fileURL, options: .atomic)
+        DataFiles.save(buildings.filter { $0.id != demoID }, to: Self.fileURL)
     }
 }
 

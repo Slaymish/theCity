@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0
+
+- Settings › iPhone turns on a link to The City for iPhone and shows the QR code that pairs a phone, which can then follow a building, answer questions and permission requests, send Reception a job or stop one.
+- Settings › General › Reception can route requests and hire departments with Claude Haiku on your account instead of Apple Intelligence.
+- Settings › Appearance has a Graphics quality slider from Low to Ultra that sets edge smoothing and a miniature focus effect, and it starts at a level recommended for your Mac.
+- The hiring panel has the account, model, budget and permission menus and shows whether Claude Code is ready, and its button now reads Start job and stays off until it is.
+- The Mac no longer idle-sleeps while any job is running.
+- Fixed Reception sending a job to a floor whose Claude Code was missing, out of date or signed out; it now waits for the check and shows what's wrong under the request.
+
 ## 0.10.1
 
 - Floors do less rendering work each frame, so The City uses less CPU while robots are working.

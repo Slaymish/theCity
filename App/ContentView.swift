@@ -38,20 +38,6 @@ struct ContentView: View {
     }
 }
 
-/// A new floor: describe the job, hire its departments, then its office opens.
-struct DraftFlow: View {
-    @Bindable var controller: RunController
-    let onCancel: () -> Void
-
-    var body: some View {
-        switch controller.screen {
-        case .reception: ReceptionView(controller: controller, onCancel: onCancel)
-        case .hiring: HiringView(controller: controller)
-        case .office: OfficeView(controller: controller)
-        }
-    }
-}
-
 extension Notification.Name {
     static let replayFixture = Notification.Name("replayFixture")
     static let resetView = Notification.Name("resetView")

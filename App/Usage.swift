@@ -46,8 +46,9 @@ final class UsageStore {
         guard !limit.windows.isEmpty else { return }
         let id = Self.key(configDirectory)
         readings[id] = Reading(session: limit.windows["five_hour"], week: limit.windows["seven_day"], asOf: .now)
-        noLimits.remove(id)
-        errors[id] = nil
+        // An observed write re-renders every reader even when nothing changed, and this runs on every rate-limit event.
+        if noLimits.contains(id) { noLimits.remove(id) }
+        if errors[id] != nil { errors[id] = nil }
         if persist, let data = try? JSONEncoder().encode(readings) { UserDefaults.standard.set(data, forKey: key) }
     }
 

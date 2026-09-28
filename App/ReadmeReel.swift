@@ -25,6 +25,7 @@ enum ReadmeReel {
             switch name {
             case "city": try city(dark: dark, fps: fps, to: folder)
             case "office": try office(dark: dark, fps: fps, to: folder)
+            case "showcase": try showcase(dark: dark, fps: fps, to: folder)
             default: throw CocoaError(.featureUnsupported)
             }
             print("reel written to \(directory)")
@@ -281,6 +282,47 @@ enum ReadmeReel {
                        }
                        return try layer(image, layers)
                    })
+    }
+
+    // MARK: Showcase: a slow orbit round the city at the hour `-hour` pins, with no HUD
+
+    private static func showcase(dark: Bool, fps: Double, to folder: URL) throws {
+        let sample = URL(fileURLWithPath: RunController.launchArgument("-workspace") ?? FileManager.default.currentDirectoryPath)
+        var buildings = ["theCity", "api", "web-app", "docs-site", "infra"].enumerated().map { index, name in
+            CityStore.Building(name: name, path: sample.path, style: index * 3 % 8)
+        }
+        buildings[0].floors = [
+            .init(name: "Login", hires: ["research", "build", "review"], budgetUSD: 1),
+            .init(name: "Audit", hires: ["research", "review"], budgetUSD: 2),
+            .init(name: "Docs", hires: ["design", "build"], budgetUSD: 1),
+        ]
+        buildings[1].floors = [.init(name: "Landing page", hires: ["research", "build"], budgetUSD: 1)]
+        _ = PreviewStage.seedStatus(buildings, workspace: sample, dark: dark)
+        let epoch = Date.now
+        RunController.now = { epoch.addingTimeInterval(time) }
+
+        let city = CityScene()
+        city.build(buildings, dark: dark)
+        city.fit(points)
+        city.refresh()
+        let cycle = DayCycle.now
+        var pose = city.camera.overview
+        pose.target = [0, 0.4, 0]
+        pose.distance *= 0.4
+        pose.pitch = 0.42
+        pose.yaw -= 0.24
+        let start = pose
+        city.camera.reset(to: pose, animated: false)
+        let recorder = try FrameRecorder(root: city.root, camera: city.camera.entity, width: Int(size.width), height: Int(size.height),
+                                         environment: ModelLibrary.environment("sky"), exposure: CityScene.skyExposure(cycle),
+                                         background: cycle.sky(dark: dark).cgColor)
+        try record(seconds: 8, fps: fps, cues: [], recorder: recorder, to: folder,
+                   step: { dt in
+                       city.update(dt)
+                       pose.yaw = start.yaw + Float(time) * 0.06
+                       city.camera.reset(to: pose, animated: false)
+                   },
+                   camera: { city.camera.entity })
     }
 }
 

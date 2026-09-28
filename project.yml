@@ -90,6 +90,7 @@ targets:
       - App/JobJournal.swift
       - App/Sound.swift
       - App/Platform.swift
+      - App/GraphicsQuality.swift
       - path: App/Models
         buildPhase: resources
       - path: App/Environment

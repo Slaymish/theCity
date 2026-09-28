@@ -36,6 +36,7 @@ extension UIColor {
     var redComponent: CGFloat { rgba.red }
     var greenComponent: CGFloat { rgba.green }
     var blueComponent: CGFloat { rgba.blue }
+    var alphaComponent: CGFloat { rgba.alpha }
 
     func blended(withFraction fraction: CGFloat, of other: UIColor) -> UIColor? {
         let a = rgba, b = other.rgba

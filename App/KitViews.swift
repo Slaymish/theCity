@@ -182,12 +182,4 @@ struct CommandPicker: View {
         }
         .glass(radius: 12, padding: 6)
     }
-
-    static func matches(for request: String, in commands: [CommandInfo]) -> [CommandInfo] {
-        guard request.hasPrefix("/"), !request.contains(" "), !request.contains("\n") else { return [] }
-        let query = request.dropFirst().lowercased()
-        let starts = commands.filter { $0.name.lowercased().hasPrefix(query) }
-        let contains = commands.filter { !$0.name.lowercased().hasPrefix(query) && $0.name.lowercased().contains(query) }
-        return Array((starts + contains).prefix(6))
-    }
 }

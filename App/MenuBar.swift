@@ -18,6 +18,15 @@ struct MenuBarMenu: View {
         } else {
             let floors = buildings.flatMap(\.floors)
             let vitals = city.vitals(on: floors)
+            let waiting = waitingRequests
+            if !waiting.isEmpty {
+                Section("Waiting for you") {
+                    ForEach(waiting, id: \.id) { item in
+                        requestEntry(item)
+                    }
+                }
+                Divider()
+            }
             Button("Rooms: \(vitals.rooms.spoken)", systemImage: symbol(for: vitals.rooms)) {}.disabled(true)
             Button("Today: \(StatusFormat.jobs(vitals.summary.today)) · \(city.dollars(vitals.summary.todaySpendUSD))", systemImage: "calendar") {}.disabled(true)
             Divider()
@@ -56,6 +65,68 @@ struct MenuBarMenu: View {
             .keyboardShortcut("q")
     }
 
+    private struct WaitingRequest {
+        let building: CityStore.Building
+        let floor: CityStore.Floor
+        let controller: RunController
+        let pending: PendingRequest
+        var id: String { "\(floor.id)/\(pending.id)" }
+    }
+
+    private var waitingRequests: [WaitingRequest] {
+        buildings.flatMap { building in
+            building.floors.flatMap { floor -> [WaitingRequest] in
+                guard let controller = city.sessions[floor.id] else { return [] }
+                return controller.state.pendingRequests.map {
+                    WaitingRequest(building: building, floor: floor, controller: controller, pending: $0)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func requestEntry(_ item: WaitingRequest) -> some View {
+        let controller = item.controller
+        let pending = item.pending
+        let place = buildings.count > 1 ? "\(item.building.name) · \(item.floor.name)" : item.floor.name
+        let who = "\(place) · \(controller.displayName(pending.room))"
+        let open = { MainWindow.shared.show(route: .floor(building: item.building.id, floor: item.floor.id)) }
+        switch pending.request.kind {
+        case .question:
+            Button("\(who) has a question", systemImage: "questionmark.bubble", action: open)
+        case .approval(let summary):
+            Menu {
+                Button(oneLine(summary)) {}.disabled(true)
+                Divider()
+                Button("Allow") { resolve(item) { $0.allow($1) } }
+                if !pending.request.suggestedRules.isEmpty {
+                    Button("Always allow in \(controller.workingDirectory?.lastPathComponent ?? "this folder")") {
+                        resolve(item) { $0.allow($1, always: true) }
+                    }
+                    Button("Saves \(pending.request.suggestedRules.joined(separator: ", ")) to .claude/settings.local.json") {}.disabled(true)
+                }
+                if controller.permissionMode != .auto {
+                    Button("Allow and switch this job to Auto") { resolve(item) { $0.allowAndSwitchToAuto($1) } }
+                }
+                Button("Deny", role: .destructive) { resolve(item) { $0.deny($1) } }
+                Divider()
+                Button("Open in The City", action: open)
+            } label: {
+                Label("\(who) wants to use \(controller.friendly(pending.request.toolName))", systemImage: RoomState.waiting.symbol)
+            }
+        }
+    }
+
+    private func resolve(_ item: WaitingRequest, _ act: (RunController, PendingRequest) -> Void) {
+        guard let live = item.controller.state.pendingRequests.first(where: { $0.id == item.pending.id }) else { return }
+        act(item.controller, live)
+    }
+
+    private func oneLine(_ text: String, limit: Int = 80) -> String {
+        let collapsed = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return collapsed.count > limit ? collapsed.prefix(limit - 1) + "…" : collapsed
+    }
+
     private func symbol(for rooms: RoomCounts) -> String {
         (rooms.waiting > 0 ? RoomState.waiting : rooms.working > 0 ? .working : .idle).symbol
     }
@@ -67,7 +138,7 @@ struct MenuBarMenu: View {
 
     private func floorLine(_ floor: CityStore.Floor) -> (text: String, symbol: String) {
         let session = city.sessions[floor.id]
-        if session?.state.pendingRequests.isEmpty == false { return ("\(floor.name) is waiting for you", "hand.raised.fill") }
+        if city.needsYou(floor) > 0 { return ("\(floor.name) is waiting for you", "hand.raised.fill") }
         if let session, session.isRunning { return ("\(floor.name) · \(session.currentStep ?? "Working")", "bolt.fill") }
         return (floor.name, "square.stack.3d.up")
     }

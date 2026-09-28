@@ -1,4 +1,5 @@
 import AppKit
+import FoundationModels
 import Observation
 import OfficeCore
 import SwiftUI
@@ -32,6 +33,17 @@ final class Preferences {
             switch self {
             case .whenWindowClosed: "When the window is closed"
             case .always: "Always"
+            }
+        }
+    }
+
+    enum Receptionist: String, CaseIterable, Identifiable {
+        case onDevice, claude
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .onDevice: "Apple Intelligence"
+            case .claude: "Claude Haiku"
             }
         }
     }
@@ -78,6 +90,12 @@ final class Preferences {
     var menuBarIcon: MenuBarIcon {
         didSet { defaults.set(menuBarIcon.rawValue, forKey: "menuBarIcon") }
     }
+    var receptionist: Receptionist {
+        didSet { defaults.set(receptionist.rawValue, forKey: "receptionist") }
+    }
+    var graphics: GraphicsQuality? {
+        didSet { defaults.set(graphics?.rawValue, forKey: "graphics") }
+    }
 
     private init() {
         configDirectory = defaults.string(forKey: "configDirectory").map { URL(fileURLWithPath: $0) }
@@ -94,6 +112,8 @@ final class Preferences {
         hiddenAccounts = Set(defaults.stringArray(forKey: "hiddenAccounts") ?? [])
         dictationModel = defaults.string(forKey: "dictationModel")
         menuBarIcon = MenuBarIcon(rawValue: defaults.string(forKey: "menuBarIcon") ?? "") ?? .whenWindowClosed
+        graphics = (defaults.object(forKey: "graphics") as? Int).flatMap(GraphicsQuality.init(rawValue:))
+        receptionist = Receptionist(rawValue: RunController.launchArgument("-receptionist") ?? defaults.string(forKey: "receptionist") ?? "") ?? .onDevice
     }
 
     var isDark: Bool {
@@ -173,6 +193,18 @@ struct SettingsView: View {
         return open.isEmpty ? loadedModels : open
     }
 
+    private var receptionNote: String {
+        switch preferences.receptionist {
+        case .onDevice:
+            guard case .available = SystemLanguageModel.default.availability else {
+                return "Apple Intelligence isn’t available on this Mac, so you’ll choose floors and departments yourself. Switch to Claude Haiku to have Reception choose for you."
+            }
+            return "Reception chooses floors and departments on this Mac, at no cost."
+        case .claude:
+            return "Each request asks Claude Haiku on your \(Preferences.accountName(preferences.configDirectory)) account and counts towards its usage limits."
+        }
+    }
+
     private func importBrand() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -212,6 +244,15 @@ struct SettingsView: View {
                         ForEach(PermissionMode.allCases) { mode in Text(mode.title).tag(mode) }
                     }
                     Text(preferences.permissionMode.detail).font(.caption).foregroundStyle(Color(Palette.muted))
+                }
+                Section {
+                    Picker("Routes and hires with", selection: $preferences.receptionist) {
+                        ForEach(Preferences.Receptionist.allCases) { option in Text(option.title).tag(option) }
+                    }
+                } header: {
+                    Text("Reception")
+                } footer: {
+                    Text(receptionNote).font(.caption).foregroundStyle(Color(Palette.muted))
                 }
                 Section("Claude Code") {
                     LabeledContent("Command-line tool") {
@@ -298,6 +339,23 @@ struct SettingsView: View {
                     .disabled(!brands.current.supportsDark)
                     if !brands.current.supportsDark {
                         Text("\(brands.current.name) has a light theme only.").font(.caption).foregroundStyle(Color(Palette.muted))
+                    }
+                }
+                Section("Graphics") {
+                    let quality = preferences.graphics ?? GraphicsQuality.recommended
+                    Slider(value: Binding(get: { Double(quality.rawValue) },
+                                          set: { preferences.graphics = GraphicsQuality(rawValue: Int($0.rounded())) }),
+                           in: 0...Double(GraphicsQuality.allCases.count - 1), step: 1) {
+                        Text("Quality")
+                    } minimumValueLabel: {
+                        Text(GraphicsQuality.low.title)
+                    } maximumValueLabel: {
+                        Text(GraphicsQuality.ultra.title)
+                    }
+                    Text("\(quality.title)\(preferences.graphics == nil ? " (recommended for this Mac)" : ""): \(quality.detail)")
+                        .font(.caption).foregroundStyle(Color(Palette.muted))
+                    if preferences.graphics != nil {
+                        Button("Use Recommended") { preferences.graphics = nil }
                     }
                 }
             }

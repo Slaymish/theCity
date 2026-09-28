@@ -66,16 +66,20 @@ struct SceneGrade: PostProcessEffect {
 final class Grader: @unchecked Sendable {
     private let brightPass: MTLComputePipelineState
     private let composite: MTLComputePipelineState
+    private let tiltShift: MTLComputePipelineState
     private let blur: MPSImageGaussianBlur
     private var scratch: (bright: MTLTexture, blurred: MTLTexture)?
+    private var focusBlur: (sigma: Float, near: MPSImageGaussianBlur, far: MPSImageGaussianBlur, textures: (MTLTexture, MTLTexture))?
 
     init?(device: any MTLDevice) {
         guard let library = try? device.makeLibrary(source: Self.source, options: nil),
               let bright = library.makeFunction(name: "brightPass").flatMap({ try? device.makeComputePipelineState(function: $0) }),
-              let composite = library.makeFunction(name: "composite").flatMap({ try? device.makeComputePipelineState(function: $0) })
+              let composite = library.makeFunction(name: "composite").flatMap({ try? device.makeComputePipelineState(function: $0) }),
+              let tiltShift = library.makeFunction(name: "tiltShift").flatMap({ try? device.makeComputePipelineState(function: $0) })
         else { return nil }
         brightPass = bright
         self.composite = composite
+        self.tiltShift = tiltShift
         blur = MPSImageGaussianBlur(device: device, sigma: 6)
         blur.edgeMode = .clamp
     }
@@ -97,12 +101,31 @@ final class Grader: @unchecked Sendable {
         dispatch(composite, [source, scratch.blurred, target], &settings, size: (target.width, target.height), into: buffer)
     }
 
-    private func dispatch(_ pipeline: MTLComputePipelineState, _ textures: [any MTLTexture], _ settings: inout SceneGrade.Settings,
-                          size: (Int, Int), into buffer: any MTLCommandBuffer) {
+    func focus(source: any MTLTexture, target: any MTLTexture, into buffer: any MTLCommandBuffer, focus: GraphicsQuality.Focus) {
+        let sigma = focus.sigma * Float(source.height) / 1000
+        if focusBlur?.sigma != sigma || focusBlur?.textures.0.width != source.width || focusBlur?.textures.0.height != source.height {
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: source.width, height: source.height, mipmapped: false)
+            descriptor.usage = [.shaderRead, .shaderWrite]
+            descriptor.storageMode = .private
+            guard let near = source.device.makeTexture(descriptor: descriptor), let far = source.device.makeTexture(descriptor: descriptor) else { return }
+            let nearBlur = MPSImageGaussianBlur(device: source.device, sigma: sigma * 0.4), farBlur = MPSImageGaussianBlur(device: source.device, sigma: sigma)
+            nearBlur.edgeMode = .clamp
+            farBlur.edgeMode = .clamp
+            focusBlur = (sigma, nearBlur, farBlur, (near, far))
+        }
+        guard let focusBlur else { return }
+        focusBlur.near.encode(commandBuffer: buffer, sourceTexture: source, destinationTexture: focusBlur.textures.0)
+        focusBlur.far.encode(commandBuffer: buffer, sourceTexture: source, destinationTexture: focusBlur.textures.1)
+        var focus = focus
+        dispatch(tiltShift, [source, focusBlur.textures.0, focusBlur.textures.1, target], &focus, size: (target.width, target.height), into: buffer)
+    }
+
+    private func dispatch<Uniforms>(_ pipeline: MTLComputePipelineState, _ textures: [any MTLTexture], _ settings: inout Uniforms,
+                                    size: (Int, Int), into buffer: any MTLCommandBuffer) {
         guard let encoder = buffer.makeComputeCommandEncoder() else { return }
         encoder.setComputePipelineState(pipeline)
         for (index, texture) in textures.enumerated() { encoder.setTexture(texture, index: index) }
-        encoder.setBytes(&settings, length: MemoryLayout<SceneGrade.Settings>.stride, index: 0)
+        encoder.setBytes(&settings, length: MemoryLayout<Uniforms>.stride, index: 0)
         let group = MTLSize(width: 16, height: 16, depth: 1)
         encoder.dispatchThreads(MTLSize(width: size.0, height: size.1, depth: 1), threadsPerThreadgroup: group)
         encoder.endEncoding()
@@ -163,6 +186,33 @@ final class Grader: @unchecked Sendable {
             c = select(1.055 * pow(c, 1.0 / 2.4) - 0.055, c * 12.92, c <= 0.0031308);
         }
         target.write(float4(c, alpha), id);
+    }
+
+    struct Focus {
+        float sharp;
+        float falloff;
+        float sigma;
+        uint encodeSRGB;
+    };
+
+    kernel void tiltShift(texture2d<float, access::sample> source [[texture(0)]],
+                          texture2d<float, access::sample> near [[texture(1)]],
+                          texture2d<float, access::sample> far [[texture(2)]],
+                          texture2d<float, access::write> target [[texture(3)]],
+                          constant Focus& f [[buffer(0)]],
+                          uint2 id [[thread_position_in_grid]]) {
+        if (id.x >= target.get_width() || id.y >= target.get_height()) return;
+        float2 uv = (float2(id) + 0.5) / float2(target.get_width(), target.get_height());
+        float t = smoothstep(0.0, 1.0, saturate((abs(uv.y - 0.5) - f.sharp) / max(f.falloff, 1e-4)));
+        float4 base = source.sample(linearClamp, uv);
+        float4 soft = near.sample(linearClamp, uv);
+        float4 c = t < 0.5 ? mix(base, soft, t * 2.0) : mix(soft, far.sample(linearClamp, uv), t * 2.0 - 1.0);
+        float3 rgb = c.rgb;
+        if (f.encodeSRGB != 0) {
+            rgb = clamp(rgb, 0.0, 1.0);
+            rgb = select(1.055 * pow(rgb, 1.0 / 2.4) - 0.055, rgb * 12.92, rgb <= 0.0031308);
+        }
+        target.write(float4(rgb, c.a), id);
     }
     """
 }

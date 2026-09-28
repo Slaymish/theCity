@@ -12,7 +12,11 @@ final class OfficeScene {
     let root = Entity()
     private(set) var camera: CameraRig
     private var ownsCamera = true
-    var isActive = true
+    var isActive = true {
+        didSet { storeyHit.isEnabled = !isActive }
+    }
+    /// Covers the whole storey so a click anywhere on a floor you're not in enters it; off while you're in it, so rooms and robots take clicks.
+    private let storeyHit = Entity()
     private(set) var focusedRoom: String?
     var updates: EventSubscription?
 
@@ -99,10 +103,15 @@ final class OfficeScene {
         outboxItems = []
         focusedRoom = nil
 
-        let floor = themedModel(.generateBox(width: Self.footprint.x, height: Self.floorThickness, depth: Self.footprint.y, cornerRadius: 0.3), Palette.sceneFloor)
+        let floor = themedModel(ModelLibrary.box(width: Self.footprint.x, height: Self.floorThickness, depth: Self.footprint.y, cornerRadius: 0.3), Palette.sceneFloor)
         floor.position = [0, -Self.floorThickness / 2, 0]
         root.addChild(floor)
         buildWalls(width: Self.footprint.x, depth: Self.footprint.y)
+        storeyHit.components.set(CollisionComponent(shapes: [.generateBox(width: Self.footprint.x, height: Self.wallHeight, depth: Self.footprint.y)
+            .offsetBy(translation: [0, Self.wallHeight / 2, 0])]))
+        storeyHit.components.set(InputTargetComponent())
+        storeyHit.isEnabled = !isActive
+        root.addChild(storeyHit)
 
         let ground = min(hired.count, 3)
         let loftSpots = Self.loftLayout(count: hired.count - ground)
@@ -171,29 +180,29 @@ final class OfficeScene {
 
     private func buildLoft() {
         let depth = Self.footprint.y / 2 + Self.loftFront, left = -Self.footprint.x / 2
-        let deck = themedModel(.generateBox(width: Self.footprint.x, height: 0.2, depth: depth, cornerRadius: 0.05), Palette.sceneFloor)
+        let deck = themedModel(ModelLibrary.box(width: Self.footprint.x, height: 0.2, depth: depth, cornerRadius: 0.05), Palette.sceneFloor)
         deck.position = [0, Self.loftHeight - 0.1, -Self.footprint.y / 2 + depth / 2]
         root.addChild(deck)
         let stairWidth: Float = 0.8, steps = 10, tread: Float = 0.4
         for x in [-Self.podSpacingX / 2, Self.podSpacingX / 2, -left - 0.15] {
-            let post = themedModel(.generateBox(width: 0.14, height: Self.loftHeight + 0.9, depth: 0.14), Palette.desk)
+            let post = themedModel(ModelLibrary.box(width: 0.14, height: Self.loftHeight + 0.9, depth: 0.14), Palette.desk)
             post.position = [x, (Self.loftHeight + 0.9) / 2, Self.loftFront - 0.1]
             root.addChild(post)
         }
         let railLength = Self.footprint.x - stairWidth
-        let rail = themedModel(.generateBox(width: railLength, height: 0.08, depth: 0.1, cornerRadius: 0.03), Palette.desk)
+        let rail = themedModel(ModelLibrary.box(width: railLength, height: 0.08, depth: 0.1, cornerRadius: 0.03), Palette.desk)
         rail.position = [left + stairWidth + railLength / 2, Self.loftHeight + 0.9, Self.loftFront - 0.1]
         root.addChild(rail)
         for index in 0..<steps {
             let rise = Self.loftHeight * Float(index + 1) / Float(steps)
-            let step = themedModel(.generateBox(width: stairWidth, height: rise, depth: tread), Palette.desk)
+            let step = themedModel(ModelLibrary.box(width: stairWidth, height: rise, depth: tread), Palette.desk)
             step.position = [left + stairWidth / 2, rise / 2, Self.loftFront + tread * (Float(steps - index) - 0.5)]
             root.addChild(step)
         }
     }
 
     private func addOutbox(at position: SIMD3<Float>) {
-        let tile = themedModel(.generateBox(width: 5.4, height: 0.08, depth: 5.2, cornerRadius: 0.25), Palette.tray)
+        let tile = themedModel(ModelLibrary.box(width: 5.4, height: 0.08, depth: 5.2, cornerRadius: 0.25), Palette.tray)
         tile.position = position + [0, 0.04, 0]
         tile.name = "room:outbox"
         root.addChild(tile)
@@ -202,7 +211,7 @@ final class OfficeScene {
         cabinet.scale = [1.3, 1.3, 1.3]
         root.addChild(cabinet)
         outboxSpot = position + [0, 0.08 + 1.62 * 1.3 + 0.05, -0.6]
-        let tray = ModelEntity(mesh: .generateBox(width: 1.1, height: 0.1, depth: 0.8, cornerRadius: 0.04),
+        let tray = ModelEntity(mesh: ModelLibrary.box(width: 1.1, height: 0.1, depth: 0.8, cornerRadius: 0.04),
                                materials: [Self.material(Palette.tray)])
         tray.position = outboxSpot
         root.addChild(tray)
@@ -218,13 +227,13 @@ final class OfficeScene {
 
     private func addKiosk(at position: SIMD3<Float>) {
         let size = SIMD3<Float>(1.6, 2.2, 0.6)
-        let body = themedModel(.generateBox(width: size.x, height: size.y, depth: size.z, cornerRadius: 0.12), Palette.tray)
+        let body = themedModel(ModelLibrary.box(width: size.x, height: size.y, depth: size.z, cornerRadius: 0.12), Palette.tray)
         body.position = position + [0, size.y / 2, 0]
         body.name = "room:\(Self.kioskRoom)"
         body.components.set(CollisionComponent(shapes: [.generateBox(size: size)]))
         body.components.set(InputTargetComponent())
         root.addChild(body)
-        let screen = ModelEntity(mesh: .generateBox(width: Self.kioskScreen.x, height: Self.kioskScreen.y, depth: Self.kioskScreenDepth, cornerRadius: Self.kioskScreenCorner),
+        let screen = ModelEntity(mesh: ModelLibrary.box(width: Self.kioskScreen.x, height: Self.kioskScreen.y, depth: Self.kioskScreenDepth, cornerRadius: Self.kioskScreenCorner),
                                  materials: [UnlitMaterial(color: Palette.resolved(kioskLive ? Palette.screenOn : Palette.screenOff, dark: dark))])
         screen.position = position + [0, size.y - 0.1 - Self.kioskScreen.y / 2, size.z / 2 + 0.01]
         root.addChild(screen)
@@ -252,17 +261,17 @@ final class OfficeScene {
             let pier: Float = 1.2
             for index in 0..<windows {
                 let start = -length / 2 + Float(index) * bay
-                let pierPiece = make(.generateBox(width: pier, height: height, depth: thickness))
+                let pierPiece = make(ModelLibrary.box(width: pier, height: height, depth: thickness))
                 place(pierPiece, start + pier / 2, height / 2)
                 let open = bay - pier
                 if !(door && index == windows - 1) {
-                    let below = make(.generateBox(width: open, height: sill, depth: thickness))
+                    let below = make(ModelLibrary.box(width: open, height: sill, depth: thickness))
                     place(below, start + pier + open / 2, sill / 2)
                 }
-                let above = make(.generateBox(width: open, height: height - lintel, depth: thickness))
+                let above = make(ModelLibrary.box(width: open, height: height - lintel, depth: thickness))
                 place(above, start + pier + open / 2, lintel + (height - lintel) / 2)
             }
-            let end = make(.generateBox(width: pier, height: height, depth: thickness))
+            let end = make(ModelLibrary.box(width: pier, height: height, depth: thickness))
             place(end, length / 2 - pier / 2, height / 2)
         }
         wall(along: width, windows: max(Int(width / 6), 2), door: false) { piece, x, y in
@@ -641,7 +650,7 @@ final class OfficeScene {
             records.append(card)
         }
         if jobs.count > Self.wallKeeps {
-            let binder = ModelEntity(mesh: .generateBox(width: 0.14, height: 0.42, depth: 0.34, cornerRadius: 0.02),
+            let binder = ModelEntity(mesh: ModelLibrary.box(width: 0.14, height: 0.42, depth: 0.34, cornerRadius: 0.02),
                                      materials: [Self.material(Palette.resolved(Palette.tray, dark: dark))])
             binder.position = [width / 2 + 1.2, 0.29, -depth / 2 + 0.4]
             root.addChild(binder)
@@ -658,7 +667,7 @@ final class OfficeScene {
         let gold = Self.material(Palette.resolved(Palette.folder, dark: dark))
         let trophy = Entity()
         trophy.position = manager.deskTop + [0.3, 0, -0.7]
-        let base = ModelEntity(mesh: .generateBox(width: 0.2, height: 0.06, depth: 0.2, cornerRadius: 0.02),
+        let base = ModelEntity(mesh: ModelLibrary.box(width: 0.2, height: 0.06, depth: 0.2, cornerRadius: 0.02),
                                materials: [Self.material(Palette.resolved(Palette.desk, dark: dark))])
         base.position = [0, 0.03, 0]
         let stem = ModelEntity(mesh: .generateCylinder(height: 0.12, radius: 0.025), materials: [gold])
@@ -789,6 +798,14 @@ final class OfficeScene {
 
     // MARK: Terminals
 
+    /// Swaps the service terminals alone, so a kit arriving after the floor is built doesn't rebuild the whole office.
+    func setServers(_ servers: [McpServer]) {
+        terminals.values.forEach { $0.root.removeFromParent() }
+        terminals = [:]
+        for server in servers { terminal(for: server.name).setLabelVisible(focusedRoom == nil) }
+        applyReceivers()
+    }
+
     private func terminal(for server: String) -> Terminal {
         if let terminal = terminals[server] { return terminal }
         let index = terminals.count
@@ -838,14 +855,11 @@ final class OfficeScene {
     }
 
     static func material(_ colour: NSColor) -> PhysicallyBasedMaterial {
-        var material = PhysicallyBasedMaterial()
-        material.baseColor = .init(tint: colour)
-        material.roughness = 0.6
-        return material
+        ModelLibrary.material(colour, roughness: 0.6)
     }
 
     static func makeFolder() -> ModelEntity {
-        ModelEntity(mesh: .generateBox(width: 0.62, height: 0.09, depth: 0.46, cornerRadius: 0.03), materials: [material(Palette.folder)])
+        ModelEntity(mesh: ModelLibrary.box(width: 0.62, height: 0.09, depth: 0.46, cornerRadius: 0.03), materials: [material(Palette.folder)])
     }
 }
 
@@ -866,12 +880,13 @@ final class Pod {
     private var bookLabel: Entity?
     private let clockFace = ModelEntity()
     private var clockShown = -1
+    private var clockTexture: TextureResource?
 
     init(room: String, colour: NSColor, at position: SIMD3<Float>, variant: Int, dark: Bool) {
         self.room = room
         self.colour = colour
         root.position = position
-        tile = ModelEntity(mesh: .generateBox(width: 5.4, height: 0.08, depth: 5.2, cornerRadius: 0.25),
+        tile = ModelEntity(mesh: ModelLibrary.box(width: 5.4, height: 0.08, depth: 5.2, cornerRadius: 0.25),
                            materials: [OfficeScene.material(Palette.resolved(colour, dark: dark))])
         tile.position = [0, 0.04, 0]
         tile.name = "room:\(room)"
@@ -898,7 +913,7 @@ final class Pod {
         _ = place("chair_C", [-1.35, 0, 0.1], yaw: .pi / 2)
         let robot = place("robot", [-1.2, 0.38, 0.1], yaw: .pi / 2, scale: 1.4)
         worker = Worker(robot: robot, screen: monitor.descendant(named: "Screen"), colour: colour, room: room)
-        let clockBody = ModelEntity(mesh: .generateBox(width: 0.62, height: 0.36, depth: 0.2, cornerRadius: 0.06),
+        let clockBody = ModelEntity(mesh: ModelLibrary.box(width: 0.62, height: 0.36, depth: 0.2, cornerRadius: 0.06),
                                     materials: [OfficeScene.material(Palette.resolved(Palette.walls, dark: dark))])
         clockBody.position = [-0.1, top + 0.18, 0.95]
         clockBody.orientation = simd_quatf(angle: -.pi / 2 + 0.5, axis: [0, 1, 0])
@@ -927,10 +942,10 @@ final class Pod {
         let holder = Entity()
         holder.position = [-2.35, 0, 2.05]
         let wood = OfficeScene.material(Palette.resolved(Palette.desk, dark: dark))
-        let pole = ModelEntity(mesh: .generateBox(width: 0.07, height: 3.3, depth: 0.07, cornerRadius: 0.035), materials: [wood])
+        let pole = ModelEntity(mesh: ModelLibrary.box(width: 0.07, height: 3.3, depth: 0.07, cornerRadius: 0.035), materials: [wood])
         pole.position = [0, 1.65, 0]
         holder.addChild(pole)
-        let arm = ModelEntity(mesh: .generateBox(width: 1.25, height: 0.05, depth: 0.05, cornerRadius: 0.025), materials: [wood])
+        let arm = ModelEntity(mesh: ModelLibrary.box(width: 1.25, height: 0.05, depth: 0.05, cornerRadius: 0.025), materials: [wood])
         arm.position = [0.6, 3.25, 0]
         holder.addChild(arm)
         let base = ModelEntity(mesh: .generateCylinder(height: 0.06, radius: 0.28), materials: [wood])
@@ -961,10 +976,8 @@ final class Pod {
         let text = seconds < 3600 ? String(format: "%d:%02d", seconds / 60, seconds % 60) : String(format: "%dh%02d", seconds / 3600, seconds / 60 % 60)
         let renderer = ImageRenderer(content: ClockFaceView(text: text))
         renderer.scale = 1.5
-        guard let image = renderer.cgImage, let texture = try? TextureResource(image: image, options: .init(semantic: .color)) else { return }
-        var material = UnlitMaterial()
-        material.color = .init(tint: .white, texture: .init(texture))
-        clockFace.model?.materials = [material]
+        guard let image = renderer.cgImage else { return }
+        clockTexture = LivePanel.show(image, on: clockFace, reusing: clockTexture)
     }
 
     func flash(after delay: Duration) {
@@ -991,7 +1004,7 @@ final class Pod {
     func addBook(_ title: String, dark: Bool) {
         guard !bookTitles.contains(title) else { return }
         bookTitles.append(title)
-        let book = ModelEntity(mesh: .generateBox(width: 0.42, height: 0.1, depth: 0.32, cornerRadius: 0.02),
+        let book = ModelEntity(mesh: ModelLibrary.box(width: 0.42, height: 0.1, depth: 0.32, cornerRadius: 0.02),
                                materials: [OfficeScene.material(colour)])
         book.position = [-0.2, 1.08 + Float(books.count) * 0.105, -0.9]
         root.addChild(book)
@@ -1032,11 +1045,11 @@ final class Terminal {
 
     init(name: String, at position: SIMD3<Float>, dark: Bool) {
         root.position = position
-        let body = ModelEntity(mesh: .generateBox(width: 1.3, height: 2.0, depth: 0.6, cornerRadius: 0.12),
+        let body = ModelEntity(mesh: ModelLibrary.box(width: 1.3, height: 2.0, depth: 0.6, cornerRadius: 0.12),
                                materials: [OfficeScene.material(Palette.tray)])
         body.position = [0, 1.0, 0]
         root.addChild(body)
-        screen = ModelEntity(mesh: .generateBox(width: 0.95, height: 0.6, depth: 0.04, cornerRadius: 0.05),
+        screen = ModelEntity(mesh: ModelLibrary.box(width: 0.95, height: 0.6, depth: 0.04, cornerRadius: 0.05),
                              materials: [UnlitMaterial(color: Palette.screenOff)])
         screen.position = [0, 1.45, 0.31]
         root.addChild(screen)

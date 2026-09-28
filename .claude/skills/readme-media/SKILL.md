@@ -10,6 +10,7 @@ The README's GIFs are real scenes played from a script, not screen recordings, s
 
 | Output | Source | Regenerate |
 | --- | --- | --- |
+| `Docs/Media/showcase.gif` | `ReadmeReel.showcase` (no HUD, dusk via the script's `hour` map) | `Tools/Dev/readme-gifs.sh` |
 | `Docs/Media/city.gif` | `ReadmeReel.city` | `Tools/Dev/readme-gifs.sh` |
 | `Docs/Media/office.gif` | `ReadmeReel.office` | `Tools/Dev/readme-gifs.sh` |
 | `App/Assets.xcassets/AppIcon.appiconset/*` | `IconRenderer.render` | see "App icon" below |
@@ -40,7 +41,7 @@ The README's GIFs are real scenes played from a script, not screen recordings, s
 
 ## Budgets
 
-- Keep each GIF under about 8 MB. With the live HUD, the city reel is 6.2 MB at 12 fps and the office reel 3.0 MB at 15 fps (September 2026).
+- Keep each GIF under about 8 MB. With the live HUD, the city reel is 6.2 MB at 12 fps and the office reel 3.0 MB at 15 fps (September 2026). The HUD-free dusk orbit (`showcase`) is 7.2 MB at 8 fps, 720 px and `--lossy=80`, because every pixel moves; 64 colours bands the lamp glows.
 - Camera motion and trees are what cost bytes. To shrink a GIF, try these in order: shorten or hold still shots, lower the fps, raise `--lossy`, reduce width to 720. Dithering adds about 5%. Leaving it off causes slight banding on flat surfaces.
 - One theme (light) is published. A dark variant through `<picture>`/`prefers-color-scheme` would double the weight, so ask first.
 

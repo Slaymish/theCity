@@ -44,6 +44,7 @@ final class Worker {
     private let screen: Entity?
     private let captionPanel = ModelEntity()
     private var captionAspect: Float = 1.45
+    private var captionTexture: TextureResource?
     private(set) var caption = ToolCaption.thinking
     private var time = Double.random(in: 0...10)
     private var armLAngle: Float = 0
@@ -57,7 +58,7 @@ final class Worker {
     private let glow = Entity()
     private let baseY: Float
     private let halfWidth: Float
-    private static var faces: [String: TextureResource] = [:]
+    private static var faces: [String: UnlitMaterial] = [:]
 
     init(robot: Entity, screen: Entity?, colour: NSColor, room: String) {
         root = robot
@@ -74,8 +75,17 @@ final class Worker {
         seatOrientation = robot.orientation
         headBase = head?.position.y ?? 0
         baseY = robot.position.y
-        let extents = robot.visualBounds(relativeTo: robot).extents
+        let bounds = robot.visualBounds(relativeTo: robot)
+        let extents = bounds.extents
         halfWidth = max(extents.x, extents.z) / 2
+        if room != "reception" {
+            // A robot away from its desk sits outside its room's tile, so it needs its own hit area to be clickable.
+            let hit = Entity()
+            hit.name = "room:\(room)"
+            hit.components.set(CollisionComponent(shapes: [.generateBox(size: extents).offsetBy(translation: bounds.center)]))
+            hit.components.set(InputTargetComponent())
+            robot.addChild(hit)
+        }
         glow.position = [0, 1.25, 0.9]
         robot.addChild(glow)
         if let anchor = robot.descendant(named: "FaceAnchor") {
@@ -129,20 +139,20 @@ final class Worker {
         guard expression != shown else { return }
         if shown != nil, expression != .blink, shown != .blink { bobTimer = Self.bobTime }
         shown = expression
-        guard let texture = Self.texture(for: expression) else { return }
-        var material = UnlitMaterial()
-        material.color = .init(tint: .white, texture: .init(texture))
+        guard let material = Self.material(for: expression) else { return }
         face.model?.materials = [material]
     }
 
-    private static func texture(for expression: Expression) -> TextureResource? {
+    private static func material(for expression: Expression) -> UnlitMaterial? {
         let key = BrandStore.shared.current.id + expression.rawValue
         if let cached = faces[key] { return cached }
         let renderer = ImageRenderer(content: FaceView(glyph: expression.rawValue))
         renderer.scale = 2
         guard let image = renderer.cgImage, let texture = try? TextureResource(image: image, options: .init(semantic: .color)) else { return nil }
-        faces[key] = texture
-        return texture
+        var material = UnlitMaterial()
+        material.color = .init(tint: .white, texture: .init(texture))
+        faces[key] = material
+        return material
     }
 
     private static func attachAccessory(for room: String, to robot: Entity) {
@@ -164,13 +174,7 @@ final class Worker {
 
     private func setScreen(on: Bool) {
         guard let screen else { return }
-        var material = PhysicallyBasedMaterial()
-        material.baseColor = .init(tint: on ? Palette.screenOn : Palette.screenOff)
-        material.roughness = 0.2
-        if on {
-            material.emissiveColor = .init(color: Palette.screenOn)
-            material.emissiveIntensity = 1.5
-        }
+        let material = ModelLibrary.material(on ? Palette.screenOn : Palette.screenOff, roughness: 0.2, emissive: on ? 1.5 : 0)
         for part in [screen] + screen.descendants {
             guard var model = part.components[ModelComponent.self] else { continue }
             model.materials = model.materials.map { _ in material }
@@ -195,10 +199,8 @@ final class Worker {
         let view = CaptionView(text: caption, aspect: CGFloat(captionAspect))
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
-        guard let image = renderer.cgImage, let texture = try? TextureResource(image: image, options: .init(semantic: .color)) else { return }
-        var material = UnlitMaterial()
-        material.color = .init(tint: .white, texture: .init(texture))
-        captionPanel.model?.materials = [material]
+        guard let image = renderer.cgImage else { return }
+        captionTexture = LivePanel.show(image, on: captionPanel, reusing: captionTexture)
     }
 
     func resetClock() { workedFor = 0 }
@@ -258,8 +260,8 @@ final class Worker {
         let standing = walking || root.position.y < baseY - 0.01
         if !walking { root.position.y = (standing ? standingHeight : baseY) + (still ? 0 : sin(t * 2.2) * 0.012) }
         let stride: Float = walking && !still ? sin(t * 9) * 0.5 : 0
-        legL?.orientation = simd_quatf(angle: stride, axis: [1, 0, 0])
-        legR?.orientation = simd_quatf(angle: -stride, axis: [1, 0, 0])
+        Self.bend(legL, stride)
+        Self.bend(legR, -stride)
         if mood == .done && time > doneUntil { setMood(.idle) }
 
         var (targetL, targetR, targetPitch): (Float, Float, Float) = switch mood {
@@ -278,7 +280,8 @@ final class Worker {
         bobTimer = max(bobTimer - dt, 0)
         hopTimer = max(hopTimer - dt, 0)
         if !still {
-            head?.position.y = headBase - Float(sin(.pi * bobTimer / Self.bobTime)) * 0.03
+            let bob = headBase - Float(sin(.pi * bobTimer / Self.bobTime)) * 0.03
+            if let head, head.position.y != bob { head.position.y = bob }
             if hopTimer > 0, !walking { root.position.y += Float(sin(.pi * (1 - hopTimer / Self.hopTime))) * 0.25 }
         }
         let blend = Float(1 - exp(-dt * 10))
@@ -287,18 +290,28 @@ final class Worker {
         elbowLAngle += (targetElbowL - elbowLAngle) * blend
         elbowRAngle += (targetElbowR - elbowRAngle) * blend
         headPitch += (targetPitch - headPitch) * blend
-        armL?.orientation = simd_quatf(angle: armLAngle, axis: [1, 0, 0])
-        armR?.orientation = simd_quatf(angle: armRAngle, axis: [1, 0, 0])
-        elbowL?.orientation = simd_quatf(angle: elbowLAngle, axis: [1, 0, 0])
-        elbowR?.orientation = simd_quatf(angle: elbowRAngle, axis: [1, 0, 0])
+        Self.bend(armL, armLAngle)
+        Self.bend(armR, armRAngle)
+        Self.bend(elbowL, elbowLAngle)
+        Self.bend(elbowR, elbowRAngle)
         let turn: Float = mood == .idle && !still ? sin(t * 0.3) * 0.35 : 0
-        head?.orientation = simd_quatf(angle: headPitch, axis: [1, 0, 0]) * simd_quatf(angle: turn, axis: [0, 1, 0])
+        Self.pose(head, simd_quatf(angle: headPitch, axis: [1, 0, 0]) * simd_quatf(angle: turn, axis: [0, 1, 0]))
 
         if mood == .idle && !still {
             nextBlink -= dt
             show(nextBlink < 0.14 && nextBlink > 0 ? .blink : .idle)
             if nextBlink <= 0 { nextBlink = Double.random(in: 2.5...6) }
         }
+    }
+
+    private static func bend(_ joint: Entity?, _ angle: Float) {
+        pose(joint, simd_quatf(angle: angle, axis: [1, 0, 0]))
+    }
+
+    /// Joints mostly hold still between moods, and every robot on every storey runs this each frame.
+    private static func pose(_ joint: Entity?, _ rotation: simd_quatf) {
+        guard let joint, joint.orientation != rotation else { return }
+        joint.orientation = rotation
     }
 }
 

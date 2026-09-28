@@ -22,6 +22,7 @@ struct TowerPlan: Equatable {
         var id: UUID
         var name: String
         var lastOutcome: String?
+        var unseen = false
     }
 
     var id: UUID
@@ -158,7 +159,7 @@ final class BuildingScene {
         }
         applyDaylight()
         let height = Float(floors + 1) * Self.storeyHeight
-        let roof = ModelEntity(mesh: .generateBox(width: OfficeScene.footprint.x + 0.8, height: Self.roofThickness, depth: OfficeScene.footprint.y + 0.8, cornerRadius: 0.2),
+        let roof = ModelEntity(mesh: ModelLibrary.box(width: OfficeScene.footprint.x + 0.8, height: Self.roofThickness, depth: OfficeScene.footprint.y + 0.8, cornerRadius: 0.2),
                                materials: [OfficeScene.material(Palette.resolved(Palette.walls, dark: dark))])
         roof.position = [0, roofTop - Self.roofThickness / 2, 0]
         roof.isEnabled = floors > 0
@@ -184,7 +185,7 @@ final class BuildingScene {
             return entity
         }
         var parts: [Entity] = []
-        let floor = model(.generateBox(width: width, height: OfficeScene.floorThickness, depth: depth, cornerRadius: 0.2), Palette.walls)
+        let floor = model(ModelLibrary.box(width: width, height: OfficeScene.floorThickness, depth: depth, cornerRadius: 0.2), Palette.walls)
         floor.position = [0, -OfficeScene.floorThickness / 2, 0]
         parts.append(floor)
         parts += OfficeScene.walls(width: width, depth: depth, doorway: true) { model($0, Palette.walls) } as [Entity]
@@ -198,15 +199,15 @@ final class BuildingScene {
 
         let shaft = SIMD3<Float>(width / 2 - 2.6, 0, -depth / 2 + 0.8)
         liftSpot = shaft
-        let core = model(.generateBox(width: 3.6, height: OfficeScene.wallHeight, depth: 1.6), Palette.walls)
+        let core = model(ModelLibrary.box(width: 3.6, height: OfficeScene.wallHeight, depth: 1.6), Palette.walls)
         core.position = shaft + [0, OfficeScene.wallHeight / 2, 0]
         parts.append(core)
         for side: Float in [-1, 1] {
-            let leaf = model(.generateBox(width: 0.88, height: 3, depth: 0.06, cornerRadius: 0.02), Palette.tray)
+            let leaf = model(ModelLibrary.box(width: 0.88, height: 3, depth: 0.06, cornerRadius: 0.02), Palette.tray)
             leaf.position = shaft + [side * 0.46, 1.5, 0.82]
             parts.append(leaf)
         }
-        let panel = model(.generateBox(width: 0.34, height: 0.3 + Float(max(floors, 1)) * 0.16, depth: 0.05, cornerRadius: 0.04), Palette.robot)
+        let panel = model(ModelLibrary.box(width: 0.34, height: 0.3 + Float(max(floors, 1)) * 0.16, depth: 0.05, cornerRadius: 0.04), Palette.robot)
         panel.position = shaft + [1.3, 1.5, 0.82]
         parts.append(panel)
         liftButtons = []
@@ -249,25 +250,25 @@ final class BuildingScene {
             let windows = max(Int(length / 6), 2), bay = length / Float(windows)
             for index in 0..<windows where !(doorway && !back && index == windows - 1) {
                 let open = bay - pier, along = -length / 2 + Float(index) * bay + pier + open / 2
-                let pane: MeshResource = back ? .generateBox(width: open, height: lintel - sill, depth: 0.05) : .generateBox(width: 0.05, height: lintel - sill, depth: open)
-                let bar: MeshResource = back ? .generateBox(width: 0.06, height: lintel - sill, depth: 0.1) : .generateBox(width: 0.1, height: lintel - sill, depth: 0.06)
+                let pane: MeshResource = back ? ModelLibrary.box(width: open, height: lintel - sill, depth: 0.05) : ModelLibrary.box(width: 0.05, height: lintel - sill, depth: open)
+                let bar: MeshResource = back ? ModelLibrary.box(width: 0.06, height: lintel - sill, depth: 0.1) : ModelLibrary.box(width: 0.1, height: lintel - sill, depth: 0.06)
                 let centre: SIMD3<Float> = back ? [along, (sill + lintel) / 2, -depth / 2 - wall / 2] : [-width / 2 - wall / 2, (sill + lintel) / 2, along]
                 add(pane, glass, centre)
                 add(bar, frame, centre)
             }
-            let run: MeshResource = back ? .generateBox(width: length, height: 0.14, depth: 0.04) : .generateBox(width: 0.04, height: 0.14, depth: length)
+            let run: MeshResource = back ? ModelLibrary.box(width: length, height: 0.14, depth: 0.04) : ModelLibrary.box(width: 0.04, height: 0.14, depth: length)
             add(run, skirting, back ? [0, 0.07, -depth / 2 + 0.02] : [-width / 2 + 0.02, 0.07, 0])
         }
         let edge: Float = 0.12
-        add(.generateBox(width: width + edge * 2, height: OfficeScene.floorThickness + 0.04, depth: edge), frame, [0, -OfficeScene.floorThickness / 2, depth / 2 + edge / 2])
-        add(.generateBox(width: edge, height: OfficeScene.floorThickness + 0.04, depth: depth + edge), frame, [width / 2 + edge / 2, -OfficeScene.floorThickness / 2, edge / 2])
+        add(ModelLibrary.box(width: width + edge * 2, height: OfficeScene.floorThickness + 0.04, depth: edge), frame, [0, -OfficeScene.floorThickness / 2, depth / 2 + edge / 2])
+        add(ModelLibrary.box(width: edge, height: OfficeScene.floorThickness + 0.04, depth: depth + edge), frame, [width / 2 + edge / 2, -OfficeScene.floorThickness / 2, edge / 2])
         var light = OfficeScene.material(Palette.resolved(Palette.lamp, dark: dark))
         light.emissiveColor = .init(color: Palette.resolved(Palette.lamp, dark: dark))
         light.emissiveIntensity = 1
         if level > 0 {
             for x in [-width / 3, 0, width / 3] {
                 for z in [-depth / 4, depth / 4] {
-                    add(.generateBox(width: 2, height: 0.05, depth: 0.5, cornerRadius: 0.02), light, [x, -OfficeScene.floorThickness - 0.03, z])
+                    add(ModelLibrary.box(width: 2, height: 0.05, depth: 0.5, cornerRadius: 0.02), light, [x, -OfficeScene.floorThickness - 0.03, z])
                 }
             }
         }
@@ -435,14 +436,14 @@ final class BuildingScene {
         let width = footprint.x, depth = footprint.y, height = Self.storeyHeight - 1
         for x in [-width / 2, width / 2] {
             for z in [-depth / 2, depth / 2] {
-                let pole = ModelEntity(mesh: .generateBox(width: 0.2, height: height, depth: 0.2), materials: [wood])
+                let pole = ModelEntity(mesh: ModelLibrary.box(width: 0.2, height: height, depth: 0.2), materials: [wood])
                 pole.position = [x, height / 2, z]
                 frame.addChild(pole)
             }
         }
         for level in [height * 0.45, height] {
             for (w, d, x, z) in [(width, Float(0.25), Float(0), -depth / 2), (width, 0.25, 0, depth / 2), (0.25, depth, -width / 2, 0), (0.25, depth, width / 2, 0)] {
-                let plank = ModelEntity(mesh: .generateBox(width: w, height: 0.15, depth: d), materials: [wood])
+                let plank = ModelEntity(mesh: ModelLibrary.box(width: w, height: 0.15, depth: d), materials: [wood])
                 plank.position = [x, level, z]
                 frame.addChild(plank)
             }
@@ -520,7 +521,7 @@ final class BuildingScene {
         for storey in storeys {
             guard let floor = building.floors.first(where: { $0.id == storey.id }) else { continue }
             let session = latestStorey(storey.id) ?? sessions[storey.id]
-            let waiting = session?.waitingCount ?? 0
+            let waiting = (session?.waitingCount ?? 0) + (floor.unseen ? 1 : 0)
             let (symbol, status): (String, String) =
                 waiting > 0 ? ("hand.raised.fill", "Needs you") :
                 session?.isRunning == true ? ("bolt.fill", "Working") :

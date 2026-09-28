@@ -46,8 +46,11 @@ enum Horizon {
 
     /// Centres the haze on the eye, starting `start` away from it.
     static func place(_ haze: Entity, eye: SIMD3<Float>, ground: Float, start: Float) {
-        haze.position = [eye.x, ground - 0.05 * start, eye.z]
-        haze.scale = SIMD3(repeating: start)
+        let position: SIMD3<Float> = [eye.x, ground - 0.05 * start, eye.z], scale = SIMD3<Float>(repeating: start)
+        // Runs every frame, so leave the shells alone while the eye is still.
+        guard haze.position != position || haze.scale != scale else { return }
+        haze.position = position
+        haze.scale = scale
     }
 
     private static func wall() -> MeshResource {

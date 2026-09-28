@@ -11,8 +11,12 @@ import SwiftUI
 @MainActor
 enum Billboard {
     static let pixelsPerMetre: Float = 105
+    private static var rendered: [String: (mesh: MeshResource, material: UnlitMaterial)] = [:]
 
     static func make<Content: View>(_ view: Content, dark: Bool, faceCamera: Bool = true) -> ModelEntity? {
+        // Bubbles repeat the same few words all job long, and rendering one is the slow part.
+        let key = (view as? BillboardKeyed).map { "\(BrandStore.shared.selectedID)|\(dark)|\(faceCamera)|\($0.billboardKey(dark: dark))" }
+        if let key, let cached = rendered[key] { return plane(cached.mesh, cached.material, faceCamera: faceCamera) }
         let renderer = ImageRenderer(content: view.environment(\.colorScheme, dark ? .dark : .light))
         renderer.scale = 3
         guard let image = renderer.cgImage,
@@ -26,9 +30,46 @@ enum Billboard {
             // Walls and desks otherwise slice through labels that sit near geometry.
             material.readsDepth = false
         }
-        let plane = ModelEntity(mesh: .generatePlane(width: width, height: height), materials: [material])
+        let mesh = MeshResource.generatePlane(width: width, height: height)
+        if let key {
+            if rendered.count > 400 { rendered.removeAll() }
+            rendered[key] = (mesh, material)
+        }
+        return plane(mesh, material, faceCamera: faceCamera)
+    }
+
+    private static func plane(_ mesh: MeshResource, _ material: UnlitMaterial, faceCamera: Bool) -> ModelEntity {
+        let plane = ModelEntity(mesh: mesh, materials: [material])
         if faceCamera { plane.components.set(BillboardComponent()) }
         return plane
+    }
+}
+
+/// A sign whose picture is fully described by its key, so identical signs share one texture.
+@MainActor
+protocol BillboardKeyed {
+    func billboardKey(dark: Bool) -> String
+}
+
+extension NSColor {
+    /// The colour as drawn in the given appearance, for cache keys.
+    func key(dark: Bool) -> String {
+        let rgb = Palette.resolved(self, dark: dark)
+        return "\(rgb.redComponent),\(rgb.greenComponent),\(rgb.blueComponent),\(rgb.alphaComponent)"
+    }
+}
+
+/// A panel whose picture changes often, such as a desk clock or a monitor's caption.
+@MainActor
+enum LivePanel {
+    /// Refills the panel's texture in place, since swapping in a new material every tick is far slower.
+    static func show(_ image: CGImage, on panel: ModelEntity, reusing texture: TextureResource?) -> TextureResource? {
+        if let texture, (try? texture.replace(withImage: image, options: .init(semantic: .color))) != nil { return texture }
+        guard let texture = try? TextureResource(image: image, options: .init(semantic: .color)) else { return nil }
+        var material = UnlitMaterial()
+        material.color = .init(tint: .white, texture: .init(texture))
+        panel.model?.materials = [material]
+        return texture
     }
 }
 
@@ -56,10 +97,12 @@ struct FramedJobView: View {
     }
 }
 
-struct BannerView: View {
+struct BannerView: View, BillboardKeyed {
     let symbol: String
     let title: String
     let colour: NSColor
+
+    func billboardKey(dark: Bool) -> String { "banner|\(symbol)|\(title)|\(colour.key(dark: dark))" }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -105,11 +148,15 @@ struct ClockFaceView: View {
     }
 }
 
-struct BubbleView: View {
+struct BubbleView: View, BillboardKeyed {
     let symbol: String
     let text: String
     let colour: NSColor
     var rooms: RoomCounts?
+
+    func billboardKey(dark: Bool) -> String {
+        "bubble|\(symbol)|\(text)|\(colour.key(dark: dark))|\(rooms.map { "\($0.waiting),\($0.working)" } ?? "-")"
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -144,9 +191,11 @@ struct BubbleView: View {
 }
 
 /// The rooftop sign naming the project, with its folder underneath.
-struct ProjectBillboardView: View {
+struct ProjectBillboardView: View, BillboardKeyed {
     let title: String
     let folder: String
+
+    func billboardKey(dark: Bool) -> String { "project|\(title)|\(folder)" }
 
     var body: some View {
         VStack(spacing: 6) {

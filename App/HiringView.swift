@@ -21,7 +21,7 @@ struct HiringView: View {
             HStack(spacing: 10) {
                 if controller.isHiring {
                     ProgressView().controlSize(.small)
-                    Text(controller.hiringIsSlow ? "Still reading. You can pick departments yourself." : "The receptionist is reading your request on this Mac…")
+                    Text(controller.hiringIsSlow ? "Still reading. You can pick departments yourself." : controller.receptionNote)
                         .font(Typography.caption)
                         .foregroundStyle(Color(Palette.muted))
                 } else {
@@ -56,20 +56,37 @@ struct HiringView: View {
             }
             .frame(maxHeight: onBack == nil ? 440 : 300)
             .disabled(controller.isHiring && !controller.hiringIsSlow)
+            HStack(spacing: 8) {
+                AccountMenu(controller: controller)
+                ModelMenu(controller: controller)
+                BudgetMenu(controller: controller)
+                PermissionModeMenu(controller: controller)
+            }
             HStack {
                 Button("Back") { if let onBack { onBack() } else { controller.backToReception() } }
                     .buttonStyle(PillButtonStyle(kind: .secondary))
-                AccountMenu(controller: controller)
                 Spacer()
                 Text(summary).font(Typography.caption).foregroundStyle(Color(Palette.muted))
-                Button("Open the office") { controller.openOffice() }
+                Button("Start job") { controller.openOffice() }
                     .buttonStyle(PillButtonStyle())
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(controller.isHiring || controller.request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!canStart)
+                    .help("Opens the office and starts the job with these settings")
             }
+            ReadinessRow(controller: controller)
         }
         .frame(maxWidth: 640)
         .padding(onBack == nil ? 32 : 0)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard controller.readiness != .ready || controller.limitNotice != nil else { return }
+            controller.checkReadiness()
+            controller.clearLimitNoticeIfExpired()
+        }
+    }
+
+    private var canStart: Bool {
+        !controller.isHiring && controller.readiness == .ready
+            && !controller.request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var summary: String {

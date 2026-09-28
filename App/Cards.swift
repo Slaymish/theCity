@@ -382,7 +382,8 @@ struct EndCard: View {
                 PromptEditor(address: [controller.workingDirectory?.lastPathComponent ?? "Project", "Follow-up on this job"],
                              placeholder: "Ask for a change or a next step…",
                              directory: controller.workingDirectory, text: $followUp,
-                             canSend: !followUp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, send: send) { withImages in
+                             canSend: !followUp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                             commands: controller.kit?.commands ?? [], send: send) { withImages in
                     Button("Send", action: withImages(send))
                         .buttonStyle(PillButtonStyle())
                         .disabled(followUp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

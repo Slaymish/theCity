@@ -10,7 +10,7 @@ enum FloorNamer {
         Reply with only a label of two to four words, in title case, that captures what the task is about, \
         e.g. "Login Page Fixes" or "Quarterly Slide Deck". No quotes, no punctuation at the end.
         """
-        return await ask(String(request.prefix(2000)), system: system, configDirectory: configDirectory)
+        return await Haiku.ask(String(request.prefix(2000)), system: system, configDirectory: configDirectory)
             .flatMap { usable($0, existing: existing) }
     }
 
@@ -27,27 +27,7 @@ enum FloorNamer {
             return "\(file):\n\(text.prefix(1200))"
         }
         let prompt = (["Folder name: \(folder.lastPathComponent)"] + context).joined(separator: "\n\n")
-        return await ask(prompt, system: system, configDirectory: configDirectory).flatMap { usable($0, existing: []) }
-    }
-
-    private static func ask(_ prompt: String, system: String, configDirectory: URL?) async -> String? {
-        let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
-        guard let executable = ClaudeEnvironment.locateCLI(environment: environment) else { return nil }
-        let arguments = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--model", "haiku",
-                         "--no-session-persistence", "--system-prompt", system, "--tools", "", "--strict-mcp-config",
-                         "--mcp-config", #"{"mcpServers":{}}"#, "--disable-slash-commands", "--setting-sources", ""]
-        guard let process = try? ClaudeProcess(executable: executable, arguments: arguments, environment: environment,
-                                               workingDirectory: FileManager.default.temporaryDirectory) else { return nil }
-        let timeout = Task {
-            try? await Task.sleep(for: .seconds(30))
-            process.cancel()
-        }
-        defer { timeout.cancel() }
-        var text: String?
-        for await output in process.output {
-            if case .line(let line) = output, case .event(.result(let result)) = line.parsed, !result.isError { text = result.text }
-        }
-        return text
+        return await Haiku.ask(prompt, system: system, configDirectory: configDirectory).flatMap { usable($0, existing: []) }
     }
 
     private static func usable(_ raw: String, existing: [String]) -> String? {

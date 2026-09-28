@@ -154,10 +154,16 @@ final class CameraRig {
             apply()
             return
         }
+        guard current != goal else { return }
         current.target = Self.damp(current.target, goal.target, &velocity.target, smoothTime, dt)
         current.yaw = Self.damp(current.yaw, goal.yaw, &velocity.yaw, smoothTime, dt)
         current.pitch = Self.damp(current.pitch, goal.pitch, &velocity.pitch, smoothTime, dt)
         current.distance = Self.damp(current.distance, goal.distance, &velocity.distance, smoothTime, dt)
+        // The springs only approach the goal, so snap once the gap is far below a pixel and stop moving the camera every frame.
+        if Self.span(from: current, to: goal) < 0.00005, simd_length(velocity.target) + abs(velocity.yaw) + abs(velocity.pitch) + abs(velocity.distance) < 0.0005 {
+            current = goal
+            velocity = Pose(target: .zero, yaw: 0, pitch: 0, distance: 0)
+        }
         apply()
     }
 

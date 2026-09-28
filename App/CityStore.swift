@@ -23,6 +23,10 @@ final class CityStore {
         var configDirectory: String?
         var presetID: String?
         var purpose: String?
+        var jobDirectory: String?
+        var branch: String?
+        /// A finished job the user hasn't looked at yet, which counts as needing them.
+        var unseen: Bool?
     }
 
     struct Building: Codable, Identifiable, Equatable {
@@ -49,7 +53,10 @@ final class CityStore {
 
     private(set) var buildings: [Building] = []
     var route: Route = .welcome {
-        didSet { endDemoIfLeft() }
+        didSet {
+            endDemoIfLeft()
+            markSeen()
+        }
     }
     private(set) var demoID: UUID?
     private var demoEntered = false
@@ -60,6 +67,8 @@ final class CityStore {
     private(set) var hiringHeadless: [UUID: RunController] = [:]
     private(set) var journal: [JobRecord] = JobJournal.load()
     private(set) var totals: [UUID: JobTotals] = [:]
+    private(set) var commands: [UUID: [CommandInfo]] = [:]
+    private var loadingCommands: Set<UUID> = []
 
     static var fileURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -79,6 +88,9 @@ final class CityStore {
         buildings.map(\.id).forEach(nameProject)
         route = buildings.isEmpty ? .welcome : .city
         if ProcessInfo.processInfo.arguments.contains("-show-building"), let first = buildings.first { route = .building(first.id) }
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { CityStore.shared.markSeen() }
+        }
     }
 
     // MARK: Buildings and floors
@@ -119,6 +131,7 @@ final class CityStore {
         buildings.removeAll { $0.id == id }
         if case .building(id) = route { route = .city }
         save()
+        refreshBadge()
     }
 
     func removeFloor(_ id: UUID, in buildingID: UUID) {
@@ -130,6 +143,7 @@ final class CityStore {
         sessions[id] = nil
         FloorHistory.delete(id)
         save()
+        refreshBadge()
     }
 
     func renameFloor(_ id: UUID, in buildingID: UUID, to name: String) {
@@ -173,6 +187,18 @@ final class CityStore {
         return session
     }
 
+    func loadCommands(for building: Building) {
+        guard commands[building.id] == nil, !loadingCommands.contains(building.id),
+              let load = RunController.kitLoader(for: building.url, configDirectory: Preferences.shared.configDirectory) else { return }
+        loadingCommands.insert(building.id)
+        Task {
+            let kit = await load()
+            RunController.cacheKit(kit, for: building.url, configDirectory: Preferences.shared.configDirectory)
+            loadingCommands.remove(building.id)
+            if !kit.commands.isEmpty { commands[building.id] = kit.commands }
+        }
+    }
+
     var currentBuildingID: UUID? {
         switch route {
         case .building(let id), .floor(let id, _), .newFloor(let id): id
@@ -180,10 +206,11 @@ final class CityStore {
         }
     }
 
-    func startNewFloor(in buildingID: UUID, request: String = "", name: String? = nil, preset: FloorPreset? = nil) {
+    func startNewFloor(in buildingID: UUID, request: String = "", name: String? = nil, preset: FloorPreset? = nil, place: JobPlace? = nil) {
         guard let building = building(buildingID) else { return }
         let session = RunController(building: building, floor: nil)
         session.pendingFloorName = name
+        session.pendingPlace = place
         session.pendingPreset = preset
         draft = session
         route = .newFloor(buildingID)
@@ -246,15 +273,15 @@ final class CityStore {
     }
 
     /// Reception hands a request to an existing floor's team, as a fresh job or as a follow-up on its last one.
-    func send(_ request: String, toFloor floorID: UUID, in buildingID: UUID, continuing: Bool = false, navigate: Bool = true) {
+    func send(_ request: String, toFloor floorID: UUID, in buildingID: UUID, continuing: Bool = false, navigate: Bool = true, place: JobPlace? = nil) {
         guard let session = session(for: floorID, in: buildingID) else { return }
         if navigate { route = .floor(building: buildingID, floor: floorID) }
         if session.isRunning {
-            session.queue(request, continuing: continuing)
+            session.queue(request, continuing: continuing, place: place)
         } else if continuing {
             session.followUp(request)
         } else {
-            session.newJobOnFloor(request)
+            session.newJobOnFloor(request, place: place)
         }
     }
 
@@ -268,7 +295,8 @@ final class CityStore {
         }
         routing.insert(buildingID)
         Task {
-            let suggestion = await ReceptionDesk.route(request: request, floors: building.floors)
+            let topic = ReceptionDesk.topic(of: request, commands: commands[buildingID] ?? [])
+            let suggestion = await ReceptionDesk.route(request: topic, floors: building.floors)
             routing.remove(buildingID)
             if let floorID = suggestion.floorID, floor(floorID, in: buildingID) != nil {
                 send(request, toFloor: floorID, in: buildingID, navigate: false)
@@ -395,14 +423,34 @@ final class CityStore {
 
     var allSessions: [RunController] { Array(sessions.values) + Array(hiringHeadless.values) + (draft.map { [$0] } ?? []) }
 
-    var pendingCount: Int { allSessions.reduce(0) { $0 + $1.state.pendingRequests.count } }
+    var pendingCount: Int { allSessions.reduce(0) { $0 + $1.state.pendingRequests.count } + allFloors.filter { $0.unseen == true }.count }
+
+    /// Questions and approvals waiting on this floor, plus one for a finished job not yet looked at.
+    func needsYou(_ floor: Floor) -> Int {
+        (sessions[floor.id]?.state.pendingRequests.count ?? 0) + (floor.unseen == true ? 1 : 0)
+    }
+
+    func refreshBadge() { Attention.shared.waiting(pendingCount) }
+
+    func resultReady(on floorID: UUID?, in buildingID: UUID?) {
+        guard let floorID, let buildingID else { return }
+        let watching = route == .floor(building: buildingID, floor: floorID) && NSApp.isActive && MainWindow.shared.isOpen
+        guard !watching else { return }
+        update(floor: floorID, in: buildingID) { $0.unseen = true }
+        refreshBadge()
+    }
+
+    private func markSeen() {
+        guard case .floor(let buildingID, let floorID) = route, floor(floorID, in: buildingID)?.unseen == true else { return }
+        update(floor: floorID, in: buildingID) { $0.unseen = nil }
+        refreshBadge()
+    }
 
     var anyRunning: Bool { allSessions.contains { $0.isRunning } }
 
     func status(of building: Building) -> (working: Int, waiting: Int) {
         building.floors.reduce((0, 0)) { total, floor in
-            guard let session = sessions[floor.id] else { return total }
-            return (total.0 + (session.isRunning ? 1 : 0), total.1 + session.state.pendingRequests.count)
+            (total.0 + (sessions[floor.id]?.isRunning == true ? 1 : 0), total.1 + needsYou(floor))
         }
     }
 
@@ -525,7 +573,7 @@ extension RunController: Storey {
 
 extension CityStore.Building {
     var plan: TowerPlan {
-        TowerPlan(id: id, name: name, title: title, floors: floors.map { TowerPlan.Floor(id: $0.id, name: $0.name, lastOutcome: $0.lastOutcome) })
+        TowerPlan(id: id, name: name, title: title, floors: floors.map { TowerPlan.Floor(id: $0.id, name: $0.name, lastOutcome: $0.lastOutcome, unseen: $0.unseen == true) })
     }
 }
 

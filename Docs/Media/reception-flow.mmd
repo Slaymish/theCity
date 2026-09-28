@@ -1,0 +1,59 @@
+---
+title: Reception — from a request to a working floor
+---
+flowchart TD
+    typed(["You type a job in the lobby"]) --> warm["Load both on-device models<br/>while you're still typing<br/>(Apple Intelligence only)"]
+    warm --> ask{"Ask Reception"}
+
+    ask -->|"starts with @Floor"| direct["Send straight to that floor"]
+    ask -->|"slash command, no arguments"| cmd["Suggest a floor named<br/>after the command"]
+    ask -->|"anything else"| topic["Route on the topic:<br/>the command's arguments, or the request"]
+
+    topic --> floors{"Any floors yet?"}
+    floors -->|no| fresh
+    floors -->|yes| model{"Reception's model available?<br/>(Apple Intelligence, or Claude Haiku<br/>if chosen in Settings)"}
+    model -->|no| fresh
+    model -->|yes| pick["Model picks a floor,<br/>or names a new one"]
+    pick -->|"no answer in 12 s,<br/>or 30 s from Claude"| fresh
+    pick --> known{"Picked floor, or one<br/>sharing its words?"}
+    known -->|yes| supports{"Shares a word with the request,<br/>or matches its preset?"}
+    known -->|no| fresh
+    supports -->|yes| existing["Suggest that floor,<br/>with its last job"]
+    supports -->|no| fresh
+
+    fresh{"Does the request<br/>fit a preset?"}
+    fresh -->|"no"| named["Suggest a new floor<br/>with the model's name, if usable"]
+    fresh -->|"yes, and a floor<br/>already runs it"| existing
+    fresh -->|"yes, none yet"| presetFloor["Suggest a new floor<br/>staffed with the preset team"]
+
+    cmd --> choose
+    existing --> choose
+    named --> choose
+    presetFloor --> choose
+
+    choose{"You choose"}
+    choose -->|"new job, or continue<br/>the last one"| run
+    choose -->|"another floor"| run
+    choose -->|"set up the new floor"| hire
+
+    hire["Hiring: model picks departments<br/>in the order they should work"] --> team["Preset team replaces the pick;<br/>skills and servers matched by word"]
+    team --> edit["You edit the team"]
+    edit --> run
+    direct --> run
+    run(["Floor runs claude<br/>(queues if the floor is busy)"])
+
+    n1["Prewarm so asking doesn't<br/>wait on the model?"]:::note
+    n2["The small model picks unrelated floors.<br/>Only trust it when a word overlaps?"]:::note
+    n3["Give up after 12 s and<br/>let me choose myself?"]:::note
+    n4["Should a one-off job always reuse<br/>its preset's floor rather than a new one?"]:::note
+    n5["Match skills by word instead<br/>of asking the model?"]:::note
+    n6["@Floor to skip Reception<br/>when I already know?"]:::note
+
+    n1 -.- warm
+    n2 -.- supports
+    n3 -.- pick
+    n4 -.- fresh
+    n5 -.- team
+    n6 -.- direct
+
+    classDef note fill:#fff4b8,stroke:#d9b600,color:#3a3000,stroke-dasharray:4 3

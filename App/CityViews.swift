@@ -82,7 +82,7 @@ struct NeedsYouList: View {
     var body: some View {
         let waiting = city.buildings.flatMap { building in
             building.floors.compactMap { floor -> (CityStore.Building, CityStore.Floor, Int)? in
-                let count = city.sessions[floor.id]?.state.pendingRequests.count ?? 0
+                let count = city.needsYou(floor)
                 return count > 0 ? (building, floor, count) : nil
             }
         }
@@ -158,13 +158,15 @@ struct WorldView: View {
     var body: some View {
         let buildingID = buildingID, floorID = floorID
         let session = floorID.flatMap { id in buildingID.flatMap { city.session(for: id, in: $0) } }
+        let quality = GraphicsQuality.current
         ZStack {
             GeometryReader { geometry in
                 RealityView { content in
                     content.add(world.root)
-                    content.renderingEffects.antialiasing = .multisample4X
-                    if RunController.launchArgument("-depth-of-field") == "on" { content.renderingEffects.depthOfField = .enabled }
                     world.updates = content.subscribe(to: SceneEvents.Update.self) { [world] event in world.update(event.deltaTime) }
+                } update: { content in
+                    content.renderingEffects.antialiasing = quality.antialiasing
+                    content.renderingEffects.depthOfField = quality.depthOfField ? .enabled : .disabled
                 }
                 .realityViewCameraControls(.none)
                 .gesture(SpatialTapGesture().targetedToAnyEntity().onEnded { value in tapped(value.entity) })
@@ -430,7 +432,7 @@ struct FloorList: View {
                 Button {
                     city.route = .floor(building: building.id, floor: floor.id)
                 } label: {
-                    Label(floor.name, systemImage: (session?.state.pendingRequests.isEmpty == false) ? "hand.raised.fill" : session?.isRunning == true ? "bolt.fill" : "square.stack.3d.up")
+                    Label(floor.name, systemImage: city.needsYou(floor) > 0 ? "hand.raised.fill" : session?.isRunning == true ? "bolt.fill" : "square.stack.3d.up")
                 }
                 .buttonStyle(PillButtonStyle(kind: .secondary))
                 .help(floorStatus(floor, session: session))
@@ -460,8 +462,8 @@ struct FloorList: View {
 
     private func floorStatus(_ floor: CityStore.Floor, session: RunController?) -> String {
         let rooms = city.live(on: [floor]).rooms.spoken
+        if city.needsYou(floor) > 0 { return "Needs you. \(rooms)." }
         guard let session else { return "Quiet. \(rooms)." }
-        if !session.state.pendingRequests.isEmpty { return "Needs you. \(rooms)." }
         guard session.isRunning else { return "Quiet. \(rooms)." }
         return "Working\(session.currentStep.map { ": \($0)" } ?? ""). \(rooms)."
     }
@@ -477,12 +479,18 @@ struct ReceptionComposer: View {
     @State private var thinking = false
     @State private var asked = ""
     @State private var routing: Task<Void, Never>?
+    @State private var place: JobPlace?
+    @State private var branches: Git.Branches?
+    /// The floor a send is waiting on, kept while its Claude Code check fails so its readiness row shows here.
+    @State private var target: RunController?
+    @State private var sending = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             PromptEditor(address: [building.name, "Reception", "picks the right floor"],
                          placeholder: "What do you need done in \(building.name)?",
-                         directory: building.url, text: $text, canSend: canAsk, send: ask) { withImages in
+                         directory: building.url, text: $text, canSend: canAsk, commands: commands, send: ask) { withImages in
+                if let branches { BranchMenu(branches: branches, selection: $place) }
                 Button("Ask reception", action: withImages(ask))
                     .buttonStyle(PillButtonStyle())
                     .disabled(!canAsk)
@@ -495,7 +503,7 @@ struct ReceptionComposer: View {
                     ProgressView().controlSize(.small)
                     Text("The receptionist is checking which floor fits…").font(Typography.caption).foregroundStyle(Color(Palette.muted))
                 }
-                suggestionView(RoutingSuggestion(floorID: nil, newFloorName: CityStore.floorName(for: text, existing: building.floors.map(\.name)), reason: ""))
+                suggestionView(RoutingSuggestion(floorID: nil, newFloorName: CityStore.floorName(for: ReceptionDesk.topic(of: text, commands: commands), existing: building.floors.map(\.name)), reason: ""))
                     .disabled(true)
             } else if let suggestion {
                 suggestionView(suggestion)
@@ -503,19 +511,41 @@ struct ReceptionComposer: View {
         }
         .frame(width: 620, alignment: .leading)
         .glass(padding: 16)
+        .task(id: building.id) { city.loadCommands(for: building) }
+        .task(id: building.path) { branches = await Git.branches(in: building.url) }
         .onChange(of: text) { if text != asked { suggestion = nil } }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard let target, target.readiness != .ready else { return }
+            target.checkReadiness()
+        }
         .onChange(of: text.isEmpty) {
-            if !text.isEmpty { scene?.focusLobby(); ReceptionDesk.prewarm(floors: building.floors) } else if suggestion == nil { scene?.leaveLobby() }
+            if !text.isEmpty {
+                scene?.focusLobby()
+                ReceptionDesk.prewarm(floors: building.floors)
+                HiringDesk.prewarm(catalogue: AgentCatalogue.load(workingDirectory: building.url))
+            } else if suggestion == nil { scene?.leaveLobby() }
         }
         .onChange(of: thinking) { gesture() }
-        .onChange(of: suggestion) { gesture() }
+        .onChange(of: suggestion) {
+            target = nil
+            gesture()
+        }
     }
 
     private func gesture() {
         scene?.receptionist(thinking: thinking, pointingAt: suggestion?.floorID, scaffold: suggestion != nil && suggestion?.floorID == nil)
     }
 
-    private var canAsk: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !thinking }
+    private var canAsk: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !thinking && !sending }
+
+    /// A floor whose Claude Code check has failed can't take the job; one still checking is waited on when sending.
+    private func canSend(to floorID: UUID) -> Bool {
+        guard !sending else { return false }
+        guard let readiness = city.sessions[floorID]?.readiness else { return true }
+        return readiness == .ready || readiness == .checking
+    }
+
+    private var commands: [CommandInfo] { city.commands[building.id] ?? [] }
 
     @ViewBuilder
     private func suggestionView(_ suggestion: RoutingSuggestion) -> some View {
@@ -543,6 +573,9 @@ struct ReceptionComposer: View {
                 Text("\(match.name) is busy; this will start when its current job finishes.")
                     .font(Typography.caption).foregroundStyle(Color(Palette.muted))
             }
+            if let session = target ?? match.flatMap({ city.sessions[$0.id] }) {
+                ReadinessRow(controller: session)
+            }
         }
     }
 
@@ -552,9 +585,11 @@ struct ReceptionComposer: View {
             Button("New job on \(match.name)", systemImage: "arrow.up.circle.fill") { send(to: match.id) }
                 .buttonStyle(PillButtonStyle())
                 .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!canSend(to: match.id))
             if city.canContinue(match) {
                 Button("Continue \(match.name)’s last job") { send(to: match.id, continuing: true) }
                     .buttonStyle(PillButtonStyle(kind: .secondary))
+                    .disabled(!canSend(to: match.id))
             }
         } else {
             Button("Set up “\(suggestion.newFloorName)”", systemImage: "plus.circle.fill") { newFloor(suggestion) }
@@ -574,6 +609,7 @@ struct ReceptionComposer: View {
             Menu("Another floor") {
                 ForEach(others) { floor in
                     Button(floor.name + (city.sessions[floor.id]?.isRunning == true ? " (busy, will queue)" : "")) { send(to: floor.id) }
+                        .disabled(!canSend(to: floor.id))
                 }
             }
             .menuStyle(.button)
@@ -589,12 +625,18 @@ struct ReceptionComposer: View {
             return send(to: floor.id)
         }
         asked = text
-        thinking = true
         let request = text
+        let topic = ReceptionDesk.topic(of: request, commands: commands)
+        if let (command, arguments) = SlashCommand.parse(request, commands: commands), arguments.isEmpty {
+            suggestion = RoutingSuggestion(floorID: nil, newFloorName: CityStore.floorName(for: topic, existing: building.floors.map(\.name)),
+                                           reason: "Choose a floor to run /\(command.name), or set up a new one.")
+            return
+        }
+        thinking = true
         let floors = building.floors
         routing?.cancel()
         routing = Task {
-            let result = await ReceptionDesk.route(request: request, floors: floors)
+            let result = await ReceptionDesk.route(request: topic, floors: floors)
             guard !Task.isCancelled else { return }
             if asked == request { suggestion = result }
             thinking = false
@@ -609,16 +651,29 @@ struct ReceptionComposer: View {
     }
 
     private func send(to floorID: UUID, continuing: Bool = false) {
+        guard let session = city.session(for: floorID, in: building.id) else { return }
         stopRouting()
-        city.send(text, toFloor: floorID, in: building.id, continuing: continuing)
-        text = ""
-        suggestion = nil
-        scene?.leaveLobby()
+        sending = true
+        let request = text
+        Task {
+            // Wait for the launch check, so a job isn't sent to a floor whose Claude Code is missing or signed out.
+            let readiness = await session.settledReadiness()
+            sending = false
+            guard readiness == .ready else {
+                target = session
+                return
+            }
+            city.send(request, toFloor: floorID, in: building.id, continuing: continuing, place: place)
+            text = ""
+            suggestion = nil
+            target = nil
+            scene?.leaveLobby()
+        }
     }
 
     private func newFloor(_ chosen: RoutingSuggestion) {
         stopRouting()
-        city.startNewFloor(in: building.id, request: text, name: chosen.newFloorName, preset: FloorPreset.named(chosen.presetID))
+        city.startNewFloor(in: building.id, request: text, name: chosen.newFloorName, preset: FloorPreset.named(chosen.presetID), place: place)
         text = ""
         suggestion = nil
     }

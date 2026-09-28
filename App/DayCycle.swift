@@ -72,6 +72,8 @@ struct DayCycle {
 /// A lamp that fades in as night falls; each scene re-lights them on its daylight tick.
 struct NightLightComponent: Component {
     var intensity: Float
+    var colour: NSColor
+    var radius: Float
     var bulb: Entity?
 }
 
@@ -83,27 +85,26 @@ enum NightLight {
         _ = registered
         let light = Entity()
         light.position = offset
-        let lamps = DayCycle.now.lamps
-        light.components.set(PointLightComponent(color: colour, intensity: intensity * lamps, attenuationRadius: radius))
-        var material = PhysicallyBasedMaterial()
-        material.baseColor = .init(tint: colour)
-        material.emissiveColor = .init(color: colour)
-        material.emissiveIntensity = 3
-        let bulb = ModelEntity(mesh: .generateSphere(radius: size), materials: [material])
-        bulb.isEnabled = lamps > 0
+        let bulb = ModelEntity(mesh: .generateSphere(radius: size), materials: [ModelLibrary.material(colour, roughness: nil, emissive: 3)])
         light.addChild(bulb)
-        light.components.set(NightLightComponent(intensity: intensity, bulb: bulb))
+        let lamp = NightLightComponent(intensity: intensity, colour: colour, radius: radius, bulb: bulb)
+        light.components.set(lamp)
+        relight(light, lamp, lamps: DayCycle.now.lamps)
         parent.addChild(light)
     }
 
     static func apply(_ cycle: DayCycle, under root: Entity) {
         _ = registered
         for entity in root.descendants {
-            guard let lamp = entity.components[NightLightComponent.self],
-                  var light = entity.components[PointLightComponent.self] else { continue }
-            light.intensity = lamp.intensity * cycle.lamps
-            entity.components.set(light)
-            lamp.bulb?.isEnabled = cycle.lamps > 0
+            guard let lamp = entity.components[NightLightComponent.self] else { continue }
+            relight(entity, lamp, lamps: cycle.lamps)
         }
+    }
+
+    // RealityKit still culls and clusters a light at zero intensity, so an unlit lamp drops its light altogether.
+    private static func relight(_ entity: Entity, _ lamp: NightLightComponent, lamps: Float) {
+        lamp.bulb?.isEnabled = lamps > 0
+        guard lamps > 0 else { return entity.components.remove(PointLightComponent.self) }
+        entity.components.set(PointLightComponent(color: lamp.colour, intensity: lamp.intensity * lamps, attenuationRadius: lamp.radius))
     }
 }

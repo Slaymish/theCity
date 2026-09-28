@@ -44,6 +44,26 @@ public enum HandBack {
     }
 }
 
+public enum SlashCommand {
+    /// Completions while the text is a lone `/query`: names starting with the query first, then names containing it.
+    public static func matches(for text: String, in commands: [CommandInfo], limit: Int = 6) -> [CommandInfo] {
+        guard text.hasPrefix("/"), !text.contains(where: \.isWhitespace) else { return [] }
+        let query = text.dropFirst().lowercased()
+        let starts = commands.filter { $0.name.lowercased().hasPrefix(query) }
+        let contains = commands.filter { !$0.name.lowercased().hasPrefix(query) && $0.name.lowercased().contains(query) }
+        return Array((starts + contains).prefix(limit))
+    }
+
+    /// Splits `/name arguments` into a known command and its trimmed arguments.
+    public static func parse(_ text: String, commands: [CommandInfo]) -> (command: CommandInfo, arguments: String)? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/") else { return nil }
+        let name = trimmed.dropFirst().prefix { !$0.isWhitespace }
+        guard !name.isEmpty, let command = commands.first(where: { $0.name == name }) else { return nil }
+        return (command, trimmed.dropFirst(name.count + 1).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+}
+
 public struct Kit: Sendable, Equatable {
     public var models: [ModelOption] = []
     public var servers: [McpServer]
@@ -115,5 +135,25 @@ public struct Kit: Sendable, Equatable {
     public static func blockRules(servers: [McpServer], allowedServers: Set<String>, skills: [CommandInfo], allowedSkills: Set<String>) -> [String] {
         servers.filter { !allowedServers.contains($0.name) }.map { String(McpNaming.toolPrefix(forServer: $0.name).dropLast(2)) }
             + skills.filter { !allowedSkills.contains($0.name) }.map { "Skill(\($0.name))" }
+    }
+}
+
+extension Kit {
+    /// The skills and services a request names or describes, matched by word so hiring needn't wait on a model.
+    public func matching(_ request: String) -> (servers: Set<String>, skills: Set<String>) {
+        let asked = Self.words(request)
+        let servers = usableServers.filter { !Self.words($0.name).isDisjoint(with: asked) }.map(\.name)
+        let skills = skills.filter { skill in
+            !Self.words(skill.name).isDisjoint(with: asked) || Self.words(skill.description).intersection(asked).count >= 2
+        }.map(\.name)
+        return (Set(servers), Set(skills))
+    }
+
+    static func words(_ text: String) -> Set<String> {
+        let stop: Set<String> = ["the", "and", "for", "with", "use", "used", "when", "this", "that", "from", "into", "your", "you",
+                                 "can", "any", "all", "are", "not", "our", "also", "asks", "asked", "user", "make", "code", "please", "want"]
+        return Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map { word in
+            word.count > 4 && word.hasSuffix("s") ? String(word.dropLast()) : String(word)
+        }.filter { $0.count > 2 && !stop.contains($0) })
     }
 }

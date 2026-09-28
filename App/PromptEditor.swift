@@ -1,14 +1,16 @@
 import AppKit
+import OfficeCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The one place to type to Claude: says who it's addressed to, grows for long prompts, and tags files with @.
+/// The one place to type to Claude: says who it's addressed to, grows for long prompts, tags files with @ and runs commands with /.
 struct PromptEditor<Actions: View>: View {
     let address: [String]
     let placeholder: String
     let directory: URL?
     @Binding var text: String
     var canSend = true
+    var commands: [CommandInfo] = []
     let send: () -> Void
     @ViewBuilder var actions: (_ withImages: @escaping (@escaping () -> Void) -> () -> Void) -> Actions
 
@@ -92,9 +94,9 @@ struct PromptEditor<Actions: View>: View {
                     .onKeyPress(.upArrow) { move(-1) }
                     .onKeyPress(.downArrow) { move(1) }
                     .onKeyPress(.tab) { accept() }
-                    .onKeyPress(.escape) { mention == nil ? .ignored : dismissMention() }
+                    .onKeyPress(.escape) { mention == nil && commandMatches.isEmpty ? .ignored : dismissMention() }
                     .onKeyPress(.return, phases: .down) { press in
-                        if !matches.isEmpty { return accept() }
+                        if suggestionCount > 0 { return accept() }
                         if press.modifiers.contains(.shift) || press.modifiers.contains(.option) {
                             text += "\n"
                             return .handled
@@ -112,7 +114,35 @@ struct PromptEditor<Actions: View>: View {
                     .onChange(of: text) { selection = 0 }
             }
 
-            if !matches.isEmpty {
+            if !commandMatches.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(commandMatches.enumerated()), id: \.element) { index, command in
+                        Button { complete(command) } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text("/\(command.name)").font(Typography.code)
+                                    if !command.argumentHint.isEmpty {
+                                        Text(command.argumentHint).font(Typography.code)
+                                            .foregroundStyle(Color(index == selection ? Palette.primaryText : Palette.muted))
+                                    }
+                                }
+                                .lineLimit(1)
+                                if !command.description.isEmpty {
+                                    Text(command.description).font(Typography.caption).lineLimit(1)
+                                        .foregroundStyle(Color(index == selection ? Palette.primaryText : Palette.muted))
+                                }
+                            }
+                            .foregroundStyle(Color(index == selection ? Palette.primaryText : Palette.text))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 8)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color(index == selection ? Palette.primaryFill : .clear)))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } else if !matches.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(matches.enumerated()), id: \.element) { index, path in
                         Button { complete(path) } label: {
@@ -191,16 +221,30 @@ struct PromptEditor<Actions: View>: View {
         return Array(hits.sorted { ($0.lowercased().hasPrefix(query) ? 0 : 1, $0.count) < ($1.lowercased().hasPrefix(query) ? 0 : 1, $1.count) }.prefix(8))
     }
 
+    private var commandMatches: [CommandInfo] { SlashCommand.matches(for: text, in: commands) }
+
+    private var suggestionCount: Int { commandMatches.isEmpty ? matches.count : commandMatches.count }
+
     private func move(_ step: Int) -> KeyPress.Result {
-        guard !matches.isEmpty else { return .ignored }
-        selection = (selection + step + matches.count) % matches.count
+        guard suggestionCount > 0 else { return .ignored }
+        selection = (selection + step + suggestionCount) % suggestionCount
         return .handled
     }
 
     private func accept() -> KeyPress.Result {
+        let commands = commandMatches
+        if commands.indices.contains(selection) {
+            complete(commands[selection])
+            return .handled
+        }
         guard matches.indices.contains(selection) else { return .ignored }
         complete(matches[selection])
         return .handled
+    }
+
+    private func complete(_ command: CommandInfo) {
+        text = "/\(command.name) "
+        focused = true
     }
 
     private func complete(_ path: String) {

@@ -1,11 +1,11 @@
 import Foundation
 
-public struct QuestionOption: Sendable, Equatable, Hashable {
+public struct QuestionOption: Sendable, Equatable, Hashable, Codable {
     public var label: String
     public var description: String?
 }
 
-public struct AskedQuestion: Sendable, Equatable, Hashable {
+public struct AskedQuestion: Sendable, Equatable, Hashable, Codable {
     public var question: String
     public var header: String?
     public var options: [QuestionOption]
@@ -38,6 +38,15 @@ public struct PermissionRequest: Sendable, Equatable, Identifiable {
                 return rule["ruleContent"]?.stringValue.map { "\(tool)(\($0))" } ?? tool
             }
         }
+    }
+
+    /// A request rebuilt from a companion snapshot, which carries what the cards show but not the tool's input.
+    public init(requestID: String, toolName: String, kind: Kind) {
+        self.requestID = requestID
+        self.toolName = toolName
+        self.kind = kind
+        input = .null
+        suggestions = .null
     }
 
     init(requestID: String, request: [String: Any]) {

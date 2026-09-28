@@ -77,7 +77,7 @@ public struct ToolCall: Sendable, Equatable {
 }
 
 public struct Handoff: Sendable, Equatable {
-    public enum Phase: Sendable, Equatable { case requested, working, finished }
+    public enum Phase: Sendable, Equatable, Codable { case requested, working, finished }
     public var toolUseID: String
     public var room: String
     public var taskID: String?

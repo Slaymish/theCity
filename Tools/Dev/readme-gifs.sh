@@ -8,15 +8,27 @@ frames=$(mktemp -d)
 trap 'rm -rf "$frames"' EXIT
 mkdir -p Docs/Media
 
-typeset -A fps=(showcase 8 city 12 office 15)
-typeset -A width=(showcase 720 city 800 office 800)
-typeset -A lossy=(showcase 80 city 40 office 40)
-typeset -A hour=(showcase 18.8 city 13 office 13)
-for reel in showcase city office; do
-  "$app" -render-reel "$reel" "$frames/$reel" -fps 20 -theme light -hour "${hour[$reel]}" -workspace "$PWD/SampleWorkspace"
-  ffmpeg -v error -y -framerate 20 -i "$frames/$reel/frame-%05d.png" \
-    -vf "fps=${fps[$reel]},scale=${width[$reel]}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" \
+typeset -A fps=(showcase 12 city 15 office 20)
+typeset -A width=(showcase 800 city 800 office 880)
+typeset -A colours=(showcase 192 city 128 office 192)
+typeset -A lossy=(showcase 35 city 45 office 20)
+typeset -A hour=(showcase 18.55 city 18.15 office 18.2)
+reels=("$@")
+(( ${#reels} )) || reels=(showcase city office)
+for reel in "${reels[@]}"; do
+  [[ -n "${fps[$reel]-}" ]] || { print -u2 "Unknown reel: $reel"; exit 1; }
+  perl -e 'alarm 600; exec @ARGV' "$app" -render-reel "$reel" "$frames/$reel" -fps "${fps[$reel]}" \
+    -theme light -hour "${hour[$reel]}" -graphics medium -grade -workspace "$PWD/SampleWorkspace"
+  ffmpeg -v error -y -framerate "${fps[$reel]}" -i "$frames/$reel/frame-%05d.png" \
+    -vf "scale=${width[$reel]}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=${colours[$reel]}:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" \
     -loop 0 "$frames/$reel.gif"
-  gifsicle -O3 --lossy=${lossy[$reel]} "$frames/$reel.gif" -o "Docs/Media/$reel.gif"
+  gifsicle -O3 --lossy=${lossy[$reel]} "$frames/$reel.gif" -o "$frames/$reel-final.gif"
+  bytes=$(stat -f%z "$frames/$reel-final.gif")
+  if (( bytes > 8 * 1024 * 1024 )); then
+    print -u2 "$reel exceeds the 8 MiB media budget ($bytes bytes). Frames kept at $frames"
+    trap - EXIT
+    exit 1
+  fi
+  mv "$frames/$reel-final.gif" "Docs/Media/$reel.gif"
   echo "Docs/Media/$reel.gif $(du -h "Docs/Media/$reel.gif" | cut -f1)"
 done

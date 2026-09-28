@@ -106,7 +106,19 @@ final class OfficeScene {
         let floor = themedModel(ModelLibrary.box(width: Self.footprint.x, height: Self.floorThickness, depth: Self.footprint.y, cornerRadius: 0.3), Palette.sceneFloor)
         floor.position = [0, -Self.floorThickness / 2, 0]
         root.addChild(floor)
+        // Fine timber joins give the miniature a sense of scale between the desks.
+        for index in -7...7 {
+            let join = themedModel(ModelLibrary.box(width: Self.footprint.x - 0.3, height: 0.008, depth: 0.018), Palette.desk)
+            join.position = [0, 0.006, Float(index)]
+            root.addChild(join)
+        }
         buildWalls(width: Self.footprint.x, depth: Self.footprint.y)
+        for x: Float in [-10.8, 10.8] {
+            let plant = ModelLibrary.entity("cactus_medium_A")
+            plant.position = [x, 0, -6.7]
+            plant.scale = SIMD3(repeating: 1.3)
+            root.addChild(plant)
+        }
         storeyHit.components.set(CollisionComponent(shapes: [.generateBox(width: Self.footprint.x, height: Self.wallHeight, depth: Self.footprint.y)
             .offsetBy(translation: [0, Self.wallHeight / 2, 0])]))
         storeyHit.components.set(InputTargetComponent())
@@ -310,7 +322,7 @@ final class OfficeScene {
         applyDaylight()
     }
 
-    static func studioExposure(_ cycle: DayCycle) -> Float { cycle.mix(day: 0.9, night: -1.6) }
+    static func studioExposure(_ cycle: DayCycle) -> Float { cycle.mix(day: 0.55, night: -1.6) }
 
     private func applyDaylight() {
         let cycle = DayCycle.now
@@ -373,7 +385,7 @@ final class OfficeScene {
         let horizontal = 2 * atan(tan(vertical / 2) * aspect)
         let radius = 0.5 * simd_length(Self.footprint)
         var pose = overviewPose()
-        pose.distance = radius / sin(min(vertical, horizontal) / 2) * 1.0
+        pose.distance = radius / sin(min(vertical, horizontal) / 2) * (aspect >= 1.3 ? 0.88 : 1)
         camera.overview = pose
         if focusedRoom == nil { camera.reset(to: pose) } else if focusedRoom == Self.kioskRoom { focusKiosk() }
     }

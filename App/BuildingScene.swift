@@ -367,6 +367,14 @@ final class BuildingScene {
         let t = risen * risen * (3 - 2 * risen)
         tower.position.y = -(1 - t) * (towerHeight + 1)
         tower.isEnabled = risen > 0
+        // Billboards ignore depth. Hide them while underground so they cannot show through the facade.
+        for sign in tower.descendants where sign.components.has(BillboardComponent.self) {
+            if risen < 1 {
+                if sign.components[OpacityComponent.self]?.opacity != 0 { sign.components.set(OpacityComponent(opacity: 0)) }
+            } else if sign.components.has(OpacityComponent.self) {
+                sign.components.remove(OpacityComponent.self)
+            }
+        }
     }
 
     func focusLobby() {

@@ -23,9 +23,8 @@ final class CityScene {
     private var slides: [(entity: Entity, from: Float, to: Float, elapsed: Double, duration: Double)] = []
     private var labelsVisible = true
     private var hovered: UUID?
-    private var cars: [(entity: Entity, along: Float)] = []
+    private var cars: [(entity: Entity, along: Float, origin: Float, length: Float)] = []
     private var cover: [String: [simd_float4x4]] = [:]
-    private var loop: (origin: Float, length: Float) = (0, 1)
     private let haze = Horizon.haze()
     private let sky = Entity()
     private var clouds: [(entity: ModelEntity, opacity: Float)] = []
@@ -418,25 +417,28 @@ final class CityScene {
     private func addCars(origin: Float, cells: Int) {
         let models = ["car_taxi", "car_sedan", "car_hatchback"]
         cars = []
-        loop = (origin - 0.4, -2 * (origin - 0.4))
         let count = min(max(cells / 2, 3), 4)
-        for index in 0..<count {
+        // Larger cities also have traffic around the central block, where the camera spends most of its time.
+        for index in 0..<(count + (cells >= 7 ? 2 : 0)) {
+            let low = origin - 0.4 + (index < count ? 0 : Self.tile * 2)
+            let length = -2 * low
             let car = ModelLibrary.entity(models[index % models.count])
             NightLight.add(to: car, at: [0, 0.15, 0.6], colour: Palette.streetlight, intensity: 8000, radius: 1.2, bulb: 0)
             root.addChild(car)
-            cars.append((car, Float(index) / Float(count) * loop.length * 4))
+            let along = index < count ? Float(index) / Float(count) * length * 4 : Float(index - count) * length * 2 + length * 0.4
+            cars.append((car, along, low, length))
         }
         advanceCars(0)
     }
 
     private func advanceCars(_ dt: Double) {
-        let perimeter = loop.length * 4
         for index in cars.indices {
-            cars[index].along = (cars[index].along + Self.carSpeed * Float(dt)).truncatingRemainder(dividingBy: perimeter)
+            let length = cars[index].length
+            cars[index].along = (cars[index].along + Self.carSpeed * Float(dt)).truncatingRemainder(dividingBy: length * 4)
             let along = cars[index].along
-            let side = Int(along / loop.length) % 4
-            let t = along.truncatingRemainder(dividingBy: loop.length)
-            let low = loop.origin, high = loop.origin + loop.length
+            let side = Int(along / length) % 4
+            let t = along.truncatingRemainder(dividingBy: length)
+            let low = cars[index].origin, high = low + length
             let (position, heading): (SIMD2<Float>, SIMD2<Float>) = switch side {
             case 0: ([low + t, low], [1, 0])
             case 1: ([high, low + t], [0, 1])
@@ -444,7 +446,8 @@ final class CityScene {
             default: ([low, high - t], [0, -1])
             }
             cars[index].entity.position = [position.x, 0.1, position.y]
-            cars[index].entity.orientation = simd_quatf(angle: atan2(heading.x, heading.y), axis: [0, 1, 0])
+            let rotation = simd_quatf(angle: atan2(heading.x, heading.y), axis: [0, 1, 0])
+            cars[index].entity.orientation = dt == 0 ? rotation : simd_slerp(cars[index].entity.orientation, rotation, Float(1 - exp(-dt * 8)))
         }
     }
 

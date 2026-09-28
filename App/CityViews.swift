@@ -30,23 +30,29 @@ struct TitleHUD: View {
     let city: CityStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Wordmark()
-            Text("Every project is a building. Every floor is an office of Claude Code departments you set up once and come back to.")
-                .font(Typography.body)
-                .foregroundStyle(Color(Palette.muted))
-                .frame(maxWidth: 460, alignment: .leading)
-            Button("Break ground on your first project…") { ProjectPicker.addProject() }
-                .buttonStyle(PillButtonStyle())
-                .keyboardShortcut(.defaultAction)
-                .disabled(city.groundBreaking != nil)
-            Button("Watch a demo") { city.startDemo() }
-                .buttonStyle(PillButtonStyle())
-                .disabled(city.groundBreaking != nil)
-
-            Text("Replays a recording — no tokens used.")
-                .font(Typography.body)
-                .foregroundStyle(Color(Palette.muted))
+        VStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 20) {
+                Wordmark()
+                Text("Every project is a building. Every floor is an office of Claude Code departments you set up once and come back to.")
+                    .font(Typography.body)
+                    .foregroundStyle(Color(Palette.muted))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Break ground on your first project…") { ProjectPicker.addProject() }
+                    .buttonStyle(PillButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(city.groundBreaking != nil)
+                Button("Watch a demo") { city.startDemo() }
+                    .buttonStyle(PillButtonStyle(kind: .secondary))
+                    .disabled(city.groundBreaking != nil)
+                Text("Replays a recording — no tokens used.")
+                    .font(Typography.caption)
+                    .foregroundStyle(Color(Palette.muted))
+            }
+            .padding(24)
+            .frame(maxWidth: 400, alignment: .leading)
+            .background(Color(Palette.glassTop).opacity(0.96), in: RoundedRectangle(cornerRadius: 24))
+            .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(Color(Palette.hairline), lineWidth: 1))
+            .shadow(color: Color(Palette.text).opacity(0.1), radius: 18, y: 8)
             Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)

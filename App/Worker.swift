@@ -52,6 +52,7 @@ final class Worker {
     private var elbowLAngle: Float = 0
     private var elbowRAngle: Float = 0
     private var headPitch: Float = 0
+    private var armSpread: Float = 0
     private var nextBlink = Double.random(in: 2...5)
     private var shown: Expression?
     private var doneUntil: Double = 0
@@ -258,19 +259,24 @@ final class Worker {
         let still = reduceMotion
         let walking = stepAlong(dt)
         let standing = walking || root.position.y < baseY - 0.01
-        if !walking { root.position.y = (standing ? standingHeight : baseY) + (still ? 0 : sin(t * 2.2) * 0.012) }
+        if !walking {
+            let height = (standing ? standingHeight : baseY) + (still ? 0 : sin(t * 2.2) * 0.012)
+            if root.position.y != height { root.position.y = height }
+        }
         let stride: Float = walking && !still ? sin(t * 9) * 0.5 : 0
         Self.bend(legL, stride)
         Self.bend(legR, -stride)
         if mood == .done && time > doneUntil { setMood(.idle) }
 
         var (targetL, targetR, targetPitch): (Float, Float, Float) = switch mood {
-        case .idle, .done, .error: (0.05, 0.05, still ? 0 : sin(t * 0.5) * 0.06)
-        case .working: (-0.7 + (still ? 0 : sin(t * 17) * 0.09), -0.7 + (still ? 0 : sin(t * 17 + 1.7) * 0.09), 0.18)
+        case .idle, .error: (0.05, 0.05, still ? 0 : sin(t * 0.5) * 0.06)
+        case .done: (-1.8, -1.8, -0.12)
+        case .working: (-0.7 + (still ? 0 : sin(t * 11) * 0.13), -0.7 + (still ? 0 : sin(t * 11 + .pi) * 0.13), 0.12)
         case .question, .approval: (0.05, -2.75 + (still ? 0 : sin(t * 7) * 0.18), -0.08)
         }
         var (targetElbowL, targetElbowR): (Float, Float) = switch mood {
-        case .idle, .done, .error: (0, 0)
+        case .idle, .error: (0, 0)
+        case .done: (-0.65, -0.65)
         case .working: (-0.9, -0.9)
         case .question, .approval: (0, -0.3)
         }
@@ -290,16 +296,20 @@ final class Worker {
         elbowLAngle += (targetElbowL - elbowLAngle) * blend
         elbowRAngle += (targetElbowR - elbowRAngle) * blend
         headPitch += (targetPitch - headPitch) * blend
-        Self.bend(armL, armLAngle)
-        Self.bend(armR, armRAngle)
+        // Spread raised arms outside the head silhouette so a wave reads from the front.
+        let raised = mood == .question || mood == .approval || waving
+        let spread: Float = raised ? 0.55 : mood == .done ? 0.3 : 0
+        armSpread += (spread - armSpread) * blend
+        Self.pose(armL, simd_quatf(angle: armLAngle, axis: [1, 0, 0]) * simd_quatf(angle: mood == .done ? -armSpread : 0, axis: [0, 0, 1]))
+        Self.pose(armR, simd_quatf(angle: armRAngle, axis: [1, 0, 0]) * simd_quatf(angle: armSpread, axis: [0, 0, 1]))
         Self.bend(elbowL, elbowLAngle)
         Self.bend(elbowR, elbowRAngle)
         let turn: Float = mood == .idle && !still ? sin(t * 0.3) * 0.35 : 0
         Self.pose(head, simd_quatf(angle: headPitch, axis: [1, 0, 0]) * simd_quatf(angle: turn, axis: [0, 1, 0]))
 
-        if mood == .idle && !still {
+        if (mood == .idle || mood == .working) && !still {
             nextBlink -= dt
-            show(nextBlink < 0.14 && nextBlink > 0 ? .blink : .idle)
+            show(nextBlink < 0.14 && nextBlink > 0 ? .blink : expression(for: mood))
             if nextBlink <= 0 { nextBlink = Double.random(in: 2.5...6) }
         }
     }
@@ -319,11 +329,43 @@ struct FaceView: View {
     let glyph: String
 
     var body: some View {
-        Text(glyph)
-            .font(Typography.ui(glyph.count > 1 ? 92 : 132, weight: 700))
-            .foregroundStyle(Color(Palette.screenOn))
-            .frame(width: 290, height: 200)
-            .background(Color(Palette.screenOff))
+        Canvas { context, _ in
+            let ink = Color(Palette.screenOn)
+            let stroke = StrokeStyle(lineWidth: 13, lineCap: .round, lineJoin: .round)
+            if glyph == "?" || glyph == "!" || glyph == "★" {
+                context.draw(Text(glyph).font(Typography.ui(132, weight: 700)).foregroundStyle(ink), at: CGPoint(x: 145, y: 98))
+            } else {
+                for x: CGFloat in [94, 196] {
+                    var eye = Path()
+                    switch glyph {
+                    case "^ ^":
+                        eye.move(to: CGPoint(x: x - 22, y: 94))
+                        eye.addQuadCurve(to: CGPoint(x: x + 22, y: 94), control: CGPoint(x: x, y: 58))
+                    case "× ×":
+                        eye.move(to: CGPoint(x: x - 17, y: 73))
+                        eye.addLine(to: CGPoint(x: x + 17, y: 105))
+                        eye.move(to: CGPoint(x: x + 17, y: 73))
+                        eye.addLine(to: CGPoint(x: x - 17, y: 105))
+                    case "‒ ‒":
+                        eye.move(to: CGPoint(x: x - 19, y: 94))
+                        eye.addLine(to: CGPoint(x: x + 19, y: 94))
+                    default:
+                        eye.addRoundedRect(in: CGRect(x: x - 13, y: 68, width: 26, height: 44), cornerSize: CGSize(width: 13, height: 13))
+                    }
+                    if glyph == "– –" { context.fill(eye, with: .color(ink)) }
+                    else { context.stroke(eye, with: .color(ink), style: stroke) }
+                }
+                var smile = Path()
+                smile.move(to: CGPoint(x: 128, y: 129))
+                smile.addQuadCurve(to: CGPoint(x: 162, y: 129), control: CGPoint(x: 145, y: glyph == "× ×" ? 118 : 144))
+                context.stroke(smile, with: .color(ink.opacity(0.85)), style: StrokeStyle(lineWidth: 7, lineCap: .round))
+            }
+            // A quiet glass reflection gives the display depth without hiding its expression.
+            context.stroke(Path(roundedRect: CGRect(x: 12, y: 12, width: 266, height: 176), cornerRadius: 20),
+                           with: .color(ink.opacity(0.12)), lineWidth: 2)
+        }
+        .frame(width: 290, height: 200)
+        .background(Color(Palette.screenOff))
     }
 }
 

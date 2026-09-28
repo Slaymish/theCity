@@ -2,7 +2,7 @@
 
 # The City
 
-![The camera slowly circles the city at dusk: street lamps glow along the roads, office windows are lit, cars drive between the blocks and the sky turns orange behind the trees](Docs/Media/showcase.gif)
+![A miniature neighbourhood in warm evening light: brick and glass offices, glowing street lamps, and cars passing through the centre as the camera gently circles](Docs/Media/showcase.gif)
 
 A macOS app that shows Claude Code runs as a city of robot-staffed offices. Every project folder is a building, every building has floors of robots, and every animation comes from a real event in the `claude` CLI's stream.
 
@@ -70,7 +70,7 @@ CI runs the tests and builds the app on every push and pull request. Pushing a t
 
 In Claude Code, `/release` does the whole thing: it checks `main` is clean and green, writes the CHANGELOG section from what changed since the last tag, then tags, pushes and checks the published release.
 
-`Tools/Dev/readme-gifs.sh` re-renders the GIFs in this README from scripted scenes (needs `make build`, ffmpeg and gifsicle). `TheCity -render-icon <file.png>` renders the app icon at 1024 px.
+`Tools/Dev/readme-gifs.sh` re-renders the GIFs in this README from scripted scenes (needs `make build`, ffmpeg and gifsicle). Pass `showcase`, `city` or `office` to refresh a single reel. `Tools/Dev/readme-icons.sh` regenerates the Mac and iPhone icons from the same scene. See [Media notes](Docs/Media/README.md) for framing, timing and export settings.
 
 `make project` regenerates `TheCity.xcodeproj` from `project.yml` on its own. In debug builds, **Debug › Replay Fixture…** (⇧⌘R) replays any saved stream.
 

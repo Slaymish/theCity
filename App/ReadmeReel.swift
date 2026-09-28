@@ -3,7 +3,7 @@ import OfficeCore
 import RealityKit
 import SwiftUI
 
-/// `TheCity -render-reel city|office <dir> [-theme light] [-fps n]`: scripted scenes rendered frame by frame for the README's GIFs.
+/// `TheCity -render-reel showcase|city|office <dir> [-theme light] [-fps n]`: scripted scenes rendered frame by frame for the README's GIFs.
 @MainActor
 enum ReadmeReel {
     typealias Cue = (at: Double, run: () -> Void)
@@ -20,6 +20,7 @@ enum ReadmeReel {
         do {
             let dark = RunController.launchArgument("-theme") != "light"
             let fps = RunController.launchArgument("-fps").flatMap(Double.init) ?? 30
+            guard fps.isFinite, fps > 0, fps <= 120 else { throw CocoaError(.validationNumberTooLarge) }
             let folder = URL(fileURLWithPath: directory)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             switch name {
@@ -36,10 +37,11 @@ enum ReadmeReel {
         }
     }
 
-    private static func record(seconds: Double, fps: Double, cues: [Cue], recorder: FrameRecorder, to folder: URL,
+    private static func record(seconds: Double, fps: Double, cues: [Cue], recorder: FrameRecorder, to folder: URL, loopDissolve: Double = 0,
                                step: (Double) -> Void, camera: () -> Entity, overlay: (CGImage, Double) throws -> CGImage = { image, _ in image }) throws {
         var pending = cues.sorted { $0.at < $1.at }
         let dt = 1 / fps
+        var first: CGImage?
         try recorder.warmUp()
         for frame in 0..<Int(seconds * fps) {
             time = Double(frame) * dt
@@ -47,13 +49,19 @@ enum ReadmeReel {
                 pending.removeFirst()
                 cue.run()
             }
-            for _ in 0..<2 { step(dt / 2) }
-            let image = try overlay(try recorder.capture(camera: camera()), time)
+            // Camera flights clamp long steps. Keep low-rate contact sheets at the same speed as final reels.
+            let steps = max(Int(ceil(dt * 60)), 2)
+            for _ in 0..<steps { step(dt / Double(steps)) }
+            var image = try overlay(try recorder.capture(camera: camera()), time)
+            if first == nil { first = image }
+            if loopDissolve > dt {
+                image = try layer(image, [(first, fade(time, in: seconds - loopDissolve, loopDissolve - dt))])
+            }
             try OffscreenRenderer.writePNG(image, to: folder.appendingPathComponent(String(format: "frame-%05d.png", frame)))
         }
     }
 
-    private static func background(_ dark: Bool) -> CGColor { Palette.resolved(Palette.background, dark: dark).cgColor }
+    private static func background(_ dark: Bool) -> CGColor { DayCycle.now.sky(dark: dark).cgColor }
 
     // MARK: HUD
 
@@ -154,7 +162,7 @@ enum ReadmeReel {
         var onFloor: Double?
         let script = Wire(cwd: root.path)
         let recorder = try FrameRecorder(root: world.root, camera: world.camera.entity, width: Int(size.width), height: Int(size.height),
-                                         environment: ModelLibrary.environment("sky"), exposure: dark ? -0.5 : 0.6, background: background(dark))
+                                         environment: ModelLibrary.environment("sky"), exposure: CityScene.skyExposure(.now), background: background(dark))
         var cues: [Cue] = [
             (2.0, {
                 world.city.titleMode = false
@@ -162,8 +170,8 @@ enum ReadmeReel {
                 world.city.riseBuilding(building.id)
                 world.city.flyTowards(building.id)
             }),
-            (2.8, { world.building.show(building, sessions: sessions, dark: dark) }),
             (3.0, {
+                world.building.show(building, sessions: sessions, dark: dark)
                 world.enter(building.id, animated: true)
                 entered = 3.0
             }),
@@ -220,6 +228,7 @@ enum ReadmeReel {
         controller.beginScript(servers: servers, dark: dark)
         let scene = controller.scene
         scene.fit(points)
+        scene.camera.overview.distance *= 0.92
         scene.camera.reset(to: scene.camera.overview, animated: false)
 
         let script = Wire(cwd: root.path)
@@ -229,7 +238,7 @@ enum ReadmeReel {
         var delivered: Double?
         var before: CGImage?
         let recorder = try FrameRecorder(root: scene.root, camera: scene.camera.entity, width: Int(size.width), height: Int(size.height),
-                                         environment: ModelLibrary.environment("studio"), exposure: dark ? 0.2 : 0.9, background: background(dark))
+                                         environment: ModelLibrary.environment("studio"), exposure: OfficeScene.studioExposure(.now), background: background(dark))
         let cues: [Cue] = [
             (0.0, { controller.feed(script.initLine()) }),
             (0.4, { script.assign("research", "Find how sign-in should look").forEach(controller.feed) }),
@@ -269,7 +278,7 @@ enum ReadmeReel {
                 delivered = 9.3
             }),
         ]
-        try record(seconds: 12.5, fps: fps, cues: cues, recorder: recorder, to: folder,
+        try record(seconds: 13, fps: fps, cues: cues, recorder: recorder, to: folder,
                    step: scene.update, camera: { scene.camera.entity },
                    overlay: { image, time in
                        let base = hud(OfficeOverlay(controller: controller, scene: scene, onBack: {}, onClose: {}, showsDeskRequests: false), dark: dark)
@@ -284,12 +293,12 @@ enum ReadmeReel {
                    })
     }
 
-    // MARK: Showcase: a slow orbit round the city at the hour `-hour` pins, with no HUD
+    // MARK: Showcase: a warm miniature neighbourhood, with a gentle looping camera move
 
     private static func showcase(dark: Bool, fps: Double, to folder: URL) throws {
         let sample = URL(fileURLWithPath: RunController.launchArgument("-workspace") ?? FileManager.default.currentDirectoryPath)
         var buildings = ["theCity", "api", "web-app", "docs-site", "infra"].enumerated().map { index, name in
-            CityStore.Building(name: name, path: sample.path, style: index * 3 % 8)
+            CityStore.Building(name: name, path: sample.path, style: [1, 0, 2, 1, 2][index])
         }
         buildings[0].floors = [
             .init(name: "Login", hires: ["research", "build", "review"], budgetUSD: 1),
@@ -297,6 +306,11 @@ enum ReadmeReel {
             .init(name: "Docs", hires: ["design", "build"], budgetUSD: 1),
         ]
         buildings[1].floors = [.init(name: "Landing page", hires: ["research", "build"], budgetUSD: 1)]
+        for index in 2..<buildings.count {
+            buildings[index].floors = (0..<(index == 3 ? 1 : 2)).map { floor in
+                .init(name: "Studio \(floor + 1)", hires: ["build"], budgetUSD: 1)
+            }
+        }
         _ = PreviewStage.seedStatus(buildings, workspace: sample, dark: dark)
         let epoch = Date.now
         RunController.now = { epoch.addingTimeInterval(time) }
@@ -305,21 +319,25 @@ enum ReadmeReel {
         city.build(buildings, dark: dark)
         city.fit(points)
         city.refresh()
+        city.setLabelsVisible(false)
+        for _ in 0..<120 { city.update(1.0 / 60) }
         let cycle = DayCycle.now
         var pose = city.camera.overview
-        pose.target = [0, 0.4, 0]
-        pose.distance *= 0.4
-        pose.pitch = 0.42
-        pose.yaw -= 0.24
+        pose.target = [-0.7, 0.55, -0.5]
+        pose.distance *= 0.37
+        pose.pitch = 0.48
+        pose.yaw -= 0.18
         let start = pose
         city.camera.reset(to: pose, animated: false)
         let recorder = try FrameRecorder(root: city.root, camera: city.camera.entity, width: Int(size.width), height: Int(size.height),
                                          environment: ModelLibrary.environment("sky"), exposure: CityScene.skyExposure(cycle),
                                          background: cycle.sky(dark: dark).cgColor)
-        try record(seconds: 8, fps: fps, cues: [], recorder: recorder, to: folder,
+        try record(seconds: 8, fps: fps, cues: [], recorder: recorder, to: folder, loopDissolve: 0.6,
                    step: { dt in
                        city.update(dt)
-                       pose.yaw = start.yaw + Float(time) * 0.06
+                       let move = Float(fade(time, in: 0.4, 1.5) * (1 - fade(time, in: 5.3, 1.5)))
+                       pose.yaw = start.yaw + move * 0.12
+                       pose.distance = start.distance * (1 - move * 0.035)
                        city.camera.reset(to: pose, animated: false)
                    },
                    camera: { city.camera.entity })

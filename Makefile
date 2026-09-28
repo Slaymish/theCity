@@ -18,7 +18,7 @@ install: build
 
 # The iPhone app, for the simulator. To run it on a phone, open the project in Xcode with THECITY_TEAM set.
 companion: project
-	xcodebuild -project TheCity.xcodeproj -scheme TheCityCompanion -destination "generic/platform=iOS Simulator" -configuration Debug -derivedDataPath $(DERIVED) -quiet build
+	xcodebuild -project TheCity.xcodeproj -scheme TheCityCompanion -destination "generic/platform=iOS Simulator" -configuration Debug -derivedDataPath $(DERIVED) -quiet CODE_SIGNING_ALLOWED=NO build
 
 test:
 	cd Packages/OfficeCore && swift test

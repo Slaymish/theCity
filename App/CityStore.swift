@@ -187,6 +187,16 @@ final class CityStore {
         save()
     }
 
+    /// Saves a floor's account, model or budget and hands them to its session, so the next job uses them.
+    func changeSettings(of floorID: UUID, in buildingID: UUID, _ change: (inout Floor) -> Void) {
+        update(floor: floorID, in: buildingID, change)
+        guard let floor = floor(floorID, in: buildingID), let session = sessions[floorID] else { return }
+        session.model = floor.model
+        session.budgetUSD = floor.budgetUSD
+        let account = floor.configDirectory.map { URL(fileURLWithPath: $0) } ?? Preferences.shared.configDirectory
+        if session.configDirectory != account { session.configDirectory = account }
+    }
+
     // MARK: Sessions
 
     func session(for floorID: UUID, in buildingID: UUID) -> RunController? {

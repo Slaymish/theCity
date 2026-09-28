@@ -468,6 +468,9 @@ struct FloorList: View {
                         newName = floor.name
                         renaming = floor.id
                     }
+                    Divider()
+                    FloorSettingsMenus(city: city, building: building, floor: floor)
+                    Divider()
                     Button("Close Floor…") { closing = ClosingFloor(id: floor.id, name: floor.name) }
                 }
             }
@@ -492,6 +495,40 @@ struct FloorList: View {
         guard let session else { return "Quiet. \(rooms)." }
         guard session.isRunning else { return "Quiet. \(rooms)." }
         return "Working\(session.currentStep.map { ": \($0)" } ?? ""). \(rooms)."
+    }
+}
+
+/// A floor's account, model and budget, which its next job uses.
+struct FloorSettingsMenus: View {
+    let city: CityStore
+    let building: CityStore.Building
+    let floor: CityStore.Floor
+
+    var body: some View {
+        let session = city.sessions[floor.id]
+        let account = floor.configDirectory.map { URL(fileURLWithPath: $0) } ?? Preferences.shared.configDirectory
+        let models = ((session?.kit ?? RunController.cachedKit(for: building.url, configDirectory: account))?.models ?? [])
+            .filter { $0.value != "default" }
+        Menu("Account: \(Preferences.accountName(account))") {
+            ForEach(Preferences.shared.visibleAccounts(including: account), id: \.self) { url in
+                Button(UsageStore.shared.summary(url)) { change { $0.configDirectory = url?.path } }
+            }
+        }
+        Menu("Model: \(floor.model.map { value in models.first { $0.value == value }?.displayName ?? value.capitalized } ?? "Default")") {
+            Button("Default") { change { $0.model = nil } }
+            ForEach(models) { model in
+                Button(model.displayName) { change { $0.model = model.value } }
+            }
+        }
+        Menu("Budget: \(floor.budgetUSD.formatted(.currency(code: "USD")))") {
+            ForEach(RunController.budgets, id: \.self) { budget in
+                Button(budget.formatted(.currency(code: "USD"))) { change { $0.budgetUSD = budget } }
+            }
+        }
+    }
+
+    private func change(_ edit: (inout CityStore.Floor) -> Void) {
+        city.changeSettings(of: floor.id, in: building.id, edit)
     }
 }
 

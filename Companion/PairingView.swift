@@ -12,7 +12,7 @@ struct PairingView: View {
             Spacer()
             Image(systemName: "building.2.fill").font(.system(size: 56)).foregroundStyle(Color(Palette.primaryFill))
             VStack(spacing: 8) {
-                Text("The City").font(Typography.ui(34, weight: 700)).foregroundStyle(Color(Palette.text))
+                Text("The City").font(Typography.ui(PhoneLayout.appTitle, weight: 700)).foregroundStyle(Color(Palette.text))
                 Text("Follow your agents from anywhere in the house.").foregroundStyle(Color(Palette.muted))
             }
             VStack(alignment: .leading, spacing: 12) {
@@ -21,7 +21,7 @@ struct PairingView: View {
             }
             .foregroundStyle(Color(Palette.text))
             .padding()
-            .glassEffect(in: RoundedRectangle(cornerRadius: 20))
+            .glassEffect(in: RoundedRectangle(cornerRadius: PhoneLayout.panelRadius))
             Spacer()
             Button {
                 scanning = true

@@ -5,6 +5,7 @@ import SwiftUI
 
 /// Settings › iPhone: turns the companion link on and shows the code the phone scans to pair.
 struct CompanionSettings: View {
+    static let codeSize: CGFloat = 180
     @Bindable var host = CompanionHost.shared
 
     var body: some View {
@@ -19,7 +20,7 @@ struct CompanionSettings: View {
                 HStack {
                     Spacer()
                     if let image = Self.qrImage(code.url.absoluteString) {
-                        Image(nsImage: image).interpolation(.none).resizable().frame(width: 180, height: 180)
+                        Image(nsImage: image).interpolation(.none).resizable().frame(width: Self.codeSize, height: Self.codeSize)
                             .accessibilityLabel("Pairing code for \(code.host)")
                     }
                     Spacer()

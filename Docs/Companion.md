@@ -50,12 +50,20 @@ With that, the Mac writes the snapshot every few seconds while things change, an
 
 This was written without Xcode, so none of the Swift outside OfficeCore has been compiled. OfficeCore's companion code is covered by `CompanionTests` and runs on Linux. Expect a round of compile fixes on first build, especially in `Shared/Link/LocalLink.swift` (the TLS-PSK calls) and the SwiftUI in `Companion/`.
 
-## Needs your call
+## Sizes and timings
 
-These were picked to get something running and need your approval under `.claude/rules/app.md`:
+Decided with the first version; change them in one place.
 
-- The pairing QR code's size in Settings (180 pt).
-- The phone's banner type sizes (22 and 20 pt titles) and corner radii (24 pt banners, 20 pt panels).
-- Timings: 300 ms snapshot coalescing on the local network, 3 s iCloud interval, 60 s heartbeat, 3 minutes before the phone calls the Mac stale, 20 s before a local command counts as unanswered, and the 15-minute command lifetime.
-- The phone plays the office's sounds under the ambient audio session, so the silent switch mutes them.
-- The app has no icon of its own yet; the Mac's icon set has only macOS sizes.
+| What | Value | Where |
+|---|---|---|
+| Pairing QR code | 180 pt | `CompanionSettings.codeSize` |
+| Banner and panel corners | 24 pt, 20 pt | `PhoneLayout` in `Companion/CityScreen.swift` |
+| Building, floor and app titles | 22, 20, 34 pt | `PhoneLayout` |
+| Local network snapshot coalescing | 300 ms | `CompanionHost.localDelay` |
+| iCloud publish and poll interval | 3 s | `CompanionHost.cloudInterval`, `CityLink.cloudInterval` |
+| Heartbeat when nothing changes | 60 s | `CompanionHost.heartbeat` |
+| Phone calls the Mac stale after | 3 min | `CityLink.stale` |
+| Local command counts as unanswered after | 20 s | `CityLink.send` |
+| Command lifetime | 15 min | `CommandGate.lifetime` |
+
+The phone plays the office's sounds under the ambient audio session, so the silent switch mutes them. Its icon is the Mac icon's artwork on a full square, which iOS rounds itself.

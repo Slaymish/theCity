@@ -121,6 +121,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nz.hamish.thecity.companion
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: 1
         TARGETED_DEVICE_FAMILY: "1"

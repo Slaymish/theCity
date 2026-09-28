@@ -2,6 +2,15 @@ import OfficeCore
 import RealityKit
 import SwiftUI
 
+/// The phone's own sizes, alongside the brand's colours and type.
+enum PhoneLayout {
+    static let bannerRadius: CGFloat = 24
+    static let panelRadius: CGFloat = 20
+    static let buildingTitle: CGFloat = 22
+    static let floorTitle: CGFloat = 20
+    static let appTitle: CGFloat = 34
+}
+
 /// The whole app once paired: one building at a time, with a glass banner along the bottom that names the project.
 /// Swiping the banner flies to the next building; tapping a storey goes into that floor.
 struct CityScreen: View {
@@ -131,7 +140,7 @@ struct CityScreen: View {
             Text("Open The City on your Mac, on the same Wi-Fi.").font(.footnote).foregroundStyle(Color(Palette.muted))
         }
         .padding()
-        .glassEffect(in: RoundedRectangle(cornerRadius: 20))
+        .glassEffect(in: RoundedRectangle(cornerRadius: PhoneLayout.panelRadius))
         .frame(maxHeight: .infinity)
     }
 }
@@ -183,7 +192,7 @@ struct BuildingBanner: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(building.displayName).font(Typography.ui(22, weight: 600)).foregroundStyle(Color(Palette.text)).lineLimit(1)
+                    Text(building.displayName).font(Typography.ui(PhoneLayout.buildingTitle, weight: 600)).foregroundStyle(Color(Palette.text)).lineLimit(1)
                     Text(status).font(.subheadline).foregroundStyle(Color(building.waitingCount > 0 ? Palette.manager : Palette.muted))
                 }
                 Spacer()
@@ -205,7 +214,7 @@ struct BuildingBanner: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(in: RoundedRectangle(cornerRadius: 24))
+        .glassEffect(in: RoundedRectangle(cornerRadius: PhoneLayout.bannerRadius))
         .accessibilityElement(children: .contain)
     }
 
@@ -232,7 +241,7 @@ struct FloorBanner: View {
                     .buttonStyle(.glass)
                     .accessibilityLabel("Back to \(building.displayName)")
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(floor.name).font(Typography.ui(20, weight: 600)).foregroundStyle(Color(Palette.text)).lineLimit(1)
+                    Text(floor.name).font(Typography.ui(PhoneLayout.floorTitle, weight: 600)).foregroundStyle(Color(Palette.text)).lineLimit(1)
                     Text(building.displayName).font(.caption).foregroundStyle(Color(Palette.muted))
                 }
                 Spacer()
@@ -259,7 +268,7 @@ struct FloorBanner: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(in: RoundedRectangle(cornerRadius: 24))
+        .glassEffect(in: RoundedRectangle(cornerRadius: PhoneLayout.bannerRadius))
     }
 
     /// What's happening now: the step of the room most recently at work, or how the job ended.

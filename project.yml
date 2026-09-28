@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: nz.hamish
   deploymentTarget:
     macOS: "26.0"
+    iOS: "26.0"
   createIntermediateGroups: true
 packages:
   OfficeCore:
@@ -28,6 +29,7 @@ targets:
     sources:
       - path: App
         excludes: ["Brands/**"]
+      - path: Shared
       - path: App/Brands
         type: folder
         buildPhase: resources
@@ -51,6 +53,8 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.developer-tools
         NSMicrophoneUsageDescription: "The City uses the microphone to turn your speech into text, on this Mac."
+        NSLocalNetworkUsageDescription: "The City shows your projects to The City on your iPhone, over this network."
+        NSBonjourServices: ["_thecity._tcp"]
         SUFeedURL: https://github.com/Slaymish/theCity/releases/latest/download/appcast.xml
         SUPublicEDKey: XFsMrfnVINrYuvdLOzPgPXbDhfGGm+Uu6fYmTaGAkxQ=
         SUEnableAutomaticChecks: true
@@ -64,8 +68,72 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: NO
         ENABLE_APP_SANDBOX: NO
+  # The companion iPhone app. It shares the office and building scenes with the Mac; see Docs/Companion.md.
+  TheCityCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - path: Companion
+      - path: Shared
+      - App/BuildingScene.swift
+      - App/OfficeScene.swift
+      - App/Worker.swift
+      - App/CameraRig.swift
+      - App/ModelLibrary.swift
+      - App/Theme.swift
+      - App/Brand.swift
+      - App/DayCycle.swift
+      - App/SceneGrade.swift
+      - App/Billboard.swift
+      - App/Horizon.swift
+      - App/Wording.swift
+      - App/JobJournal.swift
+      - App/Sound.swift
+      - App/Platform.swift
+      - path: App/Models
+        buildPhase: resources
+      - path: App/Environment
+        buildPhase: resources
+      - path: App/Sounds
+        buildPhase: resources
+      - path: App/Fonts
+        buildPhase: resources
+      - path: App/Brands
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: OfficeCore
+    info:
+      path: Companion/Info.plist
+      properties:
+        CFBundleDisplayName: The City
+        CFBundleName: The City
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSLocalNetworkUsageDescription: "The City finds your Mac on this network to show your projects."
+        NSBonjourServices: ["_thecity._tcp"]
+        NSCameraUsageDescription: "The City scans the pairing code shown on your Mac."
+        CFBundleURLTypes:
+          - CFBundleURLName: nz.hamish.thecity.pair
+            CFBundleURLSchemes: [thecity]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nz.hamish.thecity.companion
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+        # A free Apple ID's personal team is enough to run on your own phone. Set it with THECITY_TEAM before `make project`.
+        DEVELOPMENT_TEAM: ${THECITY_TEAM}
 schemes:
   TheCity:
     build:
       targets:
         TheCity: all
+  TheCityCompanion:
+    build:
+      targets:
+        TheCityCompanion: all

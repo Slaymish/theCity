@@ -31,9 +31,10 @@ public struct FloorMirror: Sendable, Equatable {
         }
     }
 
-    public func snapshot(id: UUID, name: String, hires: [String], request: String?, state: OfficeState, startedAt: Date?) -> FloorSnapshot {
+    public func snapshot(id: UUID, name: String, hires: [String], colours: [String: Int] = [:], request: String?, state: OfficeState,
+                         startedAt: Date?) -> FloorSnapshot {
         FloorSnapshot(
-            id: id, name: name, hires: hires, request: request.map { Clip.text($0, to: Clip.request) },
+            id: id, name: name, hires: hires, colours: colours, request: request.map { Clip.text($0, to: Clip.request) },
             phase: Self.phase(state.phase), startedAt: startedAt, managerActive: state.managerActive,
             handoffs: state.handoffs.values.sorted { $0.toolUseID < $1.toolUseID }.map { handoff in
                 HandoffSnapshot(

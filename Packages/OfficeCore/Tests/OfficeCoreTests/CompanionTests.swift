@@ -100,6 +100,18 @@ struct CompanionTests {
         #expect(next.events(since: last).first == .runStarted)
     }
 
+    @Test func roomCountsMatchTheMacs() throws {
+        for fixture in ["three-rooms.jsonl", "subagent-question-and-approval.jsonl"] {
+            var reducer = OfficeReducer()
+            var mirror = FloorMirror()
+            for event in try Fixture.events(fixture) {
+                mirror.record(reducer.apply(.wire(event)))
+                let snapshot = mirror.snapshot(id: Self.floor, name: "F", hires: ["research", "build"], request: nil, state: reducer.state, startedAt: nil)
+                #expect(snapshot.roomCounts == reducer.state.roomCounts(staff: ["research", "build"]))
+            }
+        }
+    }
+
     @Test func longTextIsClipped() {
         let long = String(repeating: "a", count: 5000)
         var mirror = FloorMirror()

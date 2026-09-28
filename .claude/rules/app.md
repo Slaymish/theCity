@@ -15,3 +15,4 @@ paths:
 - A rig that follows a scaled scene needs `CameraRig.frame` set, and its camera entity must not be parented under the scaled root.
 - Every `OfficeScene` adds its own sun. In the building view only one storey's sun is enabled.
 - Check visual changes with an offscreen render (see CLAUDE.md), not by driving the live window.
+- The iPhone app compiles the scene files listed under `TheCityCompanion` in `project.yml`. In those, use `LaunchArgument`, not `RunController`, `CityStore` or `Preferences`, and fence AppKit-only calls with `#if os(macOS)`.

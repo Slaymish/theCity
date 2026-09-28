@@ -57,6 +57,8 @@ public struct FloorSnapshot: Codable, Sendable, Equatable, Identifiable {
     public var name: String
     /// Department names in hiring order, which is the order the office lays out its pods.
     public var hires: [String]
+    /// Each department's place in the Mac's agent catalogue, which picks its colour, so the phone's office matches.
+    public var colours: [String: Int]
     /// The job being worked on, or the last one.
     public var request: String?
     public var phase: Phase
@@ -72,12 +74,13 @@ public struct FloorSnapshot: Codable, Sendable, Equatable, Identifiable {
     public var tokens: Int
     public var costUSD: Double?
 
-    public init(id: UUID, name: String, hires: [String], request: String?, phase: Phase, startedAt: Date?, managerActive: Bool = false,
+    public init(id: UUID, name: String, hires: [String], colours: [String: Int] = [:], request: String?, phase: Phase, startedAt: Date?, managerActive: Bool = false,
                 handoffs: [HandoffSnapshot] = [], captions: [String: String] = [:], skills: [String: [String]] = [:],
                 serviceCalls: [ServiceCallSnapshot] = [], questions: [QuestionSnapshot] = [], tokens: Int = 0, costUSD: Double? = nil) {
         self.id = id
         self.name = name
         self.hires = hires
+        self.colours = colours
         self.request = request
         self.phase = phase
         self.startedAt = startedAt
@@ -92,6 +95,22 @@ public struct FloorSnapshot: Codable, Sendable, Equatable, Identifiable {
     }
 
     public var isRunning: Bool { phase == .running }
+
+    /// Each room counted once, as the Mac counts them: waiting on you, working, or idle.
+    public var roomCounts: RoomCounts {
+        let rooms = Set(["manager"] + hires + handoffs.map(\.room))
+        let waiting = Set(questions.map(\.room))
+        let working = Set(handoffs.filter { $0.phase == .working }.map(\.room))
+        return rooms.reduce(into: RoomCounts()) { counts, room in
+            if waiting.contains(room) {
+                counts.waiting += 1
+            } else if room == "manager" ? managerActive : working.contains(room) {
+                counts.working += 1
+            } else {
+                counts.idle += 1
+            }
+        }
+    }
 }
 
 public struct HandoffSnapshot: Codable, Sendable, Equatable, Identifiable {

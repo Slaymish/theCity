@@ -75,7 +75,7 @@ extension FloorSnapshot {
 
     /// The same floor with nothing happening, as the starting point for a new run.
     static func empty(like floor: FloorSnapshot) -> FloorSnapshot {
-        FloorSnapshot(id: floor.id, name: floor.name, hires: floor.hires, request: nil, phase: .running, startedAt: floor.startedAt)
+        FloorSnapshot(id: floor.id, name: floor.name, hires: floor.hires, colours: floor.colours, request: nil, phase: .running, startedAt: floor.startedAt)
     }
 
     var runOutcome: RunOutcome? {

@@ -117,7 +117,8 @@ final class CompanionHost {
                 guard let session = city.sessions[floor.id] else {
                     return FloorSnapshot(id: floor.id, name: floor.name, hires: floor.hires, request: floor.lastRequest, phase: .idle, startedAt: nil)
                 }
-                return session.mirror.snapshot(id: floor.id, name: floor.name, hires: floor.hires,
+                let colours = Dictionary(session.catalogueNames.enumerated().map { ($1, $0) }) { first, _ in first }
+                return session.mirror.snapshot(id: floor.id, name: floor.name, hires: floor.hires, colours: colours,
                                                request: session.request.isEmpty ? floor.lastRequest : session.request,
                                                state: session.state, startedAt: session.startedAt)
             })

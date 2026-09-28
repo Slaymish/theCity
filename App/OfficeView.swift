@@ -140,6 +140,7 @@ struct OfficeOverlay: View {
                                     .buttonStyle(PillButtonStyle(kind: .secondary))
                                     .help("Show this floor’s past requests and results (⌘Y)")
                             }
+                            ElsewhereNeedsYou(city: CityStore.shared, floorID: controller.floorID)
                         }
                     }
                     if !controller.request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, controller.state.phase != .idle {

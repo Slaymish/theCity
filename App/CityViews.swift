@@ -108,6 +108,26 @@ struct NeedsYouList: View {
     }
 }
 
+/// The next other floor waiting on you, so a raised hand elsewhere isn't missed while you're on a floor.
+struct ElsewhereNeedsYou: View {
+    let city: CityStore
+    let floorID: UUID?
+
+    var body: some View {
+        let waiting = city.buildings.flatMap { building in
+            building.floors.filter { $0.id != floorID && city.needsYou($0) > 0 }.map { (building, $0) }
+        }
+        let raised = waiting.first { city.sessions[$0.1.id]?.state.pendingRequests.isEmpty == false }
+        if let (building, floor) = raised ?? waiting.first {
+            Button("\(building.name) · \(floor.name) needs you", systemImage: "hand.raised.fill") {
+                city.route = .floor(building: building.id, floor: floor.id)
+            }
+            .buttonStyle(PillButtonStyle(kind: .accent(Palette.manager)))
+            .help(waiting.count > 1 ? "\(waiting.count) floors need you. Go to \(floor.name)." : "Go to \(floor.name)")
+        }
+    }
+}
+
 /// A keyboard- and VoiceOver-friendly way into every building, alongside the 3D city.
 struct ProjectList: View {
     let city: CityStore

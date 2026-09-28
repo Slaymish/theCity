@@ -1,6 +1,6 @@
 # The City
 
-A macOS 26 app (SwiftUI + RealityKit) that shows Claude Code runs as a city of robot-staffed offices, driven by the `claude` CLI's stream-JSON output.
+A macOS 26 app (SwiftUI + RealityKit) that shows Claude Code runs as a city of robot-staffed offices, driven by the `claude` CLI's stream-JSON output. An iOS 26 companion app follows and answers the city from a phone.
 
 ## Commands
 
@@ -13,6 +13,7 @@ A macOS 26 app (SwiftUI + RealityKit) that shows Claude Code runs as a city of r
 | Build and run against `SampleWorkspace/` | `make run` |
 | Replay a recorded stream (no API calls) | `make replay` |
 | Install to `/Applications` (do this after edits so a relaunch gets the new build) | `make install` |
+| Build the iPhone companion for the simulator | `make companion` |
 | Release | `/release` |
 
 `TheCity.xcodeproj` is generated and gitignored. Change `project.yml`, never the project.
@@ -31,6 +32,8 @@ A macOS 26 app (SwiftUI + RealityKit) that shows Claude Code runs as a city of r
 - `Packages/OfficeCore/`: stream parser, control protocol, reducer, process layer and agent catalogue, with no UI.
 - `App/`: SwiftUI screens, RealityKit scenes (`World`, `CityScene`, `BuildingScene`, `OfficeScene`), stores, on-device routing, theme and brands.
 - `Assets/Pipeline/`: Blender scripts that produce `App/Models`. `Assets/Vendor/` holds the KayKit submodules.
+- `Companion/`: the iPhone app. It shares the scene files listed under `TheCityCompanion` in `project.yml`, so keep those free of Mac-only types (see `Docs/Companion.md`).
+- `Shared/Link/`: the local network and iCloud links, compiled into both apps.
 - `fixtures/`: recorded real CLI streams for tests and replay.
 - `Tools/Dev/`: live-window helpers and the README reel script.
 

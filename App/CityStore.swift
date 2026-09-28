@@ -285,6 +285,28 @@ final class CityStore {
         }
     }
 
+    /// Reception routes a request without the window: to a floor the request names, the floor it suggests, or a new floor it hires for.
+    @discardableResult
+    func askReception(_ request: String, in buildingID: UUID) -> Bool {
+        guard !isBusy(buildingID), let building = building(buildingID) else { return false }
+        if let (floor, rest) = ReceptionDesk.directFloor(in: request, floors: building.floors), !rest.isEmpty {
+            send(rest, toFloor: floor.id, in: buildingID, navigate: false)
+            return true
+        }
+        routing.insert(buildingID)
+        Task {
+            let topic = ReceptionDesk.topic(of: request, commands: commands[buildingID] ?? [])
+            let suggestion = await ReceptionDesk.route(request: topic, floors: building.floors)
+            routing.remove(buildingID)
+            if let floorID = suggestion.floorID, floor(floorID, in: buildingID) != nil {
+                send(request, toFloor: floorID, in: buildingID, navigate: false)
+            } else {
+                hireNewFloor(in: buildingID, request: request, name: suggestion.newFloorName, preset: FloorPreset.named(suggestion.presetID))
+            }
+        }
+        return true
+    }
+
     func canContinue(_ floor: Floor) -> Bool {
         floor.sessionID != nil || sessions[floor.id]?.canContinue == true
     }
@@ -542,5 +564,24 @@ final class CityStore {
         guard let data = try? encoder.encode(buildings.filter { $0.id != demoID }) else { return }
         try? FileManager.default.createDirectory(at: Self.fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: Self.fileURL, options: .atomic)
+    }
+}
+
+extension RunController: Storey {
+    var waitingCount: Int { state.pendingRequests.count }
+}
+
+extension CityStore.Building {
+    var plan: TowerPlan {
+        TowerPlan(id: id, name: name, title: title, floors: floors.map { TowerPlan.Floor(id: $0.id, name: $0.name, lastOutcome: $0.lastOutcome, unseen: $0.unseen == true) })
+    }
+}
+
+extension BuildingScene {
+    /// The Mac's tower reads names and sessions from the city, which changes between shows.
+    func show(_ building: CityStore.Building, sessions: [(UUID, RunController)], dark: Bool) {
+        latestPlan = { CityStore.shared.building($0)?.plan }
+        latestStorey = { CityStore.shared.sessions[$0] }
+        show(building.plan, storeys: sessions.map { ($0.0, $0.1 as any Storey) }, dark: dark)
     }
 }

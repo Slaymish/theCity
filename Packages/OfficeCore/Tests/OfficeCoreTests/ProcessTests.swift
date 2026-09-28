@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import OfficeCore
 
+#if os(macOS)
 struct ProcessTests {
     static let shell = URL(fileURLWithPath: "/bin/sh")
 
@@ -141,3 +142,4 @@ struct ProcessTests {
         #expect(FixtureReplay.relocated(text, to: nil).joined(separator: "\n") == text.trimmingCharacters(in: .newlines))
     }
 }
+#endif

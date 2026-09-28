@@ -49,9 +49,11 @@ enum GraphicsQuality: Int, CaseIterable, Identifiable {
         allCases.first { $0.title.lowercased() == name.lowercased() }
     }
 
-    @MainActor static var forced: GraphicsQuality? { RunController.launchArgument("-graphics").flatMap(named) }
+    @MainActor static var forced: GraphicsQuality? { LaunchArgument.value("-graphics").flatMap(named) }
 
+    #if os(macOS)
     @MainActor static var current: GraphicsQuality { forced ?? Preferences.shared.graphics ?? recommended }
+    #endif
 
     static var recommended: GraphicsQuality {
         guard ProcessInfo.processInfo.isLowPowerModeEnabled else { return device }
@@ -62,6 +64,10 @@ enum GraphicsQuality: Int, CaseIterable, Identifiable {
         guard let device = MTLCreateSystemDefaultDevice() else { return .low }
         if device.supportsFamily(.apple9), device.hasUnifiedMemory, device.recommendedMaxWorkingSetSize >= 16 << 30 { return .ultra }
         if device.supportsFamily(.apple7) { return .high }
+        #if os(macOS)
         return device.isLowPower ? .low : .medium
+        #else
+        return .medium
+        #endif
     }()
 }

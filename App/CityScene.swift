@@ -362,8 +362,7 @@ final class CityScene {
     }
 
     static func ground(dark: Bool) -> ModelEntity {
-        let ground = ModelEntity(mesh: .generateCylinder(height: 0.1, radius: 400),
-                                 materials: [OfficeScene.material(Palette.resolved(Palette.grass, dark: dark))])
+        let ground = Horizon.ground(dark: dark)
         ground.position = [0, groundLevel - 0.05, 0]
         return ground
     }
@@ -475,7 +474,7 @@ final class CityScene {
         applyDaylight()
     }
 
-    static func skyExposure(_ cycle: DayCycle) -> Float { cycle.mix(day: 0.2, night: -3) }
+    static func skyExposure(_ cycle: DayCycle) -> Float { Horizon.skyExposure(cycle) }
 
     private func applyDaylight() {
         let cycle = DayCycle.now
@@ -605,19 +604,5 @@ final class CityScene {
                 lot.label = label
             }
         }
-    }
-}
-
-struct SeededGenerator: RandomNumberGenerator {
-    private var state: UInt64
-
-    init(seed: UInt64) { state = seed &+ 0x9E37_79B9_7F4A_7C15 }
-
-    mutating func next() -> UInt64 {
-        state &+= 0x9E37_79B9_7F4A_7C15
-        var z = state
-        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
-        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
-        return z ^ (z >> 31)
     }
 }

@@ -17,6 +17,11 @@ enum Wording {
         default: toolName
         }
     }
+
+    static func clock(_ seconds: TimeInterval) -> String {
+        let whole = Int(seconds.rounded())
+        return String(format: "%d:%02d", whole / 60, whole % 60)
+    }
 }
 
 struct ActivityItem: Identifiable, Equatable {

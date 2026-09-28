@@ -26,6 +26,8 @@ jobs:
           make project
           xcodebuild -project TheCity.xcodeproj -scheme TheCity -configuration Debug \
             -destination 'generic/platform=macOS' -derivedDataPath build -quiet build
+      - name: Build iPhone app
+        run: make companion
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

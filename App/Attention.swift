@@ -135,7 +135,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let reel = RunController.launchArgument("-render-reel"), let path = RunController.launchArgument(reel) { ReadmeReel.run(reel, to: path) }
         Attention.shared.setUp()
         CityStore.shared.refreshBadge()
-        if !MainWindow.offscreen { DictationStore.shared.start() }
+        if !MainWindow.offscreen {
+            DictationStore.shared.start()
+            SleepGuard.shared.watch(.shared)
+            CompanionHost.shared.start()
+        }
         #if !DEBUG
         _ = Updater.shared
         #endif

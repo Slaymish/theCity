@@ -36,6 +36,7 @@ public enum Git {
         }
     }
 
+    #if os(macOS)
     /// Nil when the folder isn't in a git repository.
     public static func branches(in directory: URL) async -> Branches? {
         guard let list = try? await run(["worktree", "list", "--porcelain"], in: directory),
@@ -94,4 +95,5 @@ public enum Git {
             }
         }
     }
+    #endif
 }

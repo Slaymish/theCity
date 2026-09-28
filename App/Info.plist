@@ -22,6 +22,12 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_thecity._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>The City shows your projects to The City on your iPhone, over this network.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>The City uses the microphone to turn your speech into text, on this Mac.</string>
 	<key>SUEnableAutomaticChecks</key>

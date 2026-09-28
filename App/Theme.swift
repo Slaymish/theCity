@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import CoreText
 import SwiftUI
 
@@ -6,10 +10,15 @@ enum Palette {
     private static var brand: Brand { MainActor.assumeIsolated { BrandStore.shared.current } }
 
     private static func token(_ pick: @escaping (Brand.Tokens) -> String) -> NSColor {
-        NSColor(name: nil) { appearance in
-            let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            return NSColor(hex: pick(brand.tokens(dark: dark)))
-        }
+        dynamic { dark in NSColor(hex: pick(brand.tokens(dark: dark))) }
+    }
+
+    private static func dynamic(_ make: @escaping (Bool) -> NSColor) -> NSColor {
+        #if os(macOS)
+        NSColor(name: nil) { make($0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua) }
+        #else
+        UIColor { make($0.userInterfaceStyle == .dark) }
+        #endif
     }
 
     static var background: NSColor { token(\.background) }
@@ -49,7 +58,7 @@ enum Palette {
     static var mullion: NSColor { pair(light: "#4A5059", dark: "#2B2F35") }
 
     private static func pair(light: String, dark: String) -> NSColor {
-        NSColor(name: nil) { NSColor(hex: $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light) }
+        dynamic { NSColor(hex: $0 ? dark : light) }
     }
 
     static func textOn(_ fill: NSColor) -> NSColor {
@@ -62,16 +71,26 @@ enum Palette {
     }
 
     static func resolved(_ colour: NSColor, dark: Bool) -> NSColor {
+        #if os(macOS)
         var result = colour
         NSAppearance(named: dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
             result = colour.usingColorSpace(.sRGB) ?? colour
         }
         return result
+        #else
+        return colour.resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light))
+        #endif
     }
 }
 
 extension Color {
-    init(_ token: NSColor) { self.init(nsColor: token) }
+    init(_ token: NSColor) {
+        #if os(macOS)
+        self.init(nsColor: token)
+        #else
+        self.init(uiColor: token)
+        #endif
+    }
 }
 
 enum Typography {

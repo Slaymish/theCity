@@ -1,5 +1,9 @@
 import AVFoundation
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 
 @MainActor
 enum Sound {
@@ -11,7 +15,14 @@ enum Sound {
     private static var patter: AVAudioPlayer?
     private static var patterOwners: Set<ObjectIdentifier> = []
 
+    #if os(macOS)
     private static var allowed: Bool { Preferences.shared.sounds && NSApp.isActive }
+    private static var volume: Double { Preferences.shared.soundVolume }
+    #else
+    /// The phone plays under the ambient audio session, so the silent switch mutes it.
+    private static var allowed: Bool { UIApplication.shared.applicationState == .active }
+    private static let volume = 1.0
+    #endif
 
     static func play(_ cue: Cue, volume: Float = 1, rate: Float = 1, after delay: Duration = .zero) {
         guard allowed else { return }
@@ -26,7 +37,7 @@ enum Sound {
         guard let player else { return }
         player.enableRate = rate != 1
         player.rate = rate
-        player.volume = volume * Float(Preferences.shared.soundVolume)
+        player.volume = volume * Float(Self.volume)
         player.currentTime = 0
         player.play()
     }
@@ -51,7 +62,7 @@ enum Sound {
             patter = try? AVAudioPlayer(contentsOf: url)
             patter?.numberOfLoops = -1
         }
-        patter?.volume = 0.12 * Float(Preferences.shared.soundVolume)
+        patter?.volume = 0.12 * Float(volume)
         patter?.play()
     }
 }

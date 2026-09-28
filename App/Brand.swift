@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import Observation
 
 /// A white-label theme: everything the city, offices and UI take their colours, type and name from.

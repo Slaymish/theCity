@@ -182,22 +182,8 @@ enum MenuBarReception {
             let response = alert.runModal()
             if !MainWindow.shared.isOpen { NSApp.hide(nil) }
             let request = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard response == .alertFirstButtonReturn, !request.isEmpty, !city.isBusy(buildingID),
-                  let building = city.building(buildingID) else { return }
-            if let (floor, rest) = ReceptionDesk.directFloor(in: request, floors: building.floors), !rest.isEmpty {
-                return city.send(rest, toFloor: floor.id, in: buildingID, navigate: false)
-            }
-            city.routing.insert(buildingID)
-            Task {
-                let topic = ReceptionDesk.topic(of: request, commands: city.commands[buildingID] ?? [])
-                let suggestion = await ReceptionDesk.route(request: topic, floors: building.floors)
-                city.routing.remove(buildingID)
-                if let floorID = suggestion.floorID, city.floor(floorID, in: buildingID) != nil {
-                    city.send(request, toFloor: floorID, in: buildingID, navigate: false)
-                } else {
-                    city.hireNewFloor(in: buildingID, request: request, name: suggestion.newFloorName, preset: FloorPreset.named(suggestion.presetID))
-                }
-            }
+            guard response == .alertFirstButtonReturn, !request.isEmpty else { return }
+            city.askReception(request, in: buildingID)
         }
     }
 }

@@ -10,7 +10,11 @@ public enum JSONValue: Sendable, Equatable {
 
     public init(any: Any?) {
         switch any {
+        #if canImport(Darwin)
         case let value as NSNumber where CFGetTypeID(value) == CFBooleanGetTypeID(): self = .bool(value.boolValue)
+        #else
+        case let value as Bool: self = .bool(value)
+        #endif
         case let value as NSNumber: self = .number(value.doubleValue)
         case let value as String: self = .string(value)
         case let value as [Any]: self = .array(value.map { JSONValue(any: $0) })

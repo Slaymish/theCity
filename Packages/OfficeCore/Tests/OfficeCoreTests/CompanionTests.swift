@@ -207,3 +207,40 @@ struct PairingTests {
         #expect(PairingCode(url: try #require(URL(string: "https://example.com/pair?id=x"))) == nil)
     }
 }
+
+struct LinkFramerTests {
+    static let snapshot = CitySnapshot(host: "Mac", takenAt: Date(timeIntervalSince1970: 1_800_000_000), buildings: [
+        BuildingSnapshot(id: UUID(), name: "theCity", title: "The City", style: 2, floors: [
+            FloorSnapshot(id: UUID(), name: "Docs", hires: ["research"], request: "Tidy", phase: .running, startedAt: nil),
+        ]),
+    ])
+
+    @Test func messagesSurviveBeingSplitAnywhere() throws {
+        let messages: [LinkMessage] = [
+            .hello(version: CitySnapshot.protocolVersion, device: "Phone"), .snapshot(Self.snapshot),
+            .receipt(CommandReceipt(commandID: UUID(), outcome: .refused("Already answered on the Mac"))),
+        ]
+        let stream = try messages.reduce(Data()) { $0 + (try LinkFramer.frame($1)) }
+        for chunk in [1, 3, 7, 64, stream.count] {
+            var framer = LinkFramer()
+            var received: [LinkMessage] = []
+            var offset = 0
+            while offset < stream.count {
+                let end = min(offset + chunk, stream.count)
+                received += try framer.feed(stream.subdata(in: offset..<end))
+                offset = end
+            }
+            #expect(received == messages)
+        }
+    }
+
+    @Test func anAbsurdLengthClosesTheConnection() {
+        var framer = LinkFramer()
+        #expect(throws: LinkFramer.Failure.tooLong(0x7fff_ffff)) { try framer.feed(Data([0x7f, 0xff, 0xff, 0xff])) }
+    }
+
+    @Test func garbageClosesTheConnection() {
+        var framer = LinkFramer()
+        #expect(throws: LinkFramer.Failure.unreadable) { try framer.feed(Data([0, 0, 0, 2, 0x7b, 0x7b])) }
+    }
+}

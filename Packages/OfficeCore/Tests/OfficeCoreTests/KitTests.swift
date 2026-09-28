@@ -84,6 +84,7 @@ struct KitTests {
     }
 }
 
+#if os(macOS)
 struct KitLoaderLiveTests {
     /// Uses the real CLI when it's installed and logged in; costs nothing because the model name is invalid.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["OFFICE_LIVE_TESTS"] == "1"))
@@ -98,3 +99,4 @@ struct KitLoaderLiveTests {
         print("kit: \(kit.skills.count) skills, \(kit.servers.count) servers (\(kit.usableServers.count) connected) in \(ContinuousClock.now - start)")
     }
 }
+#endif

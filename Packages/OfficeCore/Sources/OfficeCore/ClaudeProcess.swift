@@ -76,6 +76,7 @@ public struct RunConfig: Sendable, Equatable {
     }
 }
 
+#if os(macOS)
 public enum ClaudeEnvironment {
     static let sessionVariables: Set<String> = [
         "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
@@ -275,3 +276,4 @@ public final class ClaudeProcess: @unchecked Sendable {
 private final class StderrBox: @unchecked Sendable {
     var data = Data()
 }
+#endif

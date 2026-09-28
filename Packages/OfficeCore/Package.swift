@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "OfficeCore",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v15), .iOS(.v18)],
     products: [.library(name: "OfficeCore", targets: ["OfficeCore"])],
     targets: [
         .target(name: "OfficeCore"),

@@ -4,6 +4,7 @@ public enum KitLoader {
     /// A model name that cannot exist: the CLI still sends its handshake and `init` (skills, servers), then stops with `model_not_found` at no cost.
     static let inventoryModel = "office-inventory-no-such-model"
 
+    #if os(macOS)
     public static func load(executable: URL, environment: [String: String], workingDirectory: URL) async -> Kit {
         async let lines = inventoryLines(executable: executable, environment: environment, workingDirectory: workingDirectory)
         async let health = mcpList(executable: executable, environment: environment, workingDirectory: workingDirectory)
@@ -53,4 +54,5 @@ public enum KitLoader {
             }
         }
     }
+#endif
 }

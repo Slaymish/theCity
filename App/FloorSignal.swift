@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// What a floor, building or the whole city is telling the user, in the order it matters.
 /// Every place that shows status derives it from here, so a state has one name, symbol and colour everywhere.
@@ -46,6 +47,33 @@ enum FloorSignal: Int, Comparable, CaseIterable {
         case .working: "Working"
         case .queued: "Queued"
         case .quiet: "Quiet"
+        }
+    }
+}
+
+extension FloorSignal {
+    /// How long something has waited, in the coarsest unit that still moves: "40s", "4m", "2h".
+    static func age(from start: Date, to now: Date) -> String {
+        let seconds = max(Int(now.timeIntervalSince(start)), 0)
+        return seconds < 60 ? "\(seconds)s" : seconds < 3600 ? "\(seconds / 60)m" : "\(seconds / 3600)h"
+    }
+
+    /// Waiting time is calm for the first half minute, then shown, so a fresh request doesn't flicker a timer.
+    static let ageAppearsAfter: TimeInterval = 30
+}
+
+/// "Waiting 4m", shown once a request has waited past `FloorSignal.ageAppearsAfter`.
+struct WaitingAge: View {
+    let since: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 5)) { context in
+            if context.date.timeIntervalSince(since) >= FloorSignal.ageAppearsAfter {
+                Text("Waiting \(FloorSignal.age(from: since, to: context.date))")
+                    .font(Typography.caption)
+                    .foregroundStyle(Color(Palette.muted))
+                    .monospacedDigit()
+            }
         }
     }
 }

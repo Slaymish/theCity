@@ -458,17 +458,31 @@ final class CityStore {
                    running: session?.isRunning == true, queued: floor.queued?.count ?? 0)
     }
 
-    /// Every floor that needs a person, blocked first, then failed, then ready, each in city order.
-    func floorsNeedingYou() -> [(building: Building, floor: Floor, signal: FloorSignal)] {
-        buildings.flatMap { building in building.floors.map { (building: building, floor: $0, signal: signal(of: $0)) } }
-            .enumerated()
-            .filter { $0.element.signal.needsAPerson }
-            .sorted { ($0.element.signal, $0.offset) < ($1.element.signal, $1.offset) }
-            .map(\.element)
+    struct NeedsYou {
+        var building: Building
+        var floor: Floor
+        var signal: FloorSignal
+        /// When the oldest waiting request arrived. Ready and failed floors don't record when they finished.
+        var since: Date?
+        var count: Int
     }
 
-    /// The most urgent floor needing a person, or the one after this floor's turn if it's already open.
-    func nextNeedingYou() -> (building: Building, floor: Floor, signal: FloorSignal)? {
+    /// Every floor that needs a person: blocked, then failed, then ready, and within a state the longest-waiting first.
+    func floorsNeedingYou() -> [NeedsYou] {
+        buildings.flatMap { building in
+            building.floors.map { floor -> NeedsYou in
+                let pending = sessions[floor.id]?.state.pendingRequests ?? []
+                return NeedsYou(building: building, floor: floor, signal: signal(of: floor), since: pending.map(\.since).min(), count: pending.count)
+            }
+        }
+        .enumerated()
+        .filter { $0.element.signal.needsAPerson }
+        .sorted { ($0.element.signal, $0.element.since ?? .distantFuture, $0.offset) < ($1.element.signal, $1.element.since ?? .distantFuture, $1.offset) }
+        .map(\.element)
+    }
+
+    /// The most urgent floor needing a person, or the next one after it if that floor is already open.
+    func nextNeedingYou() -> NeedsYou? {
         let waiting = floorsNeedingYou()
         guard case .floor(_, let open) = route, let index = waiting.firstIndex(where: { $0.floor.id == open }) else { return waiting.first }
         return waiting[(index + 1) % waiting.count]

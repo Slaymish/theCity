@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.14.0
+
+### Added
+
+- A dispatch rail at the bottom left of every view lists each floor that is waiting on you, has failed or has a result ready, most urgent and longest-waiting first, and clicking a chip goes straight there.
+- Next That Needs You (⌘J) jumps to the most urgent floor.
+- Buildings in the city show their state on the roof: a lamp in the state's colour, a hand balloon when a robot is waiting on you, and a pennant when a job has failed or has a result ready.
+- Each storey in the building view has an edge in its state's colour, and its label reads Waiting, Failed, Ready, Working, Queued or Quiet.
+- Requests, failed floors and unopened results show how long they have waited once it passes 30 seconds, on desk cards, labels and the rail.
+- Glance mode (⌥⌘G, or after the window has been in the background for a minute) hides everything but the rail, enlarges labels, puts a beam over blocked buildings and slowly orbits the city, and any click or key returns you to where you were.
+- A request left waiting for five minutes gets an outlined "5m+" chip in the rail and one reminder notification, and after 15 minutes the menu bar icon changes.
+- The iPhone companion can dictate into the New Job and question fields, with the Mac transcribing the audio.
+- The iPhone companion shows the same states, ages and rail as the Mac, and opening a finished floor there marks it seen on the Mac too.
+
+### Changed
+
+- A breadcrumb at the top left replaces the back buttons at every level, and Esc always goes up one level.
+- One Instruments group at the top right replaces the spend strip, counter, floor stats and usage panel, and clicking its counts or plan usage opens the detail.
+- Plan usage is one compact row of rings, with reset times on hover.
+- On a floor, History and Close floor are in a … menu next to the breadcrumb.
+- The Dock badge counts only requests waiting on you, not unopened results.
+- The welcome screen is down to one line, the Break ground button and a Watch a demo link.
+
+### Fixed
+
+- Fixed a building's facade rising back up when the window reopened inside it, such as after opening it from the menu bar.
+
 ## 0.13.0
 
 - Arrow keys orbit and tilt the camera in the city, building and floor views, and + and - zoom in and out.

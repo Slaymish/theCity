@@ -23,6 +23,7 @@ final class CityLink {
     @ObservationIgnored private let browser = LinkBrowser()
     @ObservationIgnored private var link: LinkConnection?
     @ObservationIgnored private var active = false
+    @ObservationIgnored private var transcripts: [UUID: CheckedContinuation<String, Error>] = [:]
     #if COMPANION_CLOUD
     @ObservationIgnored private let cloud = CloudLink()
     @ObservationIgnored private var cloudTask: Task<Void, Never>?
@@ -71,6 +72,7 @@ final class CityLink {
         link?.close()
         link = nil
         route = .none
+        failTranscripts(DictationFailure.lost)
         #if COMPANION_CLOUD
         cloudTask?.cancel()
         cloudTask = nil
@@ -90,6 +92,7 @@ final class CityLink {
             guard let self, self.link === link else { return }
             self.link = nil
             if self.route == .local { self.route = .none }
+            self.failTranscripts(DictationFailure.lost)
             // The browser reports the Mac again when it's back, and this reconnects then.
         }
         link.start()
@@ -99,8 +102,55 @@ final class CityLink {
         switch message {
         case .snapshot(let snapshot): accept(snapshot)
         case .receipt(let receipt): settle(receipt)
-        case .command, .hello: break
+        case .transcript(let result): finish(result)
+        case .command, .hello, .dictation: break
         }
+    }
+
+    // MARK: Dictation
+
+    enum DictationFailure: LocalizedError {
+        case offline, lost, timedOut
+
+        var errorDescription: String? {
+            switch self {
+            case .offline: "Dictation needs your Mac on this network."
+            case .lost: "Lost your Mac before it sent the words back."
+            case .timedOut: "Your Mac took too long to answer."
+            }
+        }
+    }
+
+    /// Sends speech to the Mac and waits for its dictation model to send the words back. Local network only.
+    func dictate(_ clip: DictationClip) async throws -> String {
+        guard let link, route == .local else { throw DictationFailure.offline }
+        return try await withCheckedThrowingContinuation { continuation in
+            transcripts[clip.id] = continuation
+            link.send(.dictation(clip))
+            Task {
+                try? await Task.sleep(for: .seconds(90))
+                transcripts.removeValue(forKey: clip.id)?.resume(throwing: DictationFailure.timedOut)
+            }
+        }
+    }
+
+    private func finish(_ result: DictationResult) {
+        guard let continuation = transcripts.removeValue(forKey: result.clipID) else { return }
+        switch result.outcome {
+        case .text(let text): continuation.resume(returning: text)
+        case .failed(let reason): continuation.resume(throwing: DictationRefused(reason: reason))
+        }
+    }
+
+    private func failTranscripts(_ error: Error) {
+        let waiting = transcripts
+        transcripts = [:]
+        for continuation in waiting.values { continuation.resume(throwing: error) }
+    }
+
+    struct DictationRefused: LocalizedError {
+        let reason: String
+        var errorDescription: String? { reason }
     }
 
     private func accept(_ new: CitySnapshot) {

@@ -119,6 +119,7 @@ targets:
         NSLocalNetworkUsageDescription: "The City finds your Mac on this network to show your projects."
         NSBonjourServices: ["_thecity._tcp"]
         NSCameraUsageDescription: "The City scans the pairing code shown on your Mac."
+        NSMicrophoneUsageDescription: "The City records what you say and sends it to your Mac to be turned into text."
         CFBundleURLTypes:
           - CFBundleURLName: nz.hamish.thecity.pair
             CFBundleURLSchemes: [thecity]

@@ -161,9 +161,32 @@ final class CompanionHost {
             }
         case .command(let sealed):
             if let receipt = handle(sealed) { link.send(.receipt(receipt)) }
-        case .snapshot, .receipt:
+        case .dictation(let clip):
+            // Only a phone that has said hello, like a snapshot.
+            guard links[ObjectIdentifier(link)]?.device != nil else { return }
+            transcribe(clip, for: link)
+        case .snapshot, .receipt, .transcript:
             break
         }
+    }
+
+    private func transcribe(_ clip: DictationClip, for link: LinkConnection) {
+        Task { [weak link] in
+            let outcome: DictationResult.Outcome
+            do {
+                guard let samples = clip.floats else { throw DictationClipFailure.unreadable }
+                let text = try await DictationStore.shared.transcribe(phoneSamples: samples)
+                outcome = text.isEmpty ? .failed("Your Mac didn’t hear any words.") : .text(text)
+            } catch {
+                outcome = .failed(error.localizedDescription)
+            }
+            link?.send(.transcript(DictationResult(clipID: clip.id, outcome: outcome)))
+        }
+    }
+
+    private enum DictationClipFailure: LocalizedError {
+        case unreadable
+        var errorDescription: String? { "The recording was empty or too long. Keep it under \(DictationClip.maximumSeconds) seconds." }
     }
 
     // MARK: Commands

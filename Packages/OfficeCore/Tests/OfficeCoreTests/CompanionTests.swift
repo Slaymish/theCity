@@ -234,6 +234,7 @@ struct LinkFramerTests {
         let messages: [LinkMessage] = [
             .hello(version: CitySnapshot.protocolVersion, device: "Phone"), .snapshot(Self.snapshot),
             .receipt(CommandReceipt(commandID: UUID(), outcome: .refused("Already answered on the Mac"))),
+            .dictation(DictationClip(floats: [0, 0.5, -0.5, 1])), .transcript(DictationResult(clipID: UUID(), outcome: .text("Fix the login bug"))),
         ]
         let stream = try messages.reduce(Data()) { $0 + (try LinkFramer.frame($1)) }
         for chunk in [1, 3, 7, 64, stream.count] {
@@ -257,5 +258,36 @@ struct LinkFramerTests {
     @Test func garbageClosesTheConnection() {
         var framer = LinkFramer()
         #expect(throws: LinkFramer.Failure.unreadable) { try framer.feed(Data([0, 0, 0, 2, 0x7b, 0x7b])) }
+    }
+}
+
+struct DictationClipTests {
+    @Test func samplesSurviveTheTrip() throws {
+        let original: [Float] = [0, 0.25, -0.25, 1, -1, 0.001]
+        let floats = try #require(DictationClip(floats: original).floats)
+        #expect(floats.count == original.count)
+        for (a, b) in zip(original, floats) { #expect(abs(a - b) < 0.001) }
+    }
+
+    @Test func loudSamplesAreClippedNotWrapped() throws {
+        let floats = try #require(DictationClip(floats: [3, -3]).floats)
+        #expect(floats == [1, -1])
+    }
+
+    @Test func aLongRecordingIsCutAtTheLimit() {
+        let clip = DictationClip(floats: Array(repeating: 0.1, count: DictationClip.sampleRate * (DictationClip.maximumSeconds + 5)))
+        #expect(clip.seconds == Double(DictationClip.maximumSeconds))
+        #expect(clip.floats != nil)
+    }
+
+    @Test func emptyOversizeAndOddClipsAreRefused() {
+        #expect(DictationClip(samples: Data()).floats == nil)
+        #expect(DictationClip(samples: Data([1, 2, 3])).floats == nil)
+        #expect(DictationClip(samples: Data(count: (DictationClip.maximumSamples + 1) * 2)).floats == nil)
+    }
+
+    @Test func aFullClipFitsInOneFrame() throws {
+        let clip = DictationClip(floats: Array(repeating: 0.1, count: DictationClip.maximumSamples))
+        #expect(try LinkFramer.frame(.dictation(clip)).count < LinkFramer.maximumLength)
     }
 }

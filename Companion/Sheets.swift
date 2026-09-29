@@ -17,7 +17,7 @@ struct QuestionsSheet: View {
             List {
                 ForEach(waiting, id: \.question.id) { item in
                     Section {
-                        QuestionCard(floor: item.floor, question: item.question, send: link.send)
+                        QuestionCard(link: link, floor: item.floor, question: item.question, send: link.send)
                     } header: {
                         Text("\(item.floor.name) · \(who(item.question.room))")
                     }
@@ -40,6 +40,7 @@ struct QuestionsSheet: View {
 }
 
 struct QuestionCard: View {
+    let link: CityLink
     let floor: FloorSnapshot
     let question: QuestionSnapshot
     let send: (CompanionCommand.Action) -> Void
@@ -69,8 +70,12 @@ struct QuestionCard: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    TextField("Something else", text: Binding(get: { other[item.question] ?? "" }, set: { other[item.question] = $0 }))
-                        .textFieldStyle(.roundedBorder)
+                    let text = Binding(get: { other[item.question] ?? "" }, set: { other[item.question] = $0 })
+                    HStack {
+                        TextField("Something else", text: text)
+                            .textFieldStyle(.roundedBorder)
+                        DictationButton(link: link, text: text)
+                    }
                 }
                 .padding(.vertical, 4)
             }
@@ -134,9 +139,13 @@ struct NewJobSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("What do you need done in \(building.displayName)?", text: $request, axis: .vertical)
-                        .lineLimit(3...8)
-                        .focused($focused)
+                    HStack(alignment: .top) {
+                        TextField("What do you need done in \(building.displayName)?", text: $request, axis: .vertical)
+                            .lineLimit(3...8)
+                            .focused($focused)
+                        DictationButton(link: link, text: $request)
+                            .padding(.top, 2)
+                    }
                 } footer: {
                     Text("Reception picks the right floor, or sets up a new one.")
                 }

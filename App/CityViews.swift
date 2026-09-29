@@ -81,25 +81,21 @@ struct CityHUD: View {
     }
 }
 
-/// Floors waiting on you, across the whole city, so nothing is missed while you're elsewhere.
+/// Floors waiting on you, across the whole city, most urgent first, so nothing is missed while you're elsewhere.
 struct NeedsYouList: View {
     let city: CityStore
 
     var body: some View {
-        let waiting = city.buildings.flatMap { building in
-            building.floors.compactMap { floor -> (CityStore.Building, CityStore.Floor, Int)? in
-                let count = city.needsYou(floor)
-                return count > 0 ? (building, floor, count) : nil
-            }
-        }
+        let waiting = city.floorsNeedingYou()
         if !waiting.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Needs you").eyebrow()
-                ForEach(waiting, id: \.1.id) { building, floor, count in
-                    Button("\(building.name) · \(floor.name) · \(count)", systemImage: "hand.raised.fill") {
+                ForEach(waiting, id: \.floor.id) { building, floor, signal in
+                    let detail = signal.label(count: city.sessions[floor.id]?.state.pendingRequests.count ?? 1)
+                    Button("\(building.name) · \(floor.name) · \(detail)", systemImage: signal.symbol) {
                         city.route = .floor(building: building.id, floor: floor.id)
                     }
-                    .buttonStyle(PillButtonStyle(kind: .accent(Palette.manager)))
+                    .buttonStyle(PillButtonStyle(kind: .accent(signal.colour)))
                 }
             }
             .glass()
@@ -108,22 +104,19 @@ struct NeedsYouList: View {
     }
 }
 
-/// The next other floor waiting on you, so a raised hand elsewhere isn't missed while you're on a floor.
+/// The most urgent other floor waiting on you, so a raised hand elsewhere isn't missed while you're on a floor.
 struct ElsewhereNeedsYou: View {
     let city: CityStore
     let floorID: UUID?
 
     var body: some View {
-        let waiting = city.buildings.flatMap { building in
-            building.floors.filter { $0.id != floorID && city.needsYou($0) > 0 }.map { (building, $0) }
-        }
-        let raised = waiting.first { city.sessions[$0.1.id]?.state.pendingRequests.isEmpty == false }
-        if let (building, floor) = raised ?? waiting.first {
-            Button("\(building.name) · \(floor.name) needs you", systemImage: "hand.raised.fill") {
+        let waiting = city.floorsNeedingYou().filter { $0.floor.id != floorID }
+        if let (building, floor, signal) = waiting.first {
+            Button("\(building.name) · \(floor.name) \(signal == .blocked ? "needs you" : signal.label().lowercased())", systemImage: signal.symbol) {
                 city.route = .floor(building: building.id, floor: floor.id)
             }
-            .buttonStyle(PillButtonStyle(kind: .accent(Palette.manager)))
-            .help(waiting.count > 1 ? "\(waiting.count) floors need you. Go to \(floor.name)." : "Go to \(floor.name)")
+            .buttonStyle(PillButtonStyle(kind: .accent(signal.colour)))
+            .help(waiting.count > 1 ? "\(waiting.count) floors need you. Go to \(floor.name), the most urgent (⌘J)." : "Go to \(floor.name) (⌘J)")
         }
     }
 }

@@ -135,6 +135,11 @@ struct OfficeCommands: Commands {
         CommandGroup(before: .toolbar) {
             Button("City") { city.route = city.buildings.isEmpty ? .welcome : .city }
                 .keyboardShortcut("0", modifiers: .command)
+            Button("Next That Needs You") {
+                if let next = city.nextNeedingYou() { city.route = .floor(building: next.building.id, floor: next.floor.id) }
+            }
+            .keyboardShortcut("j", modifiers: .command)
+            .disabled(city.nextNeedingYou() == nil)
             Button("Reset View") { NotificationCenter.default.post(name: .resetView, object: nil) }
                 .keyboardShortcut("r", modifiers: .command)
             ForEach(1...9, id: \.self) { number in

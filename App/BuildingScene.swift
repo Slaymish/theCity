@@ -51,6 +51,10 @@ final class BuildingScene {
     private var storeys: [(id: UUID, scene: OfficeScene, index: Int)] = []
     private var sessions: [UUID: any Storey] = [:]
     private var labels: [UUID: (entity: Entity, text: String)] = [:]
+    private var receptionLabel: Entity?
+    private var highlight: Entity?
+    /// Set before routing back to the building, so leaving the floor lands on reception.
+    var lobbyAfterLeaving = false
     private var crown: [Entity] = []
     private var fitOut: [Int: Entity] = [:]
     private let haze = Horizon.haze()
@@ -87,6 +91,8 @@ final class BuildingScene {
     /// How long the tower takes to rise out of the ground, which is also the city's slide into a building.
     static let slide: Double = 0.6
     private static let roofThickness: Float = 0.4
+    private static let highlightWidth: Float = 0.15
+    private static let highlightGlow: Float = 2
 
     init() {
         root.addChild(camera.entity)
@@ -108,6 +114,8 @@ final class BuildingScene {
         if rebuild {
             tower.children.removeAll()
             labels = [:]
+            receptionLabel = nil
+            highlight = nil
         }
         storeys = []
         self.sessions = Dictionary(sessions, uniquingKeysWith: { $1 })
@@ -183,6 +191,24 @@ final class BuildingScene {
             crown.append(sign)
         }
         refreshLabels(force: true)
+        if let label = Billboard.make(BubbleView(symbol: "bell.fill", text: "Reception", colour: Palette.muted), dark: dark) {
+            label.position = labelPosition(-1)
+            label.scale = [1.3, 1.3, 1.3]
+            Self.makeTappable(label)
+            label.isEnabled = activeFloor != nil && !storeysHidden
+            tower.addChild(label)
+            receptionLabel = label
+        }
+    }
+
+    private func labelPosition(_ index: Int) -> SIMD3<Float> {
+        [-OfficeScene.footprint.x / 2 - 1.2, Float(index + 1) * Self.storeyHeight + 1.2, OfficeScene.footprint.y / 2 + 1.5]
+    }
+
+    private static func makeTappable(_ label: ModelEntity) {
+        guard let extents = label.model?.mesh.bounds.extents else { return }
+        label.components.set(CollisionComponent(shapes: [.generateBox(width: extents.x, height: extents.y, depth: extents.x)]))
+        label.components.set(InputTargetComponent())
     }
 
     private func buildLobby(width: Float, depth: Float, floors: Int) -> [Entity] {
@@ -346,15 +372,40 @@ final class BuildingScene {
         lobbyFocused = false
         scaffold?.isEnabled = false
         crown.forEach { $0.isEnabled = false }
-        // Only storeys above the active one are hidden: they sit between the camera and the floor.
+        receptionLabel?.isEnabled = true
         for other in storeys {
             other.scene.sunEnabled = other.id == id
-            other.scene.root.isEnabled = other.index <= storey.index
-            fitOut[other.index]?.isEnabled = other.index <= storey.index
             other.scene.isActive = other.id == id
-            labels[other.id]?.entity.isEnabled = other.index < storey.index
+            labels[other.id]?.entity.isEnabled = true
         }
+        reveal(through: storey.index)
+        mark(storey.index)
         camera.reset(to: floorPose(storey.scene))
+    }
+
+    // Storeys above the one in view are hidden: they sit between the camera and the floor.
+    private func reveal(through top: Int) {
+        for storey in storeys {
+            storey.scene.root.isEnabled = storey.index <= top
+            fitOut[storey.index]?.isEnabled = storey.index <= top
+        }
+    }
+
+    private func mark(_ index: Int) {
+        highlight?.removeFromParent()
+        let glow = ModelLibrary.material(Palette.resolved(Palette.primaryFill, dark: dark), roughness: nil, emissive: Self.highlightGlow)
+        let edge = Self.highlightWidth, width = OfficeScene.footprint.x, depth = OfficeScene.footprint.y, height = OfficeScene.floorThickness
+        let frame = Entity()
+        let strips: [(Float, Float, Float, Float)] = [(width + 2 * edge, edge, 0, -(depth + edge) / 2), (width + 2 * edge, edge, 0, (depth + edge) / 2),
+                                                      (edge, depth, -(width + edge) / 2, 0), (edge, depth, (width + edge) / 2, 0)]
+        for (w, d, x, z) in strips {
+            let strip = ModelEntity(mesh: ModelLibrary.box(width: w, height: height, depth: d), materials: [glow])
+            strip.position = [x, -height / 2, z]
+            frame.addChild(strip)
+        }
+        frame.position.y = Float(index + 1) * Self.storeyHeight
+        tower.addChild(frame)
+        highlight = frame
     }
 
     var footprint: SIMD2<Float> {
@@ -402,13 +453,10 @@ final class BuildingScene {
                     part.components.remove(OpacityComponent.self)
                 }
             }
-            labels[storey.id]?.entity.isEnabled = showsLabel(storey.index)
+            labels[storey.id]?.entity.isEnabled = !storeysHidden
         }
         crown.forEach { $0.isEnabled = !storeysHidden && activeFloor == nil }
-    }
-
-    private func showsLabel(_ index: Int) -> Bool {
-        !storeysHidden && (activeFloor.flatMap { id in storeys.first { $0.id == id }?.index }.map { index < $0 } ?? true)
+        receptionLabel?.isEnabled = !storeysHidden && activeFloor != nil
     }
 
     func leaveLobby() {
@@ -473,6 +521,9 @@ final class BuildingScene {
     func leaveFloor() {
         if let storey = storeys.first(where: { $0.id == activeFloor }) { storey.scene.showOverview() }
         activeFloor = nil
+        highlight?.removeFromParent()
+        highlight = nil
+        receptionLabel?.isEnabled = false
         crown.forEach { $0.isEnabled = true }
         lobbyParts.forEach { $0.isEnabled = true }
         scaffold?.isEnabled = true
@@ -483,22 +534,34 @@ final class BuildingScene {
             storey.scene.isActive = false
             labels[storey.id]?.entity.isEnabled = true
         }
-        camera.reset(to: camera.overview)
+        if lobbyAfterLeaving {
+            lobbyAfterLeaving = false
+            focusLobby()
+        } else {
+            camera.reset(to: camera.overview)
+        }
     }
 
     /// Scrolling in the building view steps the camera up and down the tower, one storey at a time.
     func scroll(by delta: Float) {
         camera.lift(to: (camera.goal.target.y + delta * 0.04).clamped(to: 1...max(towerHeight - 2, 1)))
+        guard let active = storeys.first(where: { $0.id == activeFloor }) else { return }
+        reveal(through: max(active.index, Int((camera.goal.target.y / Self.storeyHeight).rounded(.down)) - 1))
     }
 
     func floor(of entity: Entity) -> UUID? {
         guard !storeysHidden else { return nil }
+        if let label = labels.first(where: { $0.value.entity === entity }) { return label.key }
         var node: Entity? = entity
         while let current = node {
             if let storey = storeys.first(where: { $0.scene.root === current }) { return storey.id }
             node = current.parent
         }
         return nil
+    }
+
+    func isReception(_ entity: Entity) -> Bool {
+        !storeysHidden && entity === receptionLabel
     }
 
     func scene(for id: UUID) -> OfficeScene? { storeys.first { $0.id == id }?.scene }
@@ -555,9 +618,10 @@ final class BuildingScene {
             labels[storey.id]?.entity.removeFromParent()
             let colour = waiting > 0 ? Palette.manager : session?.isRunning == true ? Palette.primaryFill : Palette.muted
             guard let label = Billboard.make(BubbleView(symbol: symbol, text: text, colour: colour, rooms: rooms), dark: dark) else { continue }
-            label.position = [-OfficeScene.footprint.x / 2 - 1.2, Float(storey.index + 1) * Self.storeyHeight + 1.2, OfficeScene.footprint.y / 2 + 1.5]
+            label.position = labelPosition(storey.index)
             label.scale = [1.3, 1.3, 1.3]
-            label.isEnabled = showsLabel(storey.index)
+            Self.makeTappable(label)
+            label.isEnabled = !storeysHidden
             tower.addChild(label)
             labels[storey.id] = (label, key)
         }

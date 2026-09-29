@@ -202,7 +202,12 @@ struct WorldView: View {
                 .modifier(SceneControls(camera: { [world] in world.camera },
                                         excludedTrailing: session?.showPanel == true ? OfficeView.panelWidth + 40 : 0,
                                         onScroll: { [city, world] event in
-                                            guard case .building = city.route, world.inBuilding != nil, !event.modifierFlags.contains(.option) else { return false }
+                                            guard world.inBuilding != nil, !event.modifierFlags.contains(.option) else { return false }
+                                            switch city.route {
+                                            case .building: break
+                                            case .floor where city.activeSession?.selectedRoom == nil: break
+                                            default: return false
+                                            }
                                             world.building.scroll(by: Float(event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 10))
                                             return true
                                         },
@@ -262,6 +267,11 @@ struct WorldView: View {
 
     private func tapped(_ entity: Entity) {
         if let buildingID, world.inBuilding == buildingID {
+            if floorID != nil, world.building.isReception(entity) {
+                world.building.lobbyAfterLeaving = true
+                city.route = .building(buildingID)
+                return
+            }
             if let floorID, world.building.floor(of: entity) == floorID, let session = city.session(for: floorID, in: buildingID) {
                 if OfficeScene.room(of: entity) == OfficeScene.kioskRoom { session.takeOver() } else if let room = OfficeScene.room(of: entity), room != "outbox", room != session.selectedRoom { session.select(room: room) } else { session.selectedRoom = nil }
                 return

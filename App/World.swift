@@ -123,6 +123,12 @@ final class World {
         }
     }
 
+    func rebuildCity(_ buildings: [CityStore.Building], dark: Bool) {
+        cityStale = false
+        city.build(buildings, dark: dark)
+        cityRebuilt()
+    }
+
     func cityRebuilt() {
         guard let id = inBuilding, let frame = cityFrame(for: id) else { return }
         applyCity(frame: frame)

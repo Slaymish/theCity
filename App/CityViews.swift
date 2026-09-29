@@ -210,7 +210,7 @@ struct WorldView: View {
                                         passThrough: { [city] in if case .newFloor = city.route { true } else { city.activeSession?.kiosk.isOpen == true } }))
                 .onAppear {
                     world.city.titleMode = city.route == .welcome
-                    world.city.build(city.buildings, dark: dark)
+                    world.rebuildCity(city.buildings, dark: dark)
                     world.fit(geometry.size)
                     sync(animated: false)
                     prewarm(city.buildings.map(\.id))
@@ -225,7 +225,7 @@ struct WorldView: View {
                 .onChange(of: city.route) {
                     guard world.city.titleMode, city.route != .welcome else { return }
                     world.city.titleMode = false
-                    world.city.build(city.buildings, dark: dark)
+                    world.rebuildCity(city.buildings, dark: dark)
                 }
                 .onChange(of: buildingID) { sync(animated: true) }
                 .onChange(of: floorID) {
@@ -263,9 +263,7 @@ struct WorldView: View {
             world.cityStale = true
             return
         }
-        world.cityStale = false
-        world.city.build(city.buildings, dark: dark)
-        world.cityRebuilt()
+        world.rebuildCity(city.buildings, dark: dark)
         if let id = city.groundBreaking { breakGround(id) }
     }
 
@@ -334,11 +332,7 @@ struct WorldView: View {
     private func sync(animated: Bool) {
         let target = buildingID
         guard target != world.inBuilding else { return }
-        if world.cityStale {
-            world.cityStale = false
-            world.city.build(city.buildings, dark: dark)
-            world.cityRebuilt()
-        }
+        if world.cityStale { world.rebuildCity(city.buildings, dark: dark) }
         if let previous = world.inBuilding {
             city.visit(previous)
             world.leave(animated: animated && target == nil)

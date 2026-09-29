@@ -25,14 +25,14 @@ enum GraphicsQuality: Int, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
-        case .low: "Everything in focus, without edge smoothing. Easiest on older Macs and the battery."
+        case .low: "Everything in focus. Easiest on older Macs and the battery."
         case .medium: "Smooth edges and a soft miniature focus."
         case .high: "Smooth edges and a miniature focus that blurs the foreground and the distance."
         case .ultra: "The shallowest miniature focus, so the city looks like a model."
         }
     }
 
-    var antialiasing: AntialiasingMode { self == .low ? .none : .multisample4X }
+    var antialiasing: AntialiasingMode { .multisample4X }
 
     var depthOfField: Bool { self != .low }
 

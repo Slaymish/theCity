@@ -42,6 +42,9 @@ final class CityScene {
         get { sun.isEnabled }
         set { sun.isEnabled = newValue }
     }
+    private var shadowReach: Float = 40 {
+        didSet { if shadowReach != oldValue { sun.components.set(Sun.shadow(reach: shadowReach)) } }
+    }
     static let tile: Float = 2
     static let groundLevel: Float = -0.02
 
@@ -472,7 +475,7 @@ final class CityScene {
 
     private func setUpLighting() {
         root.addChild(lighting)
-        sun.components.set(DirectionalLightComponent.Shadow(maximumDistance: 40, depthBias: 1.5))
+        sun.components.set(Sun.shadow(reach: shadowReach))
         root.addChild(sun)
         applyDaylight()
     }
@@ -484,10 +487,7 @@ final class CityScene {
         if let environment = ModelLibrary.environment("sky") {
             lighting.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: Self.skyExposure(cycle)))
         }
-        var light = DirectionalLightComponent(color: cycle.sunColour, intensity: cycle.mix(day: 3500, night: 1100))
-        light.isRealWorldProxy = false
-        sun.components.set(light)
-        sun.look(at: .zero, from: cycle.sun([-8, 14, 6]), relativeTo: nil)
+        Sun.city.apply(to: sun, cycle: cycle)
         Horizon.tint(haze, sky: cycle.sky(dark: dark))
         for facade in facades.values { Facade.light(facade.entity, glow: 0.6 * cycle.lamps) }
         for lot in lots.values where lot.working { lot.glow.components.set(lotGlow(cycle)) }
@@ -541,6 +541,7 @@ final class CityScene {
     func update(_ dt: Double) {
         camera.smoothTime = OfficeScene.reduceMotion ? 0.12 : 0.5
         camera.update(Float(dt))
+        shadowReach = Sun.reach(distance: camera.current.distance, extent: extent)
         for index in slides.indices {
             slides[index].elapsed += dt
             let slide = slides[index]

@@ -38,11 +38,8 @@ enum IconRenderer {
 
         let sun = Entity()
         let warmth = Palette.dusk.blended(withFraction: 0.78, of: .white) ?? .white
-        var light = DirectionalLightComponent(color: warmth, intensity: 3200)
-        light.isRealWorldProxy = false
-        sun.components.set(light)
-        sun.components.set(DirectionalLightComponent.Shadow(maximumDistance: 12, depthBias: 0.5))
-        sun.look(at: .zero, from: [-3, 7, 5], relativeTo: nil)
+        Sun.light(sun, colour: warmth, intensity: 3200, from: [-3, 7, 5])
+        sun.components.set(Sun.shadow(reach: 12, depthBias: 0.5))
         root.addChild(sun)
         for entity in root.descendants where entity.components.has(ModelComponent.self) {
             entity.components.set(GroundingShadowComponent(castsShadow: true, receivesShadow: true))

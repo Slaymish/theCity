@@ -68,6 +68,17 @@ final class BuildingScene {
     private let lobbyLight = Entity()
     private let groundLight = Entity()
     private let emptySun = Entity()
+    private var emptyReach: Float = 30 {
+        didSet { if emptyReach != oldValue { emptySun.components.set(Sun.shadow(reach: emptyReach)) } }
+    }
+    /// Lights the tower with the city's sun, so the city around it keeps its lighting.
+    var outdoorSun = false {
+        didSet {
+            guard outdoorSun != oldValue else { return }
+            storeys.forEach { $0.scene.sunStyle = outdoorSun ? .city : .storey }
+            applyDaylight()
+        }
+    }
     private var daylightClock: Double = 0
     private var viewSize = CGSize(width: 1000, height: 700)
     private var labelClock: Double = 0
@@ -111,6 +122,7 @@ final class BuildingScene {
             scene.isActive = false
             scene.fit(viewSize)
             scene.sunEnabled = index == 0
+            scene.sunStyle = outdoorSun ? .city : .storey
             storeys.append((id, scene, index))
         }
         if rebuild {
@@ -142,7 +154,7 @@ final class BuildingScene {
         tower.addChild(ground)
         if showsGround { tower.addChild(haze) }
         if floors == 0 {
-            emptySun.components.set(DirectionalLightComponent.Shadow(maximumDistance: 30, depthBias: 2))
+            emptySun.components.set(Sun.shadow(reach: emptyReach))
             tower.addChild(emptySun)
         }
         fitOut = [:]
@@ -288,10 +300,7 @@ final class BuildingScene {
         if let environment = ModelLibrary.environment("sky") {
             groundLight.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: Horizon.skyExposure(cycle)))
         }
-        var light = DirectionalLightComponent(color: cycle.sunColour, intensity: cycle.mix(day: 2400, night: 600))
-        light.isRealWorldProxy = false
-        emptySun.components.set(light)
-        emptySun.look(at: .zero, from: cycle.sun([-8, 12, 6]), relativeTo: nil)
+        (outdoorSun ? Sun.city : Sun.emptyLot).apply(to: emptySun, cycle: cycle)
         Horizon.tint(haze, sky: cycle.sky(dark: dark))
         for part in lobbyParts { NightLight.apply(cycle, under: part) }
     }
@@ -505,7 +514,12 @@ final class BuildingScene {
             rise = t >= 1 ? nil : (current.from, current.to, elapsed)
             applyRise()
         }
-        for storey in storeys where storey.scene.root.isEnabled { storey.scene.update(dt) }
+        let shadowExtent = simd_length(SIMD3(OfficeScene.footprint.x, towerHeight, OfficeScene.footprint.y)) / 2
+        emptyReach = Sun.reach(distance: camera.current.distance, extent: shadowExtent)
+        for storey in storeys where storey.scene.root.isEnabled {
+            storey.scene.shadowExtent = shadowExtent
+            storey.scene.update(dt)
+        }
         if showsGround {
             let eye = camera.entity.position(relativeTo: tower), target = camera.current.target
             let reach = simd_distance(SIMD2(eye.x, eye.z), SIMD2(target.x, target.z))

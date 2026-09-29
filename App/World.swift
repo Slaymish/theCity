@@ -64,6 +64,7 @@ final class World {
         applyCity(frame: frame)
         city.setLabelsVisible(false)
         city.sunEnabled = false
+        building.outdoorSun = true
         let seen = city.camera.current
         let overview = building.camera.goal
         if animated {

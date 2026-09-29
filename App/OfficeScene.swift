@@ -263,6 +263,7 @@ final class OfficeScene {
     }
 
     static func walls(width: Float, depth: Float, doorway: Bool = false, make: (MeshResource) -> ModelEntity) -> [ModelEntity] {
+        let base = -floorThickness
         let height = wallHeight
         let thickness: Float = 0.35
         let sill: Float = 1.3
@@ -273,18 +274,18 @@ final class OfficeScene {
             let pier: Float = 1.2
             for index in 0..<windows {
                 let start = -length / 2 + Float(index) * bay
-                let pierPiece = make(ModelLibrary.box(width: pier, height: height, depth: thickness))
-                place(pierPiece, start + pier / 2, height / 2)
+                let pierPiece = make(ModelLibrary.box(width: pier, height: height - base, depth: thickness))
+                place(pierPiece, start + pier / 2, (base + height) / 2)
                 let open = bay - pier
                 if !(door && index == windows - 1) {
-                    let below = make(ModelLibrary.box(width: open, height: sill, depth: thickness))
-                    place(below, start + pier + open / 2, sill / 2)
+                    let below = make(ModelLibrary.box(width: open, height: sill - base, depth: thickness))
+                    place(below, start + pier + open / 2, (base + sill) / 2)
                 }
                 let above = make(ModelLibrary.box(width: open, height: height - lintel, depth: thickness))
                 place(above, start + pier + open / 2, lintel + (height - lintel) / 2)
             }
-            let end = make(ModelLibrary.box(width: pier, height: height, depth: thickness))
-            place(end, length / 2 - pier / 2, height / 2)
+            let end = make(ModelLibrary.box(width: pier, height: height - base, depth: thickness))
+            place(end, length / 2 - pier / 2, (base + height) / 2)
         }
         wall(along: width, windows: max(Int(width / 6), 2), door: false) { piece, x, y in
             piece.position = [x, y, -depth / 2 - thickness / 2]
@@ -315,9 +316,19 @@ final class OfficeScene {
         set { sun.isEnabled = newValue }
     }
 
+    var sunStyle = Sun.storey {
+        didSet { if sunStyle != oldValue { sunStyle.apply(to: sun, cycle: .now) } }
+    }
+
+    /// How far past the camera's target this scene's shadows must still reach.
+    var shadowExtent = footprint.x
+    private var shadowReach: Float = 60 {
+        didSet { if shadowReach != oldValue { sun.components.set(Sun.shadow(reach: shadowReach)) } }
+    }
+
     private func setUpLighting() {
         root.addChild(lighting)
-        sun.components.set(DirectionalLightComponent.Shadow(maximumDistance: 60, depthBias: 2))
+        sun.components.set(Sun.shadow(reach: shadowReach))
         root.addChild(sun)
         applyDaylight()
     }
@@ -330,10 +341,7 @@ final class OfficeScene {
         if let environment = ModelLibrary.environment("studio") {
             lighting.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: Self.studioExposure(cycle)))
         }
-        var light = DirectionalLightComponent(color: cycle.sunColour, intensity: cycle.mix(day: 2600, night: 700))
-        light.isRealWorldProxy = false
-        sun.components.set(light)
-        sun.look(at: .zero, from: cycle.sun([-16, 14, -18]), relativeTo: nil)
+        sunStyle.apply(to: sun, cycle: cycle)
         NightLight.apply(cycle, under: root)
         SceneGrade.update(cycle)
     }
@@ -459,6 +467,7 @@ final class OfficeScene {
             camera.smoothTime = reduce ? 0.12 : 0.45
             camera.update(Float(dt))
         }
+        shadowReach = Sun.reach(distance: camera.current.distance, extent: shadowExtent)
         for pod in pods.values {
             pod.worker.update(dt, reduceMotion: reduce)
             pod.tickClock(dark: dark)

@@ -93,6 +93,7 @@ targets:
       - App/Sound.swift
       - App/Platform.swift
       - App/GraphicsQuality.swift
+      - App/Sun.swift
       - path: App/Models
         buildPhase: resources
       - path: App/Environment

@@ -272,7 +272,9 @@ final class CityScene {
     }
 
     func setLabelsVisible(_ visible: Bool) {
+        let shown = visible && !labelsVisible
         labelsVisible = visible
+        if shown { refresh() }
         for lot in lots.values {
             lot.root.isEnabled = visible && hovered == lot.id
             lot.beacon.isEnabled = visible && lot.waiting
@@ -598,7 +600,7 @@ final class CityScene {
                 }
             }
             let key = "\(text)|\(rooms.waiting)|\(rooms.working)"
-            guard key != lot.labelText else { continue }
+            guard labelsVisible, key != lot.labelText else { continue }
             lot.labelText = key
             lot.label?.removeFromParent()
             if let label = Billboard.make(BubbleView(symbol: symbol, text: text, colour: colour, rooms: rooms), dark: dark) {

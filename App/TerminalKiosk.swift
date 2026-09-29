@@ -99,7 +99,7 @@ struct KioskLayer: View {
         ZStack(alignment: .topLeading) {
             GeometryReader { _ in
                 Color.clear.contentShape(Rectangle())
-                TimelineView(.animation) { _ in
+                TimelineView(.animation(paused: scene.camera.motion.settled)) { _ in
                     if scene.camera.isArriving, let rect = scene.kioskScreenRect() {
                         KioskTerminal(session: controller.kiosk, dark: colorScheme == .dark && BrandStore.shared.current.supportsDark)
                             .frame(width: rect.width, height: rect.height)

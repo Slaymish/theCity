@@ -8,6 +8,7 @@ final class World {
     let building = BuildingScene()
     var updates: EventSubscription?
     private(set) var inBuilding: UUID?
+    var cityStale = false
     private var generation = 0
     static let slide = BuildingScene.slide
 
@@ -67,8 +68,11 @@ final class World {
         let seen = city.camera.current
         let overview = building.camera.goal
         if animated {
-            building.camera.reset(to: .init(target: seen.target * frame.scale + frame.offset, yaw: seen.yaw, pitch: seen.pitch,
-                                            distance: seen.distance * frame.scale), animated: false)
+            let moving = city.camera.velocity
+            building.camera.place(at: .init(target: seen.target * frame.scale + frame.offset, yaw: seen.yaw, pitch: seen.pitch,
+                                            distance: seen.distance * frame.scale),
+                                  moving: .init(target: moving.target * frame.scale, yaw: moving.yaw, pitch: moving.pitch,
+                                                distance: moving.distance * frame.scale))
             building.camera.reset(to: overview)
         }
         city.camera.entity.isEnabled = false
@@ -94,8 +98,11 @@ final class World {
         let finish = { [self] in
             guard ticket == generation else { return }
             let seen = building.camera.current
-            city.camera.reset(to: .init(target: (seen.target - frame.offset) / frame.scale, yaw: seen.yaw, pitch: seen.pitch,
-                                        distance: seen.distance / frame.scale), animated: false)
+            let moving = building.camera.velocity
+            city.camera.place(at: .init(target: (seen.target - frame.offset) / frame.scale, yaw: seen.yaw, pitch: seen.pitch,
+                                        distance: seen.distance / frame.scale),
+                              moving: animated ? .init(target: moving.target / frame.scale, yaw: moving.yaw, pitch: moving.pitch,
+                                                       distance: moving.distance / frame.scale) : CameraRig.still)
             building.camera.entity.isEnabled = false
             building.root.isEnabled = false
             city.camera.entity.isEnabled = true

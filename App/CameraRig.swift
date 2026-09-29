@@ -1,6 +1,12 @@
 import CoreGraphics
+import Observation
 import RealityKit
 import simd
+
+@Observable @MainActor
+final class CameraMotion {
+    var settled = true
+}
 
 /// A spring-damped orbit camera: every input moves a goal, and the camera glides towards it.
 /// Big moves fly instead: a timed arc that pulls back and up on the way, then settles on the goal.
@@ -14,10 +20,11 @@ final class CameraRig {
     }
 
     let entity = Entity()
+    let motion = CameraMotion()
     private(set) var current: Pose
     private(set) var goal: Pose
     private var anchor: Pose
-    private var velocity = Pose(target: .zero, yaw: 0, pitch: 0, distance: 0)
+    private(set) var velocity = CameraRig.still
     private var flight: Flight?
     var overview: Pose
     var smoothTime: Float = 0.45
@@ -26,7 +33,14 @@ final class CameraRig {
     }
     static let pitchRange: ClosedRange<Float> = 0.12...1.35
     static let distanceRange: ClosedRange<Float> = 4...80
+    static let still = Pose(target: .zero, yaw: 0, pitch: 0, distance: 0)
+    var distanceRange = CameraRig.distanceRange
     static let flightTime: ClosedRange<Float> = 0.9...2.2
+
+    enum Steer: Hashable { case left, right, up, down, zoomIn, zoomOut }
+    static var steering: Set<Steer> = []
+    static let steerTurn: Float = .pi / 3
+    static let steerZoom: Float = 2
 
     private struct Flight {
         var from: Pose
@@ -50,18 +64,33 @@ final class CameraRig {
         apply()
     }
 
+    func place(at pose: Pose, moving velocity: Pose = CameraRig.still) {
+        reset(to: pose, animated: false)
+        self.velocity = velocity
+    }
+
     func reset(to pose: Pose, animated: Bool = true) {
+        if animated, pose == goal, pose == anchor { return }
         goal = pose
         anchor = pose
         guard animated else {
             flight = nil
             current = pose
-            velocity = Pose(target: .zero, yaw: 0, pitch: 0, distance: 0)
+            velocity = Self.still
             apply()
             return
         }
-        if flight != nil, Self.span(from: flight!.to, to: pose) < 0.25 {
-            flight!.to = pose
+        if let trip = flight, Self.span(from: trip.to, to: pose) < 0.25 {
+            let remaining = max(trip.duration - trip.elapsed, 0)
+            let gap = simd_distance(current.target, pose.target)
+            if pose == trip.to || remaining <= smoothTime || gap < simd_length(velocity.target) * remaining * 0.5 {
+                flight = nil
+                return
+            }
+            let t = min(trip.elapsed / trip.duration, 1)
+            let bump = sin(.pi * t * t * (3 - 2 * t)) * trip.lift
+            flight = Flight(from: current, to: pose, launch: velocity, duration: max(trip.duration - trip.elapsed, smoothTime),
+                            lift: max(trip.lift - bump, 0))
         } else if Self.span(from: current, to: pose) > 0.25, !OfficeScene.reduceMotion {
             let travel = simd_distance(current.target, pose.target) / max(current.distance, pose.distance)
             flight = Flight(from: current, to: pose, launch: velocity,
@@ -93,12 +122,30 @@ final class CameraRig {
     func orbit(dx: Float, dy: Float) {
         land()
         goal.yaw -= dx * 0.006
-        goal.pitch = (goal.pitch + dy * 0.004).clamped(to: Self.pitchRange)
+        goal.pitch = Self.limit(goal.pitch + dy * 0.004, from: goal.pitch, to: Self.pitchRange)
     }
 
     func zoom(by factor: Float) {
         land()
-        goal.distance = (goal.distance * factor).clamped(to: Self.distanceRange)
+        goal.distance = Self.limit(goal.distance * factor, from: goal.distance, to: distanceRange)
+    }
+
+    private static func limit(_ value: Float, from old: Float, to range: ClosedRange<Float>) -> Float {
+        guard old.isFinite else { return value.isFinite ? value.clamped(to: range) : range.lowerBound }
+        guard value.isFinite else { return old }
+        return value.clamped(to: min(range.lowerBound, old)...max(range.upperBound, old))
+    }
+
+    private func steer(_ dt: Float) {
+        land()
+        let keys = Self.steering
+        let turn = Self.steerTurn * dt
+        if keys.contains(.left) { goal.yaw += turn }
+        if keys.contains(.right) { goal.yaw -= turn }
+        if keys.contains(.up) { goal.pitch = Self.limit(goal.pitch + turn, from: goal.pitch, to: Self.pitchRange) }
+        if keys.contains(.down) { goal.pitch = Self.limit(goal.pitch - turn, from: goal.pitch, to: Self.pitchRange) }
+        if keys.contains(.zoomIn) { goal.distance = Self.limit(goal.distance / pow(Self.steerZoom, dt), from: goal.distance, to: distanceRange) }
+        if keys.contains(.zoomOut) { goal.distance = Self.limit(goal.distance * pow(Self.steerZoom, dt), from: goal.distance, to: distanceRange) }
     }
 
     func pan(dx: Float, dy: Float) {
@@ -145,12 +192,17 @@ final class CameraRig {
     }
 
     func update(_ dt: Float) {
+        defer {
+            let settled = flight == nil && current == goal
+            if motion.settled != settled { motion.settled = settled }
+        }
+        if !Self.steering.isEmpty, entity.isEnabled { steer(dt) }
         if var trip = flight {
             let dt = min(dt, 1 / 30)
             trip.elapsed += dt
             fly(trip, dt: dt)
             flight = trip.elapsed < trip.duration ? trip : nil
-            if flight == nil { velocity = Pose(target: .zero, yaw: 0, pitch: 0, distance: 0) }
+            if flight == nil { velocity = Self.still }
             apply()
             return
         }
@@ -162,7 +214,7 @@ final class CameraRig {
         // The springs only approach the goal, so snap once the gap is far below a pixel and stop moving the camera every frame.
         if Self.span(from: current, to: goal) < 0.00005, simd_length(velocity.target) + abs(velocity.yaw) + abs(velocity.pitch) + abs(velocity.distance) < 0.0005 {
             current = goal
-            velocity = Pose(target: .zero, yaw: 0, pitch: 0, distance: 0)
+            velocity = Self.still
         }
         apply()
     }
@@ -176,10 +228,13 @@ final class CameraRig {
         let yaw = trip.from.yaw + Self.turn(trip.from.yaw, trip.to.yaw)
         current.target = trip.from.target + (trip.to.target - trip.from.target) * ease + trip.launch.target * push
         current.yaw = trip.from.yaw + (yaw - trip.from.yaw) * ease + trip.launch.yaw * push
+        let lowest = min(trip.from.pitch, trip.to.pitch, Self.pitchRange.lowerBound) - 0.1
+        let highest = min(max(trip.from.pitch, trip.to.pitch, Self.pitchRange.upperBound) + 0.15, .pi / 2 - 0.05)
         current.pitch = (trip.from.pitch + (trip.to.pitch - trip.from.pitch) * ease + trip.launch.pitch * push + bump * 0.35)
-            .clamped(to: Self.pitchRange)
+            .clamped(to: lowest...highest)
         let logFrom = log(trip.from.distance), logTo = log(trip.to.distance)
-        current.distance = exp(logFrom + (logTo - logFrom) * ease) * (1 + bump) + trip.launch.distance * push
+        current.distance = max(exp(logFrom + (logTo - logFrom) * ease) * (1 + bump) + trip.launch.distance * push,
+                               min(trip.from.distance, trip.to.distance) * 0.25)
         if t >= 1 { current = trip.to }
         guard dt > 0 else { return }
         velocity = Pose(target: (current.target - previous.target) / dt, yaw: (current.yaw - previous.yaw) / dt,

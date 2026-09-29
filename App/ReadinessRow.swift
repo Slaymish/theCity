@@ -83,6 +83,7 @@ extension View {
                 self
                 ScrollView { frame(maxWidth: .infinity, alignment: .leading) }
                     .defaultScrollAnchor(pinnedToTail ? .bottom : nil)
+                    .sheltersScroll()
             }
         }
     }

@@ -183,7 +183,7 @@ struct WorldView: View {
 
     var body: some View {
         let buildingID = buildingID, floorID = floorID
-        let session = floorID.flatMap { id in buildingID.flatMap { city.session(for: id, in: $0) } }
+        let session = floorID.flatMap { city.sessions[$0] }
         let quality = GraphicsQuality.current
         ZStack {
             GeometryReader { geometry in
@@ -202,8 +202,10 @@ struct WorldView: View {
                 .modifier(SceneControls(camera: { [world] in world.camera },
                                         excludedTrailing: session?.showPanel == true ? OfficeView.panelWidth + 40 : 0,
                                         onScroll: { [city, world] event in
-                                            guard case .building = city.route, world.inBuilding != nil, !event.modifierFlags.contains(.option) else { return false }
-                                            world.building.scroll(by: Float(event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 10))
+                                            guard case .building = city.route, world.inBuilding != nil, event.hasPreciseScrollingDeltas,
+                                                  !event.modifierFlags.contains(.option) else { return false }
+                                            world.building.scroll(by: Float(event.scrollingDeltaY))
+                                            if event.scrollingDeltaX != 0 { world.camera.pan(dx: Float(event.scrollingDeltaX), dy: 0) }
                                             return true
                                         },
                                         passThrough: { [city] in if case .newFloor = city.route { true } else { city.activeSession?.kiosk.isOpen == true } }))
@@ -220,12 +222,7 @@ struct WorldView: View {
                 }
                 .onChange(of: geometry.size) { world.fit(geometry.size) }
                 .onReceive(NotificationCenter.default.publisher(for: .resetView)) { _ in world.camera.recentre() }
-                .onChange(of: city.buildings.map { [$0.id] + $0.floors.map(\.id) }) {
-                    if city.groundBreaking != nil { world.city.titleMode = false }
-                    world.city.build(city.buildings, dark: dark)
-                    world.cityRebuilt()
-                    if let id = city.groundBreaking { breakGround(id) }
-                }
+                .onChange(of: city.buildings.map { [$0.id] + $0.floors.map(\.id) }) { buildingsChanged() }
                 .onChange(of: city.route) {
                     guard world.city.titleMode, city.route != .welcome else { return }
                     world.city.titleMode = false
@@ -260,6 +257,19 @@ struct WorldView: View {
         }
     }
 
+    private func buildingsChanged() {
+        if city.groundBreaking != nil { world.city.titleMode = false }
+        // Rebuilding the whole city freezes the tower view, so wait until the city is seen again.
+        if world.inBuilding != nil, city.groundBreaking == nil {
+            world.cityStale = true
+            return
+        }
+        world.cityStale = false
+        world.city.build(city.buildings, dark: dark)
+        world.cityRebuilt()
+        if let id = city.groundBreaking { breakGround(id) }
+    }
+
     private func tapped(_ entity: Entity) {
         if let buildingID, world.inBuilding == buildingID {
             if let floorID, world.building.floor(of: entity) == floorID, let session = city.session(for: floorID, in: buildingID) {
@@ -271,19 +281,15 @@ struct WorldView: View {
                 return
             }
         }
-        guard let target = CityScene.target(of: entity) else { return }
+        guard world.inBuilding == nil, let target = CityScene.target(of: entity) else { return }
         if target == "lot:new" { return ProjectPicker.addProject() }
         guard let id = UUID(uuidString: String(target.dropFirst("building:".count))), id != buildingID else { return }
         prewarm([id])
-        if world.inBuilding == nil {
-            // Build the tower now, while the camera is still, so the route change mid-flight only reuses it.
-            show(id)
-            world.city.flyTowards(id)
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(OfficeScene.reduceMotion ? 0 : 450))
-                city.route = .building(id)
-            }
-        } else {
+        // Build the tower now, while the camera is still, so the route change mid-flight only reuses it.
+        show(id)
+        world.city.flyTowards(id)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(OfficeScene.reduceMotion ? 0 : 450))
             city.route = .building(id)
         }
     }
@@ -324,6 +330,11 @@ struct WorldView: View {
     private func sync(animated: Bool) {
         let target = buildingID
         guard target != world.inBuilding else { return }
+        if world.cityStale {
+            world.cityStale = false
+            world.city.build(city.buildings, dark: dark)
+            world.cityRebuilt()
+        }
         if let previous = world.inBuilding {
             city.visit(previous)
             world.leave(animated: animated && target == nil)
@@ -349,7 +360,7 @@ struct BuildingHUD: View {
             HStack(alignment: .top) {
                 Button("City", systemImage: "chevron.backward") { city.route = .city }
                     .buttonStyle(PillButtonStyle(kind: .secondary))
-                    .keyboardShortcut(.escape, modifiers: [])
+                    .keyboardShortcut(city.route == .newFloor(building.id) ? nil : KeyboardShortcut(.escape, modifiers: []))
                 Spacer()
                 UsageHUD(configDirectory: Preferences.shared.configDirectory)
                 OpenInMenu(directory: building.url)
@@ -358,7 +369,7 @@ struct BuildingHUD: View {
                     .help("Set up a floor yourself instead of asking reception")
             }
             Text(building.name).font(Typography.titleSmall)
-            Text(building.floors.isEmpty ? "Tell reception what you need. It sets up a floor with the right team." : "Scroll to move between floors. Click one to go in, or ask reception below.")
+            Text(building.floors.isEmpty ? "Tell reception what you need. It sets up a floor with the right team." : "Swipe up or down on the trackpad to move between floors. Click one to go in, or ask reception below.")
                 .font(Typography.caption).foregroundStyle(Color(Palette.muted))
             if !building.floors.isEmpty { VitalsStrip(city: city, scope: .building(building)) }
             Spacer()
@@ -385,7 +396,7 @@ struct BuildingHUD: View {
                     }
                 }
                     .onGeometryChange(for: CGSize.self) { $0.size } action: { composerSize = $0 }
-                TimelineView(.animation(paused: !scene.lobbyFocused)) { _ in
+                TimelineView(.animation(paused: !scene.watch.lobbyFocused)) { _ in
                     let resting = CGPoint(x: 20 + composerSize.width / 2, y: geometry.size.height - 20 - composerSize.height / 2)
                     let head = scene.lobbyFocused ? scene.receptionistPoint : nil
                     let pinned = head.map { head in

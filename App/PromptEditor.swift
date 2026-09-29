@@ -91,6 +91,7 @@ struct PromptEditor<Actions: View>: View {
                     .dictation(text: $text)
                     .padding(10)
                     .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(Palette.hairline), lineWidth: 1))
+                    .sheltersScroll()
                     .onKeyPress(.upArrow) { move(-1) }
                     .onKeyPress(.downArrow) { move(1) }
                     .onKeyPress(.tab) { accept() }

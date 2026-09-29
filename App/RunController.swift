@@ -176,8 +176,8 @@ final class RunController {
         workingDirectory = building?.url ?? Self.defaultWorkspace
         if let path = floor?.configDirectory { configDirectory = URL(fileURLWithPath: path) }
         refreshCatalogue()
-        loadKit()
-        checkReadiness()
+        loadKit(fresh: false)
+        checkReadiness(fresh: false)
         guard let floor, let url = building?.url else { return }
         let catalogue = AgentCatalogue.load(workingDirectory: url)
         hired = floor.hires.compactMap { name in catalogue.first { $0.name == name } }
@@ -232,16 +232,35 @@ final class RunController {
         kitCache["\(workingDirectory.path)|\(configDirectory?.path ?? "")"] = kit
     }
 
-    func loadKit() {
+    private static var kitLoads: [String: (id: UUID, task: Task<Kit, Never>)] = [:]
+
+    private static func sharedKitLoad(for workingDirectory: URL, configDirectory: URL?, fresh: Bool,
+                                      _ load: @escaping @Sendable () async -> Kit) -> Task<Kit, Never> {
+        let key = "\(workingDirectory.path)|\(configDirectory?.path ?? "")"
+        if !fresh, let running = kitLoads[key] { return running.task }
+        let id = UUID()
+        let task = Task { () -> Kit in
+            let loaded = await load()
+            if kitLoads[key]?.id == id {
+                cacheKit(loaded, for: workingDirectory, configDirectory: configDirectory)
+                kitLoads[key] = nil
+            }
+            return loaded
+        }
+        kitLoads[key] = (id, task)
+        return task
+    }
+
+    func loadKit(fresh: Bool = true) {
         guard let workingDirectory, let load = Self.kitLoader(for: workingDirectory, configDirectory: configDirectory) else { return }
         kitTask?.cancel()
         let configDirectory = configDirectory
         if let cached = Self.cachedKit(for: workingDirectory, configDirectory: configDirectory), cached != kit { useKit(cached) }
         isLoadingKit = kit == nil
+        let shared = Self.sharedKitLoad(for: workingDirectory, configDirectory: configDirectory, fresh: fresh, load)
         let task = Task { () -> Kit? in
-            let loaded = await load()
+            let loaded = await shared.value
             guard !Task.isCancelled else { return nil }
-            Self.cacheKit(loaded, for: workingDirectory, configDirectory: configDirectory)
             return loaded
         }
         kitTask = task
@@ -343,22 +362,49 @@ final class RunController {
         catalogueNames = workingDirectory.map { AgentCatalogue.load(workingDirectory: $0).map(\.name) } ?? []
     }
 
-    func checkReadiness() {
+    private static var readinessChecks: [String: (id: UUID, task: Task<Readiness, Never>)] = [:]
+
+    private static func sharedReadinessCheck(executable: URL, environment: [String: String], configDirectory: URL?,
+                                             fresh: Bool) -> Task<Readiness, Never> {
+        let key = "\(executable.path)|\(configDirectory?.path ?? "")"
+        if !fresh, let running = readinessChecks[key] { return running.task }
+        let id = UUID()
+        let task = Task { () -> Readiness in
+            defer { if readinessChecks[key]?.id == id { readinessChecks[key] = nil } }
+            if let version = await ClaudeEnvironment.version(executable: executable, environment: environment),
+               !ClaudeEnvironment.isSupported(version) {
+                return .cliOutdated(version.map(String.init).joined(separator: "."))
+            }
+            let loggedIn = await ClaudeEnvironment.isLoggedIn(executable: executable, environment: environment)
+            return loggedIn == false ? .notLoggedIn : .ready
+        }
+        readinessChecks[key] = (id, task)
+        return task
+    }
+
+    @ObservationIgnored private var readyChecked: (at: Date, executable: URL, configDirectory: URL?)?
+    @ObservationIgnored private var readinessGeneration = 0
+    private static let readinessFreshFor: TimeInterval = 30
+
+    func checkReadiness(fresh: Bool = true) {
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
         guard let executable = Self.executable(environment: environment),
               FileManager.default.isExecutableFile(atPath: executable.path) else {
+            readinessGeneration += 1
             readiness = .cliMissing
+            readyChecked = nil
             return
         }
         if readiness != .ready { readiness = .checking }
+        readyChecked = nil
+        readinessGeneration += 1
+        let generation = readinessGeneration, configDirectory = configDirectory
+        let check = Self.sharedReadinessCheck(executable: executable, environment: environment, configDirectory: configDirectory, fresh: fresh)
         Task {
-            if let version = await ClaudeEnvironment.version(executable: executable, environment: environment),
-               !ClaudeEnvironment.isSupported(version) {
-                readiness = .cliOutdated(version.map(String.init).joined(separator: "."))
-                return
-            }
-            let loggedIn = await ClaudeEnvironment.isLoggedIn(executable: executable, environment: environment)
-            readiness = loggedIn == false ? .notLoggedIn : .ready
+            let result = await check.value
+            guard generation == readinessGeneration else { return }
+            readiness = result
+            readyChecked = result == .ready ? (.now, executable, configDirectory) : nil
         }
     }
 
@@ -773,8 +819,11 @@ final class RunController {
                 return send(.launchFailed(.cliNotFound))
             }
             appLog("Using \(executable.path)")
-            appLog("Checking login (claude auth status)…")
-            if await ClaudeEnvironment.isLoggedIn(executable: executable, environment: environment) == false {
+            let fresh = readiness == .ready && readyChecked.map {
+                $0.executable == executable && $0.configDirectory == configDirectory && Date.now.timeIntervalSince($0.at) < Self.readinessFreshFor
+            } == true
+            if !fresh { appLog("Checking login (claude auth status)…") }
+            if !fresh, await ClaudeEnvironment.isLoggedIn(executable: executable, environment: environment) == false {
                 appLog("Not logged in for config directory \(configDirectory?.path ?? "default")")
                 return send(.launchFailed(.notLoggedIn))
             }
@@ -795,13 +844,16 @@ final class RunController {
                 }
                 guard !Task.isCancelled else { return }
                 config.workingDirectory = directory
-                let process = try ClaudeProcess(
-                    executable: executable,
-                    arguments: config.arguments,
-                    environment: environment,
-                    workingDirectory: directory,
-                    keepInputOpen: true
-                )
+                let arguments = config.arguments, spawnIn = directory
+                let process = try await Task.detached {
+                    try ClaudeProcess(executable: executable, arguments: arguments, environment: environment,
+                                      workingDirectory: spawnIn, keepInputOpen: true)
+                }.value
+                guard !Task.isCancelled else {
+                    process.closeInput()
+                    process.cancel()
+                    return
+                }
                 self.process = process
                 appLog("Launched in \(directory.path)\(config.worktreeName.map { " (Claude makes worktree \($0))" } ?? "")")
                 if let brief = config.appendSystemPrompt { appLog("Hiring brief: \(brief)") }
@@ -812,6 +864,7 @@ final class RunController {
                 write(ControlMessage.userMessage(request), note: "request")
                 await consume(process.output)
             } catch {
+                guard !Task.isCancelled else { return }
                 appLog("Launch failed: \(error.localizedDescription)")
                 send(.launchFailed(.couldNotStart(error.localizedDescription)))
             }

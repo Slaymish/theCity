@@ -40,4 +40,15 @@ struct FloorSignalTests {
         #expect(FloorSignal.blocked.label() == "Waiting")
         #expect(FloorSignal.ready.label(count: 3) == "Ready")
     }
+
+    @Test func ageUsesTheCoarsestMovingUnit() {
+        let start = Date(timeIntervalSince1970: 0)
+        func age(_ seconds: TimeInterval) -> String { FloorSignal.age(from: start, to: start.addingTimeInterval(seconds)) }
+        #expect(age(-5) == "0s")
+        #expect(age(40) == "40s")
+        #expect(age(60) == "1m")
+        #expect(age(299) == "4m")
+        #expect(age(3600) == "1h")
+        #expect(age(7300) == "2h")
+    }
 }

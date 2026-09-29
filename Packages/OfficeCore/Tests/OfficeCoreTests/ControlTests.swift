@@ -116,3 +116,18 @@ struct WorkflowTests {
         #expect(reducer.state.outputFiles.map { URL(fileURLWithPath: $0).lastPathComponent } == ["hello.txt"])
     }
 }
+
+struct PendingRequestAgeTests {
+    private let request = PermissionRequest(requestID: "a", toolName: "Bash", kind: .approval(summary: "ls"))
+
+    @Test func remembersWhenItArrived() {
+        let then = Date(timeIntervalSince1970: 1000)
+        #expect(PendingRequest(request: request, room: "build", since: then).since == then)
+    }
+
+    @Test func arrivalTimeIsNotPartOfEquality() {
+        let early = PendingRequest(request: request, room: "build", since: Date(timeIntervalSince1970: 1))
+        let late = PendingRequest(request: request, room: "build", since: Date(timeIntervalSince1970: 2))
+        #expect(early == late)
+    }
+}

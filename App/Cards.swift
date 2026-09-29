@@ -144,6 +144,7 @@ struct DeskCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            WaitingAge(since: pending.since)
             switch pending.request.kind {
             case .question(let questions):
                 Text("\(controller.displayName(pending.room)) asks")

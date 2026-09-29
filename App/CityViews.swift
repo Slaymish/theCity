@@ -88,18 +88,20 @@ struct NeedsYouList: View {
     var body: some View {
         let waiting = city.floorsNeedingYou()
         if !waiting.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Needs you").eyebrow()
-                ForEach(waiting, id: \.floor.id) { building, floor, signal in
-                    let detail = signal.label(count: city.sessions[floor.id]?.state.pendingRequests.count ?? 1)
-                    Button("\(building.name) · \(floor.name) · \(detail)", systemImage: signal.symbol) {
-                        city.route = .floor(building: building.id, floor: floor.id)
+            TimelineView(.periodic(from: .now, by: 5)) { context in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Needs you").eyebrow()
+                    ForEach(waiting, id: \.floor.id) { item in
+                        let waited = item.since.flatMap { context.date.timeIntervalSince($0) >= FloorSignal.ageAppearsAfter ? " · \(FloorSignal.age(from: $0, to: context.date))" : nil } ?? ""
+                        Button("\(item.building.name) · \(item.floor.name) · \(item.signal.label(count: item.count))\(waited)", systemImage: item.signal.symbol) {
+                            city.route = .floor(building: item.building.id, floor: item.floor.id)
+                        }
+                        .buttonStyle(PillButtonStyle(kind: .accent(item.signal.colour)))
                     }
-                    .buttonStyle(PillButtonStyle(kind: .accent(signal.colour)))
                 }
+                .glass()
+                .frame(maxWidth: 360, alignment: .leading)
             }
-            .glass()
-            .frame(maxWidth: 360, alignment: .leading)
         }
     }
 }
@@ -111,12 +113,12 @@ struct ElsewhereNeedsYou: View {
 
     var body: some View {
         let waiting = city.floorsNeedingYou().filter { $0.floor.id != floorID }
-        if let (building, floor, signal) = waiting.first {
-            Button("\(building.name) · \(floor.name) \(signal == .blocked ? "needs you" : signal.label().lowercased())", systemImage: signal.symbol) {
-                city.route = .floor(building: building.id, floor: floor.id)
+        if let next = waiting.first {
+            Button("\(next.building.name) · \(next.floor.name) \(next.signal == .blocked ? "needs you" : next.signal.label().lowercased())", systemImage: next.signal.symbol) {
+                city.route = .floor(building: next.building.id, floor: next.floor.id)
             }
-            .buttonStyle(PillButtonStyle(kind: .accent(signal.colour)))
-            .help(waiting.count > 1 ? "\(waiting.count) floors need you. Go to \(floor.name), the most urgent (⌘J)." : "Go to \(floor.name) (⌘J)")
+            .buttonStyle(PillButtonStyle(kind: .accent(next.signal.colour)))
+            .help(waiting.count > 1 ? "\(waiting.count) floors need you. Go to \(next.floor.name), the most urgent (⌘J)." : "Go to \(next.floor.name) (⌘J)")
         }
     }
 }

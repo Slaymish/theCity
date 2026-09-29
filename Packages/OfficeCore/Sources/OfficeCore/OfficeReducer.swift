@@ -120,9 +120,15 @@ public struct PendingRequest: Sendable, Equatable, Identifiable {
     /// `manager` unless a subagent asked.
     public var room: String
 
-    public init(request: PermissionRequest, room: String) {
+    /// When the request arrived, so the UI can show how long a robot has been waiting. Not part of equality.
+    public var since: Date
+
+    public static func == (a: Self, b: Self) -> Bool { a.request == b.request && a.room == b.room }
+
+    public init(request: PermissionRequest, room: String, since: Date = Date()) {
         self.request = request
         self.room = room
+        self.since = since
     }
 }
 

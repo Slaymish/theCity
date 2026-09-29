@@ -35,6 +35,8 @@ A free Apple ID can install apps on your own phone for 7 days at a time. Local n
 2. `THECITY_TEAM=<team id> make project`, then open `TheCity.xcodeproj`, pick the `TheCityCompanion` scheme and your phone, and run.
 3. On the Mac, open Settings › iPhone, turn it on, and scan the code with the phone.
 
+Once the phone has been set up for wireless use, `THECITY_TEAM=<team id> make phone` does step 2 and the install without opening Xcode, over Wi-Fi. Set it up once: plug the phone in, turn on Developer Mode, and in Xcode's Window › Devices and Simulators tick "Connect via network". Re-run it every 7 days to renew the install. If the team can't register the bundle id, set `THECITY_BUNDLE_ID` to something unique.
+
 `make companion` builds for the simulator, which needs no signing.
 
 ## Turning on iCloud (needs the Apple Developer Program)

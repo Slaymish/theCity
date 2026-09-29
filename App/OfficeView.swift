@@ -3,7 +3,7 @@ import OfficeCore
 import RealityKit
 import SwiftUI
 
-/// Orbit, pinch, wheel and trackpad scrolling for any of the 3D views.
+/// Orbit, pan, pinch, wheel, trackpad scrolling and arrow keys for any of the 3D views.
 struct SceneControls: ViewModifier {
     let camera: () -> CameraRig
     var excludedTrailing: CGFloat = 0
@@ -11,25 +11,28 @@ struct SceneControls: ViewModifier {
     var passThrough: () -> Bool = { false }
     @State private var lastDrag: CGSize = .zero
     @State private var lastMagnification: CGFloat = 1
-    @State private var monitor: Any?
+    @State private var monitors: [Any] = []
+    @State private var resignObserver: NSObjectProtocol?
 
     func body(content: Content) -> some View {
         content
             .simultaneousGesture(DragGesture(minimumDistance: 4).onChanged { value in
                 let delta = CGSize(width: value.translation.width - lastDrag.width, height: value.translation.height - lastDrag.height)
                 lastDrag = value.translation
-                camera().orbit(dx: Float(delta.width), dy: Float(delta.height))
+                if NSEvent.modifierFlags.contains(.shift) {
+                    camera().pan(dx: Float(delta.width), dy: Float(delta.height))
+                } else {
+                    camera().orbit(dx: Float(delta.width), dy: Float(delta.height))
+                }
             }.onEnded { _ in lastDrag = .zero })
             .simultaneousGesture(MagnifyGesture().onChanged { value in
                 camera().zoom(by: Float(lastMagnification / value.magnification))
                 lastMagnification = value.magnification
             }.onEnded { _ in lastMagnification = 1 })
             .onAppear {
-                guard monitor == nil else { return }
-                monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-                    guard event.window?.isKeyWindow == true else { return event }
-                    let width = event.window?.contentView?.bounds.width ?? 0
-                    if passThrough() || event.locationInWindow.x > width - excludedTrailing { return event }
+                guard monitors.isEmpty else { return }
+                monitors.append(NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+                    guard steers(event) else { return event }
                     if let onScroll, onScroll(event) { return nil }
                     if event.hasPreciseScrollingDeltas && !event.modifierFlags.contains(.option) {
                         camera().pan(dx: Float(event.scrollingDeltaX), dy: Float(event.scrollingDeltaY))
@@ -38,13 +41,89 @@ struct SceneControls: ViewModifier {
                         camera().zoom(by: 1 - step)
                     }
                     return nil
+                } as Any)
+                var panning = false
+                monitors.append(NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .rightMouseDragged, .rightMouseUp]) { event in
+                    switch event.type {
+                    case .rightMouseDown:
+                        panning = steers(event)
+                    case .rightMouseDragged where panning:
+                        camera().pan(dx: Float(event.deltaX), dy: Float(event.deltaY))
+                        return nil
+                    default:
+                        panning = false
+                    }
+                    return event
+                } as Any)
+                monitors.append(NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { event in
+                    guard let steer = Self.steer(for: event) else { return event }
+                    if event.type == .keyUp {
+                        CameraRig.steering.remove(steer)
+                        return event
+                    }
+                    guard let window = event.window, Self.isScene(window), !passThrough(),
+                          event.modifierFlags.isDisjoint(with: [.command, .control, .option]),
+                          !(window.firstResponder is NSText), !(window.firstResponder is NSTableView) else { return event }
+                    CameraRig.steering.insert(steer)
+                    return nil
+                } as Any)
+                resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: .main) { _ in
+                    MainActor.assumeIsolated { CameraRig.steering.removeAll() }
                 }
             }
             .onDisappear {
-                if let monitor { NSEvent.removeMonitor(monitor) }
-                monitor = nil
+                monitors.forEach(NSEvent.removeMonitor)
+                monitors = []
+                if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
+                resignObserver = nil
+                CameraRig.steering.removeAll()
             }
     }
+
+    private static func isScene(_ window: NSWindow) -> Bool {
+        window.isKeyWindow && window.sheetParent == nil && window.identifier?.rawValue.hasPrefix("office") == true
+    }
+
+    private func steers(_ event: NSEvent) -> Bool {
+        guard let window = event.window, Self.isScene(window), let view = window.contentView else { return false }
+        if passThrough() || event.locationInWindow.x > view.bounds.width - excludedTrailing { return false }
+        let local = view.convert(event.locationInWindow, from: nil)
+        let point = CGPoint(x: local.x, y: view.isFlipped ? local.y : view.bounds.height - local.y)
+        return !Self.shelters.values.contains { $0.contains(point) }
+    }
+
+    private static func steer(for event: NSEvent) -> CameraRig.Steer? {
+        switch event.keyCode {
+        case 123: return .left
+        case 124: return .right
+        case 125: return .down
+        case 126: return .up
+        default: break
+        }
+        switch event.charactersIgnoringModifiers {
+        case "+", "=": return .zoomIn
+        case "-": return .zoomOut
+        default: return nil
+        }
+    }
+}
+
+extension SceneControls {
+    @MainActor static var shelters: [UUID: CGRect] = [:]
+}
+
+struct ScrollShelter: ViewModifier {
+    @State private var id = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { SceneControls.shelters[id] = $0 }
+            .onDisappear { SceneControls.shelters[id] = nil }
+    }
+}
+
+extension View {
+    func sheltersScroll() -> some View { modifier(ScrollShelter()) }
 }
 
 /// A standalone office (a new floor before it joins its building, or a replay).
@@ -154,7 +233,6 @@ struct OfficeOverlay: View {
                         Button(controller.showPanel ? "Hide panel" : "Show panel", systemImage: "sidebar.right") { controller.showPanel.toggle() }
                             .labelStyle(.iconOnly)
                             .buttonStyle(PillButtonStyle(kind: .secondary))
-                            .keyboardShortcut("\\", modifiers: .command)
                             .help(controller.showPanel ? "Hide the panel (⌘\\)" : "Show the panel: activity, rooms, and tools and skills (⌘\\)")
                         if controller.isRunning {
                             Button("Cancel") { controller.cancel() }
@@ -303,7 +381,7 @@ struct DeskRequestLayer: View {
                     }
                 }
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { cardSize = $0 }
-                TimelineView(.animation) { _ in
+                TimelineView(.animation(paused: OfficeScene.reduceMotion && scene.camera.motion.settled)) { _ in
                     let start = scene.cardPoint(of: room) ?? CGPoint(x: geometry.size.width / 2 + 40, y: geometry.size.height / 2)
                     card
                         .position(x: min(max(start.x + cardSize.width / 2, cardSize.width / 2 + 20), limit - cardSize.width / 2),

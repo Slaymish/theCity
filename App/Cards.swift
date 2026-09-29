@@ -160,7 +160,7 @@ struct DeskCard: View {
                 }
                 ViewThatFits(in: .vertical) {
                     fields
-                    ScrollView { fields }
+                    ScrollView { fields }.sheltersScroll()
                 }
                 HStack {
                     Spacer()
@@ -366,7 +366,7 @@ struct EndCard: View {
             }
             ViewThatFits(in: .vertical) {
                 summaryText.fixedSize(horizontal: false, vertical: true)
-                ScrollView { summaryText }.frame(height: 320)
+                ScrollView { summaryText }.frame(height: 320).sheltersScroll()
             }
             .frame(maxHeight: 320)
             if !links.isEmpty {

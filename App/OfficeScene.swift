@@ -352,10 +352,10 @@ final class OfficeScene {
                        radius: standing ? 5 : 3, bulb: 0.08)
     }
 
-    private func applyReceivers() {
+    private func applyReceivers(to entities: [Entity]? = nil) {
         let receiver = ImageBasedLightReceiverComponent(imageBasedLight: lighting)
-        // Runs after every batch of stream events, so only entities added since the last pass are touched.
-        for entity in [root] + root.descendants where entity.components.has(ModelComponent.self) {
+        let candidates = entities.map { $0.flatMap { [$0] + $0.descendants } } ?? [root] + root.descendants
+        for entity in candidates where entity.components.has(ModelComponent.self) {
             if entity.components[ImageBasedLightReceiverComponent.self]?.imageBasedLight === lighting { continue }
             entity.components.set(receiver)
             if !entity.components.has(BillboardComponent.self) {
@@ -552,6 +552,7 @@ final class OfficeScene {
     func apply(_ events: [OfficeEvent]) {
         endStroll()
         if events.isEmpty { return reset() }
+        var added: [Entity] = []
         for event in events {
             switch event {
             case .runStarted:
@@ -562,6 +563,7 @@ final class OfficeScene {
                 guard let manager = pods["manager"] else { break }
                 let folder = Self.makeFolder()
                 root.addChild(folder)
+                added.append(folder)
                 folders[id] = folder
                 jobFolder?.isEnabled = false
                 fly(folder, from: manager.deskTop + [0.3, 0, 0.6], to: pod(for: room).deskTop + [0.3, 0, 0.6])
@@ -571,7 +573,7 @@ final class OfficeScene {
                 pod(for: room).worker.setMood(.working)
             case .roomActivity(let room, let tool, _):
                 let pod = pod(for: room)
-                pod.showBubble(symbol: Self.symbol(for: tool), text: Wording.verb(tool), dark: dark)
+                pod.showBubble(symbol: Self.symbol(for: tool), text: Wording.verb(tool), dark: dark).map { added.append($0) }
             case .roomCaption(let room, let caption):
                 pod(for: room).worker.setCaption(caption)
             case .roomFinished(_, let room, let outcome):
@@ -591,25 +593,29 @@ final class OfficeScene {
                 pod.worker.setMood(isQuestion ? .question : .approval)
                 let text = isQuestion ? "Has a question" : "Needs approval"
                 Sound.play(isActive ? .boop : .ping, volume: 0.7)
-                pod.showBubble(symbol: "hand.raised.fill", text: text, dark: dark)
+                pod.showBubble(symbol: "hand.raised.fill", text: text, dark: dark).map { added.append($0) }
             case .handLowered(_, let room):
                 let pod = pod(for: room)
                 if [.question, .approval].contains(pod.worker.mood) {
                     pod.worker.setMood(.working)
                     let answer = Self.makeFolder()
                     root.addChild(answer)
+                    added.append(answer)
                     fly(answer, from: pod.worker.headPosition - root.position(relativeTo: nil) + [0.8, 0.8, 0], to: pod.deskTop + [0.3, 0, 0.6]) {
                         answer.removeFromParent()
                     }
                 }
                 pod.showBubble(symbol: nil, text: nil, dark: dark)
             case .skillLoaded(let room, let skill):
-                pod(for: room).addBook(skill, dark: dark)
+                let pod = pod(for: room)
+                pod.addBook(skill, dark: dark)
+                added.append(pod.root)
             case .serviceCall(let id, let room, let server, let active):
                 let terminal = terminal(for: server)
                 if active {
                     let line = Self.connector(from: root.convert(position: pod(for: room).worker.headPosition, from: nil), to: terminal.root.position + [0, 2.2, 0])
                     root.addChild(line)
+                    added += [line, terminal.root]
                     lines[id] = (line, server)
                 } else {
                     lines.removeValue(forKey: id)?.entity.removeFromParent()
@@ -628,6 +634,7 @@ final class OfficeScene {
                     guard let manager = pods["manager"], let jobFolder else { break }
                     let artefact = Self.makeFolder()
                     root.addChild(artefact)
+                    added.append(artefact)
                     jobFolder.isEnabled = false
                     deliver(artefact, by: manager)
                 case .cancelled, .failed:
@@ -636,7 +643,7 @@ final class OfficeScene {
                 }
             }
         }
-        applyReceivers()
+        if !added.isEmpty { applyReceivers(to: added) }
     }
 
     private func reset() {
@@ -942,6 +949,7 @@ final class Pod {
         clockFace.model = ModelComponent(mesh: .generatePlane(width: 0.52, height: 0.26, cornerRadius: 0.03), materials: [])
         clockFace.position = [0, 0, 0.101]
         clockBody.addChild(clockFace)
+        tickClock(dark: dark)
         switch variant % 4 {
         case 0:
             _ = place("cactus_medium_A", [-1.9, 0, -1.8], scale: 0.9)
@@ -995,10 +1003,21 @@ final class Pod {
         guard seconds != clockShown else { return }
         clockShown = seconds
         let text = seconds < 3600 ? String(format: "%d:%02d", seconds / 60, seconds % 60) : String(format: "%dh%02d", seconds / 3600, seconds / 60 % 60)
-        let renderer = ImageRenderer(content: ClockFaceView(text: text))
-        renderer.scale = 1.5
-        guard let image = renderer.cgImage else { return }
+        guard let image = Self.clockImage(text, dark: dark) else { return }
         clockTexture = LivePanel.show(image, on: clockFace, reusing: clockTexture)
+    }
+
+    private static var clockImages: [String: CGImage] = [:]
+
+    private static func clockImage(_ text: String, dark: Bool) -> CGImage? {
+        let key = "\(BrandStore.shared.selectedID)|\(Palette.screenOn.key(dark: dark))|\(Palette.screenOff.key(dark: dark))|\(text)"
+        if let image = clockImages[key] { return image }
+        let renderer = ImageRenderer(content: ClockFaceView(text: text).environment(\.colorScheme, dark ? .dark : .light))
+        renderer.scale = 1.5
+        guard let image = renderer.cgImage else { return nil }
+        if clockImages.count >= 32 { clockImages.removeAll() }
+        clockImages[key] = image
+        return image
     }
 
     func flash(after delay: Duration) {
@@ -1011,15 +1030,17 @@ final class Pod {
         }
     }
 
-    func showBubble(symbol: String?, text: String?, dark: Bool) {
+    @discardableResult
+    func showBubble(symbol: String?, text: String?, dark: Bool) -> Entity? {
         bubble?.removeFromParent()
         bubble = nil
-        guard let symbol, let text, let plane = Billboard.make(BubbleView(symbol: symbol, text: text, colour: colour), dark: dark) else { return }
+        guard let symbol, let text, let plane = Billboard.make(BubbleView(symbol: symbol, text: text, colour: colour), dark: dark) else { return nil }
         plane.position = [-1.2, bubbleScale < 1 ? 2.6 : 3.4, 0.1]
         plane.isEnabled = labelsVisible
         plane.scale = SIMD3(repeating: bubbleScale)
         root.addChild(plane)
         bubble = plane
+        return plane
     }
 
     func addBook(_ title: String, dark: Bool) {

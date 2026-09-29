@@ -31,6 +31,11 @@ struct TowerPlan: Equatable {
     var floors: [Floor]
 }
 
+@Observable @MainActor
+final class BuildingWatch {
+    var lobbyFocused = false
+}
+
 /// A project's tower: its floors are the live office scenes, stacked, with one camera for the whole building.
 @MainActor
 final class BuildingScene {
@@ -43,6 +48,8 @@ final class BuildingScene {
     var updates: EventSubscription?
     private(set) var buildingID: UUID?
     private var builtShell: String?
+    private var builtFloors: [UUID] = []
+    let watch = BuildingWatch()
     private var plan: TowerPlan?
     /// Where labels read a floor's latest name and session between shows; without them, the ones it was shown with.
     var latestPlan: (UUID) -> TowerPlan? = { _ in nil }
@@ -60,9 +67,18 @@ final class BuildingScene {
     private let haze = Horizon.haze()
     private var lobby: Pod?
     private var liftButtons: [ModelEntity] = []
+    private var litButton: Int?
+    private var billboardsWalked = 0
+    private var liftParts: [Entity] = []
+    private var roof: Entity?
+    private var projectSign: Entity?
+    private var signsHidden: Bool?
     private var scaffold: Entity?
     private(set) var lobbyFocused = false {
-        didSet { if !lobbyFocused { storeysHidden = false } }
+        didSet {
+            if !lobbyFocused { storeysHidden = false }
+            if watch.lobbyFocused != lobbyFocused { watch.lobbyFocused = lobbyFocused }
+        }
     }
     private var storeysHidden = false {
         didSet { if storeysHidden != oldValue { hideStoreysForLobby() } }
@@ -102,8 +118,11 @@ final class BuildingScene {
     /// Rebuilding the shell (lobby, glazing, roof, sign and floor labels) is the slow part of entering a building,
     /// so it's kept while the building's floors, names, theme and brand stay the same, and only the offices are re-slotted.
     func show(_ building: TowerPlan, storeys sessions: [(UUID, any Storey)], dark: Bool) {
-        let shell = "\(building.id)|\(building.name)|\(building.title ?? "")|\(sessions.map(\.0))|\(dark)|\(BrandStore.shared.selectedID)"
-        let rebuild = shell != builtShell
+        let shell = "\(building.id)|\(building.name)|\(building.title ?? "")|\(dark)|\(BrandStore.shared.selectedID)"
+        let ids = sessions.map(\.0)
+        let grows = shell == builtShell && !builtFloors.isEmpty && ids.count == builtFloors.count + 1 && Array(ids.dropLast()) == builtFloors
+        let rebuild = !grows && (shell != builtShell || ids != builtFloors)
+        let onScreen = root.isEnabled && buildingID == building.id
         self.dark = dark
         buildingID = building.id
         plan = building
@@ -136,12 +155,15 @@ final class BuildingScene {
         if rebuild {
             buildShell(building, floors: sessions.count)
             builtShell = shell
+        } else if grows {
+            addStorey(floors: sessions.count)
         }
-        camera.overview = overviewPose()
+        builtFloors = ids
+        setOverview()
         if activeFloor == nil || !storeys.contains(where: { $0.id == activeFloor }) {
             activeFloor = nil
             lobbyFocused = false
-            camera.reset(to: camera.overview, animated: false)
+            camera.reset(to: camera.overview, animated: onScreen)
         }
     }
 
@@ -184,12 +206,16 @@ final class BuildingScene {
         roof.position = [0, roofTop - Self.roofThickness / 2, 0]
         roof.isEnabled = floors > 0
         tower.addChild(roof)
+        self.roof = roof
         crown = [roof]
+        projectSign = nil
         if let sign = Billboard.make(ProjectBillboardView(title: building.title ?? building.name, folder: building.name), dark: dark) {
             sign.position = [0, height + 2.6, 0]
             tower.addChild(sign)
             crown.append(sign)
+            projectSign = sign
         }
+        signsHidden = nil
         refreshLabels(force: true)
         if let label = Billboard.make(BubbleView(symbol: "bell.fill", text: "Reception", colour: Palette.muted), dark: dark) {
             label.position = labelPosition(-1)
@@ -209,6 +235,44 @@ final class BuildingScene {
         guard let extents = label.model?.mesh.bounds.extents else { return }
         label.components.set(CollisionComponent(shapes: [.generateBox(width: extents.x, height: extents.y, depth: extents.x)]))
         label.components.set(InputTargetComponent())
+    }
+
+    private func addStorey(floors: Int) {
+        let receiver = ImageBasedLightReceiverComponent(imageBasedLight: lobbyLight)
+        liftParts.forEach { $0.removeFromParent() }
+        lobbyParts.removeAll { part in liftParts.contains { $0 === part } }
+        liftParts = liftPanel(floors: floors)
+        for part in liftParts {
+            part.components.set(receiver)
+            part.components.set(GroundingShadowComponent(castsShadow: true, receivesShadow: true))
+            tower.addChild(part)
+        }
+        lobbyParts += liftParts
+        lightLift()
+        let active = activeFloor.flatMap { id in storeys.first { $0.id == id }?.index }
+        if let template = fitOut[0] {
+            let storey = template.clone(recursive: true)
+            storey.position.y = Float(floors) * Self.storeyHeight
+            storey.isEnabled = active.map { floors - 1 <= $0 } ?? true
+            tower.addChild(storey)
+            fitOut[floors - 1] = storey
+        }
+        if let active, let top = storeys.last, top.index > active { top.scene.root.isEnabled = false }
+        roof?.position.y = roofTop - Self.roofThickness / 2
+        roof?.isEnabled = activeFloor == nil && !storeysHidden
+        projectSign?.position.y = Float(floors + 1) * Self.storeyHeight + 2.6
+        scaffold?.removeFromParent()
+        scaffold = nil
+        applyDaylight()
+        if storeysHidden { hideStoreysForLobby() }
+        signsHidden = nil
+        refreshLabels(force: false)
+        applyRise()
+    }
+
+    private func setOverview() {
+        camera.overview = overviewPose()
+        camera.distanceRange = CameraRig.distanceRange.lowerBound...max(CameraRig.distanceRange.upperBound, camera.overview.distance)
     }
 
     private func buildLobby(width: Float, depth: Float, floors: Int) -> [Entity] {
@@ -245,17 +309,8 @@ final class BuildingScene {
             leaf.position = shaft + [side * 0.46, 1.5, 0.82]
             parts.append(leaf)
         }
-        let panel = model(ModelLibrary.box(width: 0.34, height: 0.3 + Float(max(floors, 1)) * 0.16, depth: 0.05, cornerRadius: 0.04), Palette.robot)
-        panel.position = shaft + [1.3, 1.5, 0.82]
-        parts.append(panel)
-        liftButtons = []
-        for index in 0..<max(floors, 1) {
-            let button = model(.generateCylinder(height: 0.04, radius: 0.045), Palette.muted)
-            liftButtons.append(button)
-            button.orientation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
-            button.position = panel.position + [0, (Float(index) - Float(max(floors, 1) - 1) / 2) * 0.16, 0.04]
-            parts.append(button)
-        }
+        liftParts = liftPanel(floors: floors)
+        parts += liftParts
 
         let doorZ = depth / 2 - (depth / Float(max(Int(depth / 6), 2)) - 1.2) / 2
         parts.append(prop("couch_pillows", [-width / 2 + 2.2, 0, doorZ - 4.2], yaw: .pi / 2))
@@ -265,6 +320,25 @@ final class BuildingScene {
         parts.append(lamp)
         parts.append(prop("cactus_small_B", [shaft.x - 2.4, 0, shaft.z + 0.4]))
         parts.forEach { tower.addChild($0) }
+        return parts
+    }
+
+    private func liftPanel(floors: Int) -> [Entity] {
+        func model(_ mesh: MeshResource, _ token: NSColor) -> ModelEntity {
+            ModelEntity(mesh: mesh, materials: [OfficeScene.material(Palette.resolved(token, dark: dark))])
+        }
+        var parts: [Entity] = []
+        let panel = model(ModelLibrary.box(width: 0.34, height: 0.3 + Float(max(floors, 1)) * 0.16, depth: 0.05, cornerRadius: 0.04), Palette.robot)
+        panel.position = liftSpot + [1.3, 1.5, 0.82]
+        parts.append(panel)
+        liftButtons = []
+        for index in 0..<max(floors, 1) {
+            let button = model(.generateCylinder(height: 0.04, radius: 0.045), Palette.muted)
+            liftButtons.append(button)
+            button.orientation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
+            button.position = panel.position + [0, (Float(index) - Float(max(floors, 1) - 1) / 2) * 0.16, 0.04]
+            parts.append(button)
+        }
         return parts
     }
 
@@ -347,7 +421,7 @@ final class BuildingScene {
         guard size.width > 0, size.height > 0 else { return }
         viewSize = size
         storeys.forEach { $0.scene.fit(size) }
-        camera.overview = overviewPose()
+        setOverview()
         if activeFloor == nil { camera.reset(to: camera.overview) }
         else if let storey = storeys.first(where: { $0.id == activeFloor }), storey.scene.focusedRoom == nil {
             camera.reset(to: floorPose(storey.scene))
@@ -419,8 +493,8 @@ final class BuildingScene {
         } else {
             rise = nil
             risen = to
-            applyRise()
         }
+        applyRise()
     }
 
     private func applyRise() {
@@ -428,8 +502,12 @@ final class BuildingScene {
         tower.position.y = -(1 - t) * (towerHeight + 1)
         tower.isEnabled = risen > 0
         // Billboards ignore depth. Hide them while underground so they cannot show through the facade.
+        let hidden = risen < 1
+        guard hidden != signsHidden || (hidden && Billboard.made != billboardsWalked) else { return }
+        signsHidden = hidden
+        billboardsWalked = Billboard.made
         for sign in tower.descendants where sign.components.has(BillboardComponent.self) {
-            if risen < 1 {
+            if hidden {
                 if sign.components[OpacityComponent.self]?.opacity != 0 { sign.components.set(OpacityComponent(opacity: 0)) }
             } else if sign.components.has(OpacityComponent.self) {
                 sign.components.remove(OpacityComponent.self)
@@ -470,18 +548,23 @@ final class BuildingScene {
         return CGPoint(x: CGFloat(screen.x), y: CGFloat(screen.y))
     }
 
-    func receptionist(thinking: Bool, pointingAt floor: UUID?, scaffold building: Bool) {
-        lobby?.worker.setMood(thinking ? .working : .idle)
-        let index = floor.flatMap { id in storeys.first { $0.id == id }?.index }
-        lobby?.worker.waving = !thinking && (index != nil || building)
+    private func lightLift() {
         for (position, button) in liftButtons.enumerated() {
-            var material = OfficeScene.material(Palette.resolved(position == index ? Palette.lamp : Palette.muted, dark: dark))
-            if position == index {
+            var material = OfficeScene.material(Palette.resolved(position == litButton ? Palette.lamp : Palette.muted, dark: dark))
+            if position == litButton {
                 material.emissiveColor = .init(color: Palette.resolved(Palette.lamp, dark: dark))
                 material.emissiveIntensity = 2
             }
             button.model?.materials = [material]
         }
+    }
+
+    func receptionist(thinking: Bool, pointingAt floor: UUID?, scaffold building: Bool) {
+        lobby?.worker.setMood(thinking ? .working : .idle)
+        let index = floor.flatMap { id in storeys.first { $0.id == id }?.index }
+        lobby?.worker.waving = !thinking && (index != nil || building)
+        litButton = index
+        lightLift()
         if lobbyFocused, !thinking {
             if index != nil {
                 camera.focus(on: (SIMD3<Float>(0, 0, 0.5) + liftSpot) / 2 + [0, 1.8, 0], facing: 0.3, distance: 20, pitch: 0.14)
@@ -542,7 +625,7 @@ final class BuildingScene {
         }
     }
 
-    /// Scrolling in the building view steps the camera up and down the tower, one storey at a time.
+    /// Vertical trackpad scrolling in the building view slides the camera up and down the tower.
     func scroll(by delta: Float) {
         camera.lift(to: (camera.goal.target.y + delta * 0.04).clamped(to: 1...max(towerHeight - 2, 1)))
         guard let active = storeys.first(where: { $0.id == activeFloor }) else { return }
@@ -622,6 +705,7 @@ final class BuildingScene {
             label.scale = [1.3, 1.3, 1.3]
             Self.makeTappable(label)
             label.isEnabled = !storeysHidden
+            if signsHidden == true { label.components.set(OpacityComponent(opacity: 0)) }
             tower.addChild(label)
             labels[storey.id] = (label, key)
         }

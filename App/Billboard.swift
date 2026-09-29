@@ -12,8 +12,10 @@ import SwiftUI
 enum Billboard {
     static let pixelsPerMetre: Float = 105
     private static var rendered: [String: (mesh: MeshResource, material: UnlitMaterial)] = [:]
+    private(set) static var made = 0
 
     static func make<Content: View>(_ view: Content, dark: Bool, faceCamera: Bool = true) -> ModelEntity? {
+        made &+= 1
         // Bubbles repeat the same few words all job long, and rendering one is the slow part.
         let key = (view as? BillboardKeyed).map { "\(BrandStore.shared.selectedID)|\(dark)|\(faceCamera)|\($0.billboardKey(dark: dark))" }
         if let key, let cached = rendered[key] { return plane(cached.mesh, cached.material, faceCamera: faceCamera) }

@@ -136,6 +136,7 @@ struct OfficeCommands: Commands {
             Button("City") { city.route = city.buildings.isEmpty ? .welcome : .city }
                 .keyboardShortcut("0", modifiers: .command)
             Button("Reset View") { NotificationCenter.default.post(name: .resetView, object: nil) }
+                .keyboardShortcut("r", modifiers: .command)
             ForEach(1...9, id: \.self) { number in
                 Button("Floor \(number)") {
                     if let id = city.currentBuildingID, let floor = city.building(id)?.floors.dropFirst(number - 1).first {
@@ -167,7 +168,6 @@ struct OfficeCommands: Commands {
         #if DEBUG
         CommandMenu("Debug") {
             Button("Replay Fixture…") { NotificationCenter.default.post(name: .replayFixture, object: nil) }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
         }
         #endif
     }

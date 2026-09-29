@@ -45,6 +45,7 @@ enum Palette {
     static var tray: NSColor { token(\.tray) }
     static var grass: NSColor { token { $0.grass ?? Brand.defaultGrass.light } }
     static var cloud: NSColor { token { $0.cloud ?? Brand.defaultCloud.light } }
+    static var signalReady: NSColor { token { $0.signalReady ?? Brand.defaultSignalReady.light } }
     private static var sky: Brand.Sky { brand.sky ?? Brand.defaultSky }
     static var moonlight: NSColor { NSColor(hex: sky.moonlight) }
     static var dusk: NSColor { NSColor(hex: sky.dusk) }
@@ -185,7 +186,7 @@ extension View {
 }
 
 struct PillButtonStyle: ButtonStyle {
-    enum Kind { case primary, secondary, accent(NSColor), tab(active: Bool) }
+    enum Kind { case primary, secondary, accent(NSColor), outline(NSColor), tab(active: Bool) }
     var kind: Kind = .primary
     @Environment(\.isEnabled) private var isEnabled
 
@@ -196,7 +197,10 @@ struct PillButtonStyle: ButtonStyle {
             .padding(.vertical, 8)
             .padding(.horizontal, 15)
             .background(Capsule().fill(fill))
-            .overlay { if case .secondary = kind { Capsule().strokeBorder(Color(Palette.hairline), lineWidth: 1) } }
+            .overlay {
+                if case .secondary = kind { Capsule().strokeBorder(Color(Palette.hairline), lineWidth: 1) }
+                if case .outline(let colour) = kind { Capsule().strokeBorder(Color(colour), lineWidth: 2) }
+            }
             .contentShape(Capsule())
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
     }
@@ -205,7 +209,7 @@ struct PillButtonStyle: ButtonStyle {
         if !isEnabled { return Color(Palette.hairline) }
         return switch kind {
         case .primary, .tab(active: true): Color(Palette.primaryFill)
-        case .secondary, .tab(active: false): .clear
+        case .secondary, .outline, .tab(active: false): .clear
         case .accent(let colour): Color(colour)
         }
     }
@@ -214,10 +218,25 @@ struct PillButtonStyle: ButtonStyle {
         if !isEnabled { return Color(Palette.muted) }
         return switch kind {
         case .primary, .tab(active: true): Color(Palette.primaryText)
-        case .secondary: Color(Palette.text)
+        case .secondary, .outline: Color(Palette.text)
         case .tab(active: false): Color(Palette.muted)
         case .accent: Color(Palette.onAccent)
         }
+    }
+}
+
+/// One segment of a hairline capsule, such as Open in and the breadcrumb.
+struct SegmentStyle: ButtonStyle {
+    var colour: NSColor = Palette.text
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Typography.controlQuiet)
+            .foregroundStyle(Color(colour))
+            .padding(.vertical, 8)
+            .padding(.horizontal, 15)
+            .contentShape(Rectangle())
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
     }
 }
 

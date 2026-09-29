@@ -10,7 +10,7 @@ The Mac stays the source of truth. The phone never talks to `claude`; it reads s
 |---|---|---|
 | `CitySnapshot`, `FloorMirror` | `Packages/OfficeCore/Sources/OfficeCore/Companion/` | The Mac's picture of every building and floor. `FloorMirror` runs beside each floor's reducer and keeps what `OfficeState` doesn't: captions, last tools and service calls. |
 | `FloorSnapshot.events(since:)` | same | Turns two snapshots back into the `OfficeEvent`s `OfficeScene` already plays, so the phone's robots move like the Mac's. |
-| `CompanionCommand`, `CommandGate` | same | Answer, allow once, deny, new job, cancel. Dictation clips travel beside them, unsigned. Each is HMAC-signed with the link key; the gate checks the signature, age (15 minutes) and replays. |
+| `CompanionCommand`, `CommandGate` | same | Answer, allow once, deny, new job, cancel, and seen (opening a finished floor on the phone clears its Ready or Failed state on the Mac). Dictation clips travel beside them, unsigned. Each is HMAC-signed with the link key; the gate checks the signature, age (15 minutes) and replays. |
 | `PairingCode`, `LinkFramer` | same | The QR code's contents, and the length-framed JSON used on the local network. |
 | `LinkListener`, `LinkBrowser`, `CloudLink` | `Shared/Link/` | Bonjour and TLS-PSK on the local network; the iCloud private database for away from home. |
 | `CompanionHost` | `App/CompanionHost.swift` | The Mac side: publishes snapshots, runs commands. Settings › iPhone turns it on. |

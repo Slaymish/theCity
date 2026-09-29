@@ -18,7 +18,7 @@ enum StatusFormat {
         amount.formatted(.currency(code: "USD")) + (onPlan ? " API-equivalent" : "")
     }
 
-    /// `CounterCard`'s rule: on a plan that isn't using extra usage, dollars are only what the API would have charged.
+    /// On a plan that isn't using extra usage, dollars are only what the API would have charged.
     @MainActor static func isOnPlan(_ limit: RateLimit?, configDirectory: URL?) -> Bool {
         if let limit, !limit.windows.isEmpty { return !limit.isUsingOverage && limit.windows["five_hour"] != nil }
         return UsageStore.shared.reading(configDirectory)?.session != nil
@@ -72,58 +72,6 @@ struct StatBlock: View {
                 .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
-    }
-}
-
-struct VitalsStrip: View {
-    let city: CityStore
-    let scope: LedgerScope
-    @State private var showsLedger = false
-
-    var body: some View {
-        let vitals = city.vitals(on: scope.floors)
-        Button { showsLedger.toggle() } label: { VitalsRow(vitals: vitals) }
-            .buttonStyle(.plain)
-            .modifier(Glass(radius: 24, padding: EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14)))
-            .help(Self.detail(vitals, city: city))
-            .accessibilityLabel("\(scope.title): \(vitals.rooms.spoken). \(Self.detail(vitals, city: city))")
-            .accessibilityHint("Shows the ledger")
-            .popover(isPresented: $showsLedger, arrowEdge: .bottom) {
-                LedgerView(city: city, scope: scope) { showsLedger = false }
-                    .padding(16)
-            }
-    }
-
-    static func detail(_ vitals: Vitals, city: CityStore) -> String {
-        let summary = vitals.summary, totals = summary.totals
-        var lines = ["Today: \(StatusFormat.jobs(summary.today)), \(city.dollars(summary.todaySpendUSD)), \(StatusFormat.tokens(summary.todayTokens)) tokens."]
-        if vitals.running {
-            lines.insert("Running now: \(city.dollars(vitals.liveSpendUSD)), \(StatusFormat.tokens(vitals.liveTokens)) tokens.", at: 0)
-        }
-        if totals.jobs > 0 {
-            let rate = totals.successRate.map { ", \(StatusFormat.percent($0)) succeeded" } ?? ""
-            lines.append("All time: \(StatusFormat.jobs(totals.jobs))\(rate), average \(RunController.clock(totals.averageDuration)), \(city.dollars(totals.spendUSD)), \(StatusFormat.tokens(totals.tokens)) tokens.")
-        }
-        return lines.joined(separator: " ")
-    }
-}
-
-struct VitalsRow: View {
-    let vitals: Vitals
-
-    var body: some View {
-        let summary = vitals.summary
-        HStack(spacing: 14) {
-            RoomTally(counts: vitals.rooms)
-            if vitals.running {
-                StatBlock(label: "Now", value: StatusFormat.spend(vitals.liveSpendUSD, tokens: vitals.liveTokens, onPlan: vitals.onPlan))
-            }
-            StatBlock(label: "Today", value: "\(StatusFormat.jobs(summary.today)) · \(StatusFormat.spend(summary.todaySpendUSD, tokens: summary.todayTokens, onPlan: vitals.onPlan))")
-            if let rate = summary.totals.successRate {
-                StatBlock(label: "Success", value: StatusFormat.percent(rate))
-            }
-        }
-        .animation(OfficeScene.reduceMotion ? nil : .default, value: vitals)
     }
 }
 
@@ -239,80 +187,6 @@ struct TrendBars: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Jobs over the last 7 days: " + days.map { "\($0.day.formatted(.dateTime.weekday(.wide))) \($0.jobs)" }.joined(separator: ", "))
-    }
-}
-
-struct FloorStats: View {
-    let controller: RunController
-    @State var expanded = false
-
-    var body: some View {
-        let state = controller.state
-        let fraction = state.contextFraction(windows: controller.contextWindows)
-        VStack(alignment: .trailing, spacing: 8) {
-            HStack(spacing: 12) {
-                RoomTally(counts: controller.roomCounts)
-                if let fraction {
-                    HStack(spacing: 8) {
-                        RingGauge(fraction: fraction)
-                        Text("Context \(StatusFormat.percent(fraction))").contentTransition(.numericText())
-                    }
-                    .accessibilityElement(children: .combine)
-                    .help("How full the manager's context window is. Past about 90% Claude Code compacts the conversation.")
-                }
-                if state.turns > 0 {
-                    Text("\(state.turns) turn\(state.turns == 1 ? "" : "s")").contentTransition(.numericText())
-                }
-                Button { expanded.toggle() } label: { Image(systemName: expanded ? "chevron.up" : "chevron.down") }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color(Palette.muted))
-                    .help(expanded ? "Hide floor details" : "Show floor details: models, subagents and this floor's record")
-                    .accessibilityLabel(expanded ? "Hide floor details" : "Show floor details")
-            }
-            .font(Typography.number)
-            if expanded { details(fraction: fraction) }
-        }
-        .animation(OfficeScene.reduceMotion ? nil : .default, value: state.turns)
-        .glass()
-    }
-
-    @ViewBuilder
-    private func details(fraction: Double?) -> some View {
-        let state = controller.state
-        let floor = controller.floorID.flatMap { id in CityStore.shared.allFloors.first { $0.id == id } }
-        let totals = floor.map { CityStore.shared.jobSummary(on: [$0]).totals }
-        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
-            if let model = state.mainModel {
-                let window = state.contextWindows[model] ?? controller.contextWindows[model]
-                row("Context", "\(StatusFormat.tokens(state.contextTokens))\(window.map { " of \(StatusFormat.tokens($0))" } ?? "") · \(ModelName.display(model))")
-            }
-            ForEach(state.models.keys.sorted(), id: \.self) { model in
-                let usage = state.models[model]!
-                row(ModelName.display(model), "\(StatusFormat.tokens(usage.usage.total)) tokens\(usage.costUSD.map { " · \(controller.dollars($0))" } ?? "")")
-            }
-            if let stats = state.subagentStats {
-                row("Subagents", "\(stats.spawned) spawned · \(stats.completed) done\(stats.failed + stats.killed > 0 ? " · \(stats.failed + stats.killed) stopped" : "")")
-            }
-            if state.permissionDenials > 0 {
-                row("Denied", "\(state.permissionDenials) permission request\(state.permissionDenials == 1 ? "" : "s")")
-            }
-            if let totals, totals.jobs > 0 {
-                row("Floor record", "\(StatusFormat.jobs(totals.jobs))\(totals.successRate.map { " · \(StatusFormat.percent($0)) succeeded" } ?? "") · avg \(RunController.clock(totals.averageDuration))")
-                row("Floor spend", "\(controller.dollars(totals.spendUSD)) · \(StatusFormat.tokens(totals.tokens)) tokens")
-            }
-            if fraction == nil, state.models.isEmpty, (totals?.jobs ?? 0) == 0 {
-                Text("Figures appear once this floor has run a job.").font(Typography.caption).foregroundStyle(Color(Palette.muted))
-            }
-        }
-        .frame(maxWidth: OfficeView.panelWidth, alignment: .leading)
-    }
-
-    private func row(_ label: String, _ value: String) -> some View {
-        GridRow {
-            Text(label).eyebrow()
-            Text(value).font(Typography.caption)
-        }
-        .accessibilityElement(children: .combine)
     }
 }
 

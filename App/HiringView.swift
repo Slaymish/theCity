@@ -65,7 +65,6 @@ struct HiringView: View {
             HStack {
                 Button("Back") { if let onBack { onBack() } else { controller.backToReception() } }
                     .buttonStyle(PillButtonStyle(kind: .secondary))
-                    .keyboardShortcut(onBack == nil ? nil : KeyboardShortcut(.escape, modifiers: []))
                 Spacer()
                 Text(summary).font(Typography.caption).foregroundStyle(Color(Palette.muted))
                 Button("Start job") { controller.openOffice() }

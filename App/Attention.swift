@@ -28,14 +28,16 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
         NSApp.dockTile.badgeLabel = label
     }
 
-    func needsInput(from room: String, request: PermissionRequest, place: String, building: UUID?, floor: UUID?) {
+    /// `reminder` is the one repeat sent after `FloorSignal.escalateAfter`, with the same body and actions.
+    func needsInput(from room: String, request: PermissionRequest, place: String, building: UUID?, floor: UUID?, reminder: Bool = false) {
         let who = room == "manager" ? "The manager" : room.capitalized
         let location = Self.location(building: building, floor: floor)
+        let still = reminder ? "Still waiting: " : ""
         switch request.kind {
         case .question(let questions):
-            post(title: "\(who) has a question", subtitle: place, body: questions.first?.question ?? "", info: location)
+            post(title: "\(still)\(who) has a question", subtitle: place, body: questions.first?.question ?? "", info: location)
         case .approval(let summary):
-            post(title: "\(who) asks to use \(McpNaming.friendly(request.toolName, servers: []))", subtitle: place, body: summary,
+            post(title: "\(still)\(who) asks to use \(McpNaming.friendly(request.toolName, servers: []))", subtitle: place, body: summary,
                  category: Self.approvalCategory, info: location.merging(["request": request.requestID]) { $1 })
         }
     }
@@ -136,6 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let reel = RunController.launchArgument("-render-reel"), let path = RunController.launchArgument(reel) { ReadmeReel.run(reel, to: path) }
         Attention.shared.setUp()
         CityStore.shared.refreshBadge()
+        if !MainWindow.offscreen { CityStore.shared.watchEscalation() }
         if !DataFiles.unreadable.isEmpty, !MainWindow.offscreen {
             let alert = NSAlert()
             alert.messageText = "The City couldn’t read some of its saved data"

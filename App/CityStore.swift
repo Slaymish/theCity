@@ -452,7 +452,62 @@ final class CityStore {
         (sessions[floor.id]?.state.pendingRequests.count ?? 0) + (floor.unseen == true ? 1 : 0)
     }
 
-    func refreshBadge() { Attention.shared.waiting(pendingCount) }
+    /// The Dock badge counts only what's blocked on you, so a badge always means something is stuck now.
+    func refreshBadge() { Attention.shared.waiting(allSessions.reduce(0) { $0 + $1.state.pendingRequests.count }) }
+
+    // MARK: Glance
+
+    /// Everything but the dispatch rail is hidden and the city turns slowly, for a window watched from across the room.
+    private(set) var glance = false
+    @ObservationIgnored private var routeBeforeGlance: Route?
+    /// How long the window sits in the background before glance mode starts by itself.
+    static let glanceAfter: Duration = .seconds(60)
+
+    func enterGlance() {
+        if case .newFloor = route { return }
+        guard !glance, route != .welcome, demoID == nil, activeSession?.kiosk.isOpen != true else { return }
+        routeBeforeGlance = route
+        glance = true
+        route = .city
+    }
+
+    /// Returns to where you were, unless you left by choosing somewhere else.
+    func leaveGlance(restoring: Bool = true) {
+        guard glance else { return }
+        glance = false
+        if restoring, route == .city, let previous = routeBeforeGlance { route = previous }
+        routeBeforeGlance = nil
+    }
+
+    func toggleGlance() { glance ? leaveGlance() : enterGlance() }
+
+    // MARK: Escalation
+
+    @ObservationIgnored private var reminded: Set<String> = []
+    @ObservationIgnored private var escalation: Timer?
+    /// Something has waited past `FloorSignal.nagAfter`.
+    private(set) var nagging = false
+
+    func watchEscalation() {
+        escalation = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
+            MainActor.assumeIsolated { CityStore.shared.escalate() }
+        }
+    }
+
+    func escalate(now: Date = .now) {
+        let away = !NSApp.isActive || !MainWindow.shared.isOpen
+        var oldest: Date?
+        for session in sessions.values where !session.isReplay {
+            for pending in session.state.pendingRequests {
+                oldest = min(oldest ?? pending.since, pending.since)
+                guard away, now.timeIntervalSince(pending.since) >= FloorSignal.escalateAfter, reminded.insert(pending.id).inserted else { continue }
+                Attention.shared.needsInput(from: pending.room, request: pending.request, place: session.placeName,
+                                            building: session.buildingID, floor: session.floorID, reminder: true)
+            }
+        }
+        let nag = oldest.map { now.timeIntervalSince($0) >= FloorSignal.nagAfter } ?? false
+        if nagging != nag { nagging = nag }
+    }
 
     func signal(of floor: Floor) -> FloorSignal {
         let session = sessions[floor.id]
@@ -519,7 +574,14 @@ final class CityStore {
     }
 
     private func markSeen() {
-        guard case .floor(let buildingID, let floorID) = route, floor(floorID, in: buildingID)?.unseen == true else { return }
+        guard case .floor(_, let floorID) = route else { return }
+        markSeen(floor: floorID)
+    }
+
+    /// Also run when the floor is opened on the phone.
+    func markSeen(floor floorID: UUID) {
+        guard let buildingID = buildings.first(where: { $0.floors.contains { $0.id == floorID } })?.id,
+              floor(floorID, in: buildingID)?.unseen == true else { return }
         update(floor: floorID, in: buildingID) {
             $0.unseen = nil
             $0.unseenSince = nil

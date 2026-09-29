@@ -148,9 +148,12 @@ enum PreviewStage {
             } else {
                 for _ in 0..<60 { city.update(1.0 / 60) }
             }
-            let image = try OffscreenRenderer.render(root: city.root, camera: city.camera.entity, width: 1600, height: 1000,
+            var image = try OffscreenRenderer.render(root: city.root, camera: city.camera.entity, width: 1600, height: 1000,
                                                      environment: ModelLibrary.environment("sky"), exposure: CityScene.skyExposure(.now),
                                                      background: DayCycle.now.sky(dark: dark).cgColor)
+            if arguments.contains("-hud") {
+                image = try overlay(image, dark: dark, alignment: .topLeading) { TitleHUD(city: .shared).frame(height: 1000) }
+            }
             return try OffscreenRenderer.writePNG(image, to: URL(fileURLWithPath: path))
         }
         buildings[0].floors = [
@@ -168,7 +171,11 @@ enum PreviewStage {
             let city = CityScene()
             city.build(buildings, dark: dark)
             city.fit(size)
-            for _ in 0..<30 { city.update(1.0 / 60) }
+            if arguments.contains("-glance") {
+                city.glanceFocus = CityStore.shared.floorsNeedingYou(in: buildings).first?.building.id
+                city.glancing = true
+            }
+            for _ in 0..<(arguments.contains("-glance") ? 240 : 30) { city.update(1.0 / 60) }
             city.refresh()
             var image = try OffscreenRenderer.render(root: city.root, camera: city.camera.entity, width: 1600, height: 1000,
                                                      environment: ModelLibrary.environment("sky"), exposure: CityScene.skyExposure(.now),
@@ -177,10 +184,11 @@ enum PreviewStage {
                 let store = CityStore.shared
                 image = try overlay(image, dark: dark, alignment: .topTrailing) {
                     VStack(alignment: .trailing, spacing: 12) {
-                        VitalsStrip(city: store, scope: .city(buildings))
+                        Instruments(city: store, scope: .city(buildings), configDirectory: Preferences.shared.configDirectory)
                         LedgerView(city: store, scope: .city(buildings)).glass(padding: 16)
                     }
                 }
+                image = try overlay(image, dark: dark, alignment: .bottomLeading) { DispatchRail(city: store, buildings: buildings) }
             }
             return try OffscreenRenderer.writePNG(image, to: URL(fileURLWithPath: path))
         }
@@ -226,7 +234,7 @@ enum PreviewStage {
             let store = CityStore.shared
             image = try overlay(image, dark: dark, alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 12) {
-                    VitalsStrip(city: store, scope: .building(building))
+                    Instruments(city: store, scope: .building(building), configDirectory: Preferences.shared.configDirectory)
                     LedgerView(city: store, scope: .building(building)).glass(padding: 16)
                 }
             }
@@ -261,7 +269,7 @@ enum PreviewStage {
         }
         if floors.count > 5 {
             sessions[floors[5].id].map { play($0, "approval-requests.jsonl", lines: 12) }
-            sessions[floors[1].id]?.backdateRequests(to: .now - 240)
+            sessions[floors[1].id]?.backdateRequests(to: .now - (Double(RunController.launchArgument("-blocked-age") ?? "") ?? 240))
             sessions[floors[5].id]?.backdateRequests(to: .now - 45)
         }
         let requests = ["Add a sign-in page", "Fix the flaky auth test", "Write the README intro", "Review the payment flow"]
@@ -318,8 +326,8 @@ enum PreviewStage {
                                                  background: DayCycle.now.sky(dark: dark).cgColor)
         image = try overlay(image, dark: dark, alignment: .topTrailing) {
             VStack(alignment: .trailing, spacing: 10) {
-                CounterCard(controller: controller)
-                FloorStats(controller: controller, expanded: true)
+                Instruments(city: .shared, scope: .floor(controller), configDirectory: controller.configDirectory)
+                FloorDetail(controller: controller).glass(padding: 16)
             }
         }
         image = try overlay(image, dark: dark, alignment: .bottom) {
@@ -414,7 +422,7 @@ enum PreviewStage {
                 let hud = VStack(alignment: .leading, spacing: 30) {
                     HStack(alignment: .top, spacing: 40) {
                         JobCard(controller: controller)
-                        CounterCard(controller: controller)
+                        FloorDetail(controller: controller).glass(padding: 16)
                     }
                     HStack(alignment: .top, spacing: 10) {
                         ForEach(Array(badges.enumerated()), id: \.offset) { index, badge in

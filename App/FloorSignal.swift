@@ -37,7 +37,7 @@ enum FloorSignal: Int, Comparable, CaseIterable {
         switch self {
         case .blocked: Palette.manager
         case .failed: Palette.error
-        case .ready: Palette.grass
+        case .ready: Palette.signalReady
         case .working: Palette.folder
         case .queued, .quiet: Palette.muted
         }
@@ -45,9 +45,8 @@ enum FloorSignal: Int, Comparable, CaseIterable {
 
     var glyph: NSColor {
         switch self {
-        case .blocked, .failed: Palette.textOn(colour)
+        case .blocked, .failed, .ready: Palette.textOn(colour)
         case .working: Palette.resolved(Palette.text, dark: false)
-        case .ready: Palette.text
         case .queued, .quiet: Palette.textOn(Palette.muted)
         }
     }
@@ -75,6 +74,10 @@ extension FloorSignal {
     static let ageAppearsAfter: TimeInterval = 30
 
     static let pulseAfter: TimeInterval = 30
+    /// A request this old gets an outlined rail chip and one reminder notification.
+    static let escalateAfter: TimeInterval = 5 * 60
+    /// Past this the menu bar icon changes too. There is never a new sound.
+    static let nagAfter: TimeInterval = 15 * 60
     static let pulsePeriod: Double = 2.4
     static let pulseGrowth: Float = 0.18
 

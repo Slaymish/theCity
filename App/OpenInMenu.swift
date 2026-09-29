@@ -51,18 +51,6 @@ struct OpenInMenu: View {
         .help("Open this project's folder in another app")
     }
 
-    private struct SegmentStyle: ButtonStyle {
-        func makeBody(configuration: Configuration) -> some View {
-            configuration.label
-                .font(Typography.controlQuiet)
-                .foregroundStyle(Color(Palette.text))
-                .padding(.vertical, 8)
-                .padding(.horizontal, 15)
-                .contentShape(Rectangle())
-                .scaleEffect(configuration.isPressed ? 0.97 : 1)
-        }
-    }
-
     @ViewBuilder private var choices: some View {
         ForEach(installed, id: \.self) { app in
             Button {

@@ -34,6 +34,12 @@ actor Transcriber {
         kit.audioProcessor.stopRecording()
         let samples = Array(kit.audioProcessor.audioSamples)
         kit.audioProcessor.purgeAudioSamples(keepingLast: 0)
+        return try await transcribe(samples)
+    }
+
+    /// Turns speech that didn't come from this Mac's microphone into text.
+    func transcribe(_ samples: [Float]) async throws -> String {
+        guard let kit else { throw Failure.notLoaded }
         guard !samples.isEmpty else { return "" }
         let results = try await kit.transcribe(audioArray: samples,
                                                decodeOptions: DecodingOptions(task: .transcribe, skipSpecialTokens: true, withoutTimestamps: true))

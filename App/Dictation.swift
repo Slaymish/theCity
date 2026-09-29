@@ -176,6 +176,26 @@ final class DictationStore {
         }
     }
 
+    /// Speech recorded on the phone. Shares `isTranscribing` with the Mac's own dictation, so the model never runs two at once.
+    func transcribe(phoneSamples samples: [Float]) async throws -> String {
+        guard isAvailable else { throw PhoneFailure.notReady }
+        guard !isTranscribing else { throw PhoneFailure.busy }
+        isTranscribing = true
+        defer { isTranscribing = false }
+        return try await transcriber.transcribe(samples)
+    }
+
+    enum PhoneFailure: LocalizedError {
+        case notReady, busy
+
+        var errorDescription: String? {
+            switch self {
+            case .notReady: "Dictation isn’t set up on your Mac. Choose a model in Settings › Dictation."
+            case .busy: "Your Mac is still writing out something else. Try again in a moment."
+            }
+        }
+    }
+
     private func stop() {
         recordingTarget = nil
         isTranscribing = true
@@ -286,7 +306,7 @@ struct DictationSettings: View {
         } header: {
             Text("Dictation")
         } footer: {
-            Text("Press ⌥Space in a prompt to dictate. Speech is turned into text on this Mac and never leaves it.")
+            Text("Press ⌥Space in a prompt to dictate. Speech is turned into text on this Mac and never leaves it. Your iPhone can send its dictation here too, over your own network.")
                 .font(.caption).foregroundStyle(Color(Palette.muted))
         }
     }

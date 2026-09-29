@@ -24,6 +24,9 @@ public enum LinkMessage: Codable, Sendable, Equatable {
     case receipt(CommandReceipt)
     /// Sent by the phone when it connects, so the Mac can refuse a phone too old to read its snapshots.
     case hello(version: Int, device: String)
+    /// Speech from the phone for the Mac to transcribe. Only a connection holding the link key can send it, so it isn't signed like a command.
+    case dictation(DictationClip)
+    case transcript(DictationResult)
 }
 
 /// Frames messages on a byte stream: a 4-byte big-endian length, then that many bytes of JSON.

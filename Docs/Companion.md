@@ -10,13 +10,22 @@ The Mac stays the source of truth. The phone never talks to `claude`; it reads s
 |---|---|---|
 | `CitySnapshot`, `FloorMirror` | `Packages/OfficeCore/Sources/OfficeCore/Companion/` | The Mac's picture of every building and floor. `FloorMirror` runs beside each floor's reducer and keeps what `OfficeState` doesn't: captions, last tools and service calls. |
 | `FloorSnapshot.events(since:)` | same | Turns two snapshots back into the `OfficeEvent`s `OfficeScene` already plays, so the phone's robots move like the Mac's. |
-| `CompanionCommand`, `CommandGate` | same | Answer, allow once, deny, new job, cancel. Each is HMAC-signed with the link key; the gate checks the signature, age (15 minutes) and replays. |
+| `CompanionCommand`, `CommandGate` | same | Answer, allow once, deny, new job, cancel. Dictation clips travel beside them, unsigned. Each is HMAC-signed with the link key; the gate checks the signature, age (15 minutes) and replays. |
 | `PairingCode`, `LinkFramer` | same | The QR code's contents, and the length-framed JSON used on the local network. |
 | `LinkListener`, `LinkBrowser`, `CloudLink` | `Shared/Link/` | Bonjour and TLS-PSK on the local network; the iCloud private database for away from home. |
 | `CompanionHost` | `App/CompanionHost.swift` | The Mac side: publishes snapshots, runs commands. Settings › iPhone turns it on. |
 | The app | `Companion/` | `CityLink` (connection), `PhoneCity` (scene), `CityScreen` and the sheets. |
 
 The phone builds its scenes from the same files as the Mac: `BuildingScene`, `OfficeScene`, `Worker`, `Theme` and the rest listed under the `TheCityCompanion` target in `project.yml`. `BuildingScene` takes a `TowerPlan` and any `Storey`, which the Mac's `RunController` and the phone's `PhoneStorey` both are. On iOS, `App/Platform.swift` maps the handful of AppKit colour calls onto UIKit.
+
+## Dictation from the phone
+
+The mic button beside the New Job field and the "Something else" answer field records on the phone and sends the audio to the Mac, whose Whisper model (Settings › Dictation) turns it into text. The phone holds no model and needs no download.
+
+- The clip is 16 kHz mono 16-bit audio in a `LinkMessage.dictation`, up to 120 seconds (`DictationClip`). The Mac answers with `.transcript`. Only a connection that holds the link key can send it, so unlike a command it isn't separately signed.
+- Local network only. Over iCloud the button is disabled, because a clip is far larger than a CloudKit record is meant to carry.
+- The Mac needs a dictation model chosen. If it doesn't have one, or is busy with its own dictation, the phone shows why.
+- While recording the phone switches its audio session from ambient to play-and-record, and back afterwards.
 
 ## Running it on your phone without a developer account
 

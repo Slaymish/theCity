@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12.0
+
+- A floor shows a pill when another floor needs you, and clicking it jumps straight there.
+- A floor's context menu has Account, Model and Budget submenus, so its next job can run with different settings.
+- Starting a job in a folder another floor is already working in asks whether to make a worktree off the branch, share the folder anyway or cancel.
+- Jobs queued on a busy floor are saved with the floor, so quitting no longer loses them.
+- When a job doesn't finish, the rest of its floor's queue is held until you choose Start Queued Jobs or Discard Queue.
+- A floor stays on the session its terminal kiosk works in, and the prompts typed there, with Claude's last reply, appear in the floor's history.
+- Closing a floor also removes the worktree its job made, unless it has uncommitted changes or another floor still uses it.
+- Quitting while several jobs run cancels them all at once, so the app closes sooner.
+- A saved file The City can't read is moved aside and reported at launch, instead of being overwritten.
+- Following up on a floor whose worktree or Claude Code session is gone now says so and suggests starting a new job.
+
 ## 0.11.0
 
 - Settings › iPhone turns on a link to The City for iPhone and shows the QR code that pairs a phone, which can then follow a building, answer questions and permission requests, send Reception a job or stop one.

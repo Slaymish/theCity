@@ -75,6 +75,10 @@ extension FloorSignal {
     static let ageAppearsAfter: TimeInterval = 30
 
     static let pulseAfter: TimeInterval = 30
+    /// A request this old gets an outlined rail chip and one reminder notification.
+    static let escalateAfter: TimeInterval = 5 * 60
+    /// Past this the menu bar icon changes too. There is never a new sound.
+    static let nagAfter: TimeInterval = 15 * 60
     static let pulsePeriod: Double = 2.4
     static let pulseGrowth: Float = 0.18
 

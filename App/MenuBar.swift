@@ -150,7 +150,7 @@ struct MenuBarLabel: View {
     var body: some View {
         let waiting = city.pendingCount
         if waiting > 0 {
-            Label("\(waiting)", systemImage: RoomState.waiting.symbol)
+            Label("\(waiting)", systemImage: city.nagging ? "hand.raised.circle.fill" : RoomState.waiting.symbol)
                 .labelStyle(.titleAndIcon)
                 .accessibilityLabel("The City, \(waiting) waiting for you")
         } else {

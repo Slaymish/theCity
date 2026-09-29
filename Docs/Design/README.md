@@ -254,7 +254,7 @@ Each slice is shippable alone and leaves the app better.
 | **3 (built)** | Breadcrumb, single Esc handler, `SceneSafeArea` (10.3). | Medium | Settled (10.3) |
 | **4 (built)** | One `Instruments` component, with each segment's detail in a popover (10.4). | Medium | Settled (10.4) |
 | **5 (checked)** | Building and storey state in the world (lamps, pennants, edge colours). | Medium (RealityKit, offscreen-checkable) | Settled (10.1) |
-| 6 | Glance mode and escalation ladder. | Medium | Timings, ⌥⌘G |
+| **6 (built)** | Glance mode and escalation ladder (10.5). | Medium | Settled (10.5) |
 | 7 | First-run copy and layout. Companion: same states and rail. | Low | Copy |
 
 The Companion shares the scene files, so slice 5 must keep them free of Mac-only types (`Docs/Companion.md`). The signal type is written with no AppKit so the phone can use it in slice 7.
@@ -427,6 +427,20 @@ Decided with the owner on 2026-09-30.
 - **Placement.** City: between the wordmark and New project. Building: in the top row (the old Vitals strip under the hint is gone). Floor: under the Cancel / Take over row.
 - **Narrow building row.** A third fallback after the logo-only breadcrumb: Open in and New floor become icon-only pills, with their names in the help text.
 
+### 10.5 Escalation and Glance mode
+
+Decided with the owner on 2026-09-30.
+
+**Escalation ladder** (the timings are `FloorSignal.escalateAfter` and `nagAfter`). A 5-second timer (`CityStore.escalate`) runs it, and it skips replays.
+- **0 s:** today's notification. The **Dock badge now counts Blocked requests only**, not unseen results (decision 2).
+- **5 min:** the rail chip turns from `manager` fill to a clear pill with a 2 pt `manager` outline, and a `manager` "5m+" capsule replaces the age. If the app is in the background, one reminder is sent per request: "Still waiting: …", with the same body and actions.
+- **15 min:** the menu bar hand becomes `hand.raised.circle.fill`, and the count stays. No new sound.
+
+**Glance mode** (`CityStore.glance`, `CityScene.glancing`).
+- **In:** ⌥⌘G (View menu), or automatically when the window has been in the background for 60 s. It isn't entered on the title screen, in New floor, in the demo or in the kiosk. It goes to the city and remembers where you were.
+- **Shows:** only the dispatch rail. In-world labels are at 2×, and each Blocked building gets a beam (a 0.08 × 0.08 box, `manager`, emissive 2, 12 units tall). The camera orbits once every 120 s, and for the first 8 s of each turn it holds on the building of the most urgent floor (aimed 1.2 above its roof, pitch 0.45, distance 26). With Reduce Motion there's no orbit, and the camera holds on that building.
+- **Out:** any click or key, ⌥⌘G, or the window becoming key again. That returns to where you were. A rail chip goes to its floor instead.
+
 ---
 
 ## 11. Validation
@@ -446,6 +460,8 @@ Decided with the owner on 2026-09-30.
 **Slice 3 checked in the live window** at 1000 and 1400 pt wide, on city, building and floor. Esc goes floor → building → city one level at a time; the first build jumped two levels, which the resolve-on-press fix above cured. The breadcrumb is readable over grass and road. The building row fits at 1000 pt with the symbol-only root. Usage fits on one line at every level, and its popover opens with the full detail. The floor menu opens. Unchecked: the desk segment and Esc from a desk (clicking a robot on an idle floor didn't select it), and Esc from New floor. `make test` and `make companion` pass.
 
 **Slice 4 checked** in offscreen `-hud` renders (city in light and dark, building, floor with `-focus build -hud`) and in the live window at 1000 pt: the building row fits with icon-only buttons, and the ledger popover opens from the counts. The owner checked the usage popover and the floor's `FloorDetail` popover in the live window. **Found:** the Ready symbol in `grass` has too little contrast on glass in both themes (pale on pale in light, dark green on dark in dark). It needs a token decision (section 9 already anticipates `signalReady`).
+
+**Slice 6 checked:** a `-city -hud -blocked-age 400` render in light and dark (outlined "5m+" chip), `-city -glance` renders with and without `-reduce-motion` (2× labels, beams, framing), and in the live window: ⌥⌘G in, a key out, and automatic entry after 60 s in the background, leaving on return. **Unchecked:** the reminder notification and the 15-minute menu bar icon, which need a real request left waiting.
 
 **Tests with 5 developers, 2 tasks each, on a real or replayed multi-floor stream (`make replay`):**
 
@@ -478,3 +494,4 @@ The owner delegated every decision and value in this plan on 2026-09-29, so *(ne
 9. **Breadcrumb (2026-09-30):** wordmark root; one glass capsule; building title dropped and hint kept; History and Close floor in a `…` menu; the root drops to its symbol when the row is short (10.3).
 10. **Plan usage (2026-09-30):** rings and percentages only, with detail in a popover on click (10.3).
 11. **Instruments (2026-09-30):** state and usage only; floors counted by state; one popover per segment; icon-only Open in and New floor when the building row is short (10.4).
+12. **Escalation and Glance (2026-09-30):** the outlined chip with a "5m+" badge; a "Still waiting" reminder; the circled hand in the menu bar; Glance also starts after 60 s in the background (10.5).

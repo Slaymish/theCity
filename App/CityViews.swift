@@ -84,6 +84,8 @@ struct CityHUD: View {
 /// Every other floor that needs you, across the whole city, most urgent first, in the same corner at every level.
 struct DispatchRail: View {
     let city: CityStore
+    /// For offscreen renders, whose buildings aren't in the store.
+    var buildings: [CityStore.Building]?
 
     private var here: (building: UUID?, floor: UUID?) {
         switch city.route {
@@ -93,7 +95,7 @@ struct DispatchRail: View {
         }
     }
 
-    private var items: [CityStore.NeedsYou] { city.floorsNeedingYou().filter { $0.floor.id != here.floor } }
+    private var items: [CityStore.NeedsYou] { city.floorsNeedingYou(in: buildings).filter { $0.floor.id != here.floor } }
 
     var body: some View {
         let items = items
@@ -124,6 +126,11 @@ struct DispatchRail: View {
         return FloorSignal.age(from: since, to: now)
     }
 
+    private func escalated(_ item: CityStore.NeedsYou, now: Date) -> Bool {
+        guard item.signal == .blocked, let since = item.since else { return false }
+        return now.timeIntervalSince(since) >= FloorSignal.escalateAfter
+    }
+
     private func spoken(_ item: CityStore.NeedsYou, now: Date) -> String {
         "\(item.building.name), \(item.floor.name), \(item.signal.label(count: item.count))\(item.signal.spokenAge(since: item.since, now: now))"
     }
@@ -133,7 +140,19 @@ struct DispatchRail: View {
             go(to: item)
         } label: {
             Label {
-                if let age = age(item, now: now) {
+                if escalated(item, now: now) {
+                    HStack(spacing: 8) {
+                        Text(name(item))
+                        Text("\(Int(FloorSignal.escalateAfter / 60))m+")
+                            .font(Typography.captionMedium)
+                            .foregroundStyle(Color(Palette.textOn(item.signal.colour)))
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 10)
+                            .background(Capsule().fill(Color(item.signal.colour)))
+                            // Drawn into the pill's own padding so an escalated chip stays the height of the others.
+                            .padding(.vertical, -4)
+                    }
+                } else if let age = age(item, now: now) {
                     Text("\(name(item)) \(Text(age).font(Typography.caption).monospacedDigit())")
                 } else {
                     Text(name(item))
@@ -142,7 +161,7 @@ struct DispatchRail: View {
                 Image(systemName: item.signal.symbol)
             }
         }
-        .buttonStyle(PillButtonStyle(kind: .accent(item.signal.colour)))
+        .buttonStyle(PillButtonStyle(kind: escalated(item, now: now) ? .outline(item.signal.colour) : .accent(item.signal.colour)))
         .accessibilityLabel(spoken(item, now: now))
         .help("\(item.building.name) · \(item.floor.name) · \(item.signal.label(count: item.count))\(item.signal.ageSuffix(since: item.since, now: now))\(first ? " (⌘J)" : "")")
     }
@@ -162,6 +181,7 @@ struct DispatchRail: View {
     }
 
     private func go(to item: CityStore.NeedsYou) {
+        city.leaveGlance(restoring: false)
         city.route = .floor(building: item.building.id, floor: item.floor.id)
     }
 }
@@ -205,6 +225,8 @@ struct WorldView: View {
     let city: CityStore
     @State private var world = World()
     @State private var railHeight: CGFloat = 0
+    @State private var glanceKeys: Any?
+    @State private var autoGlance: Task<Void, Never>?
     @Environment(\.colorScheme) private var colorScheme
 
     private var buildingID: UUID? {
@@ -287,16 +309,53 @@ struct WorldView: View {
             .ignoresSafeArea()
             .accessibilityHidden(true)
 
-            if let buildingID, let session, let floorScene = world.building.scene(for: session.floorID ?? UUID()) {
-                OfficeOverlay(controller: session, scene: floorScene, breadcrumb: Breadcrumb.here(city),
-                              onClose: { city.removeFloor(session.floorID ?? UUID(), in: buildingID) })
-            } else if let buildingID, let building = city.building(buildingID) {
-                BuildingHUD(city: city, building: building, scene: world.building)
-            } else if city.route == .welcome {
-                TitleHUD(city: city)
-            } else {
-                CityHUD(city: city)
+            Group {
+                if let buildingID, let session, let floorScene = world.building.scene(for: session.floorID ?? UUID()) {
+                    OfficeOverlay(controller: session, scene: floorScene, breadcrumb: Breadcrumb.here(city),
+                                  onClose: { city.removeFloor(session.floorID ?? UUID(), in: buildingID) })
+                } else if let buildingID, let building = city.building(buildingID) {
+                    BuildingHUD(city: city, building: building, scene: world.building)
+                } else if city.route == .welcome {
+                    TitleHUD(city: city)
+                } else {
+                    CityHUD(city: city)
+                }
             }
+            .opacity(city.glance ? 0 : 1)
+            .allowsHitTesting(!city.glance)
+
+            if city.glance {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { city.leaveGlance() }
+                    .ignoresSafeArea()
+                    .accessibilityLabel("Leave glance mode")
+                    .accessibilityAddTraits(.isButton)
+            }
+        }
+        .onChange(of: city.glance, initial: true) {
+            world.city.glancing = city.glance
+            glanceKeys.map(NSEvent.removeMonitor)
+            glanceKeys = city.glance ? NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [city] event in
+                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                if modifiers == [.command, .option], event.charactersIgnoringModifiers == "g" { return event }
+                city.leaveGlance()
+                return modifiers.contains(.command) ? event : nil
+            } : nil
+        }
+        .onChange(of: city.floorsNeedingYou().first?.building.id, initial: true) { _, id in world.city.glanceFocus = id }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
+            guard Self.isOffice(note) else { return }
+            autoGlance?.cancel()
+            autoGlance = Task { @MainActor [city] in
+                try? await Task.sleep(for: CityStore.glanceAfter)
+                if !Task.isCancelled { city.enterGlance() }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            guard Self.isOffice(note) else { return }
+            autoGlance?.cancel()
+            city.leaveGlance()
         }
         .environment(\.sceneSafeArea, safeArea)
         .overlay(alignment: .bottomLeading) {
@@ -321,6 +380,10 @@ struct WorldView: View {
     private var safeArea: SceneSafeArea {
         let session = floorID.flatMap { city.sessions[$0] }
         return SceneSafeArea(panelOpen: session?.showPanel == true, rail: showsRail && railHeight > 0 ? railHeight + 12 : 0)
+    }
+
+    private static func isOffice(_ note: Notification) -> Bool {
+        (note.object as? NSWindow)?.identifier?.rawValue.hasPrefix("office") == true
     }
 
     /// The desk and the kiosk take the whole frame, and the title screen has nothing to dispatch.

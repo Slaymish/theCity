@@ -35,6 +35,29 @@ final class CityScene {
     static let carSpeed: Float = 0.5
     var hostsCamera = true
     var titleMode = false
+    /// Glance mode: labels at twice their size, a beam over each blocked building, and a slow orbit that stops on `glanceFocus`.
+    var glancing = false {
+        didSet {
+            guard glancing != oldValue else { return }
+            glanceClock = 0
+            for lot in lots.values {
+                lot.root.scale = SIMD3(repeating: glancing ? Self.glanceLabelScale : 1)
+                buildMarker(lot)
+            }
+            if !glancing { camera.reset(to: camera.overview) }
+        }
+    }
+    /// The building of the most urgent floor, framed once per turn of the glance orbit.
+    var glanceFocus: UUID?
+    private var glanceClock: Double = 0
+    static let glanceTurn: Double = 120
+    static let glanceHold: Double = 8
+    private static let glanceLabelScale: Float = 2
+    private static let beamHeight: Float = 12
+    /// Framing for the glance hold: aimed between the roof and the label so the balloon, pennant and label all show.
+    private static let glanceLift: Float = 1.2
+    private static let glancePitch: Float = 0.45
+    private static let glanceDistance: Float = 26
     private var greeter: Worker?
     private var emptyLot: SIMD3<Float> = .zero
     private var rises: [(entity: Entity, top: Float, height: Float, elapsed: Double)] = []
@@ -306,6 +329,10 @@ final class CityScene {
              ModelLibrary.material(Palette.resolved(signal.colour, dark: dark), roughness: nil, emissive: signal == .queued ? 0 : 2), at: 0.05, in: lot.marker)
         switch signal {
         case .blocked:
+            if glancing {
+                part(ModelLibrary.box(width: 0.08, height: Self.beamHeight, depth: 0.08),
+                     ModelLibrary.material(Palette.resolved(signal.colour, dark: dark), roughness: nil, emissive: 2), at: Self.beamHeight / 2, in: lot.marker)
+            }
             let balloon = Entity()
             balloon.position.y = Self.balloonHeight
             lot.marker.addChild(balloon)
@@ -612,6 +639,7 @@ final class CityScene {
             pose.yaw += Float(dt) * 0.05
             camera.reset(to: pose)
         }
+        if glancing { glance(dt) }
         clock += dt
         let still = OfficeScene.reduceMotion
         for lot in lots.values {
@@ -632,6 +660,20 @@ final class CityScene {
             applyDaylight()
         }
         if clock.truncatingRemainder(dividingBy: 1) < dt { refresh() }
+    }
+
+    private func glance(_ dt: Double) {
+        let still = OfficeScene.reduceMotion
+        glanceClock += dt
+        let holding = still || glanceClock.truncatingRemainder(dividingBy: Self.glanceTurn) < Self.glanceHold
+        if holding, let id = glanceFocus, let lot = lots[id] {
+            camera.reset(to: .init(target: [lot.marker.position.x, lot.top + Self.glanceLift, lot.marker.position.z],
+                                   yaw: camera.goal.yaw, pitch: Self.glancePitch, distance: Self.glanceDistance))
+        } else {
+            var pose = camera.overview
+            pose.yaw = camera.goal.yaw + (still ? 0 : Float(dt * 2 * .pi / Self.glanceTurn))
+            camera.reset(to: pose)
+        }
     }
 
     func refresh() {

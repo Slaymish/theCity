@@ -168,7 +168,11 @@ enum PreviewStage {
             let city = CityScene()
             city.build(buildings, dark: dark)
             city.fit(size)
-            for _ in 0..<30 { city.update(1.0 / 60) }
+            if arguments.contains("-glance") {
+                city.glanceFocus = CityStore.shared.floorsNeedingYou(in: buildings).first?.building.id
+                city.glancing = true
+            }
+            for _ in 0..<(arguments.contains("-glance") ? 240 : 30) { city.update(1.0 / 60) }
             city.refresh()
             var image = try OffscreenRenderer.render(root: city.root, camera: city.camera.entity, width: 1600, height: 1000,
                                                      environment: ModelLibrary.environment("sky"), exposure: CityScene.skyExposure(.now),
@@ -181,6 +185,7 @@ enum PreviewStage {
                         LedgerView(city: store, scope: .city(buildings)).glass(padding: 16)
                     }
                 }
+                image = try overlay(image, dark: dark, alignment: .bottomLeading) { DispatchRail(city: store, buildings: buildings) }
             }
             return try OffscreenRenderer.writePNG(image, to: URL(fileURLWithPath: path))
         }
@@ -261,7 +266,7 @@ enum PreviewStage {
         }
         if floors.count > 5 {
             sessions[floors[5].id].map { play($0, "approval-requests.jsonl", lines: 12) }
-            sessions[floors[1].id]?.backdateRequests(to: .now - 240)
+            sessions[floors[1].id]?.backdateRequests(to: .now - (Double(RunController.launchArgument("-blocked-age") ?? "") ?? 240))
             sessions[floors[5].id]?.backdateRequests(to: .now - 45)
         }
         let requests = ["Add a sign-in page", "Fix the flaky auth test", "Write the README intro", "Review the payment flow"]

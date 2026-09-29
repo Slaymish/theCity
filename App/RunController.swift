@@ -164,7 +164,7 @@ final class RunController {
     @ObservationIgnored private var reducer = OfficeReducer()
     @ObservationIgnored private var process: ClaudeProcess?
     @ObservationIgnored private var consumer: Task<Void, Never>?
-    @ObservationIgnored private var isReplay = false
+    @ObservationIgnored private(set) var isReplay = false
     @ObservationIgnored private var builtFor: (hires: [String], servers: [String], dark: Bool)?
 
     static let budgets: [Double] = [0.5, 1, 2, 5, 10]

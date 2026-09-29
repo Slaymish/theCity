@@ -151,6 +151,8 @@ struct OfficeCommands: Commands {
                 .keyboardShortcut(KeyEquivalent(Character(String(number))), modifiers: .command)
                 .disabled((city.currentBuildingID.flatMap { city.building($0)?.floors.count } ?? 0) < number || questionShowing)
             }
+            Button(city.glance ? "Leave Glance Mode" : "Glance Mode") { city.toggleGlance() }
+                .keyboardShortcut("g", modifiers: [.command, .option])
             Button(city.activeSession?.showPanel ?? true ? "Hide Panel" : "Show Panel") { city.activeSession?.showPanel.toggle() }
                 .keyboardShortcut("\\", modifiers: .command)
                 .disabled(city.activeSession == nil)

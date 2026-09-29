@@ -126,12 +126,12 @@ struct PersistenceTests {
     @Test func savedFloorKeysAreStable() throws {
         let floor = CityStore.Floor(name: "n", hires: [], model: "m", budgetUSD: 1, allowedServers: [], allowedSkills: [], lastRequest: "r",
                                     sessionID: "s", lastOutcome: "o", nameIsCustom: true, configDirectory: "c", presetID: "p",
-                                    purpose: "p", jobDirectory: "j", branch: "b", unseen: true,
+                                    purpose: "p", jobDirectory: "j", branch: "b", unseen: true, unseenSince: Date(),
                                     queued: [QueuedJob(text: "t", continues: false, place: .branch("x"))])
         let json = try #require(try JSONSerialization.jsonObject(with: DataFiles.encoder.encode(floor)) as? [String: Any])
         #expect(Set(json.keys) == ["id", "name", "hires", "model", "budgetUSD", "allowedServers", "allowedSkills", "createdAt", "lastRequest",
                                    "sessionID", "lastOutcome", "nameIsCustom", "configDirectory", "presetID", "purpose", "jobDirectory",
-                                   "branch", "unseen", "queued"])
+                                   "branch", "unseen", "unseenSince", "queued"])
         let building = CityStore.Building(name: "n", path: "/p", style: 0, title: "t")
         let buildingJSON = try #require(try JSONSerialization.jsonObject(with: DataFiles.encoder.encode(building)) as? [String: Any])
         #expect(Set(buildingJSON.keys) == ["id", "name", "path", "style", "floors", "createdAt", "title"])

@@ -27,6 +27,8 @@ final class CityStore {
         var branch: String?
         /// A finished job the user hasn't looked at yet, which counts as needing them.
         var unseen: Bool?
+        /// When the job finished unseen, so the city can say how long it has waited.
+        var unseenSince: Date?
         var queued: [QueuedJob]?
     }
 
@@ -462,7 +464,7 @@ final class CityStore {
         var building: Building
         var floor: Floor
         var signal: FloorSignal
-        /// When the oldest waiting request arrived. Ready and failed floors don't record when they finished.
+        /// When the oldest waiting request arrived, or for ready and failed floors when the job finished. Floors saved before that was recorded have none.
         var since: Date?
         var count: Int
     }
@@ -472,7 +474,9 @@ final class CityStore {
         buildings.flatMap { building in
             building.floors.map { floor -> NeedsYou in
                 let pending = sessions[floor.id]?.state.pendingRequests ?? []
-                return NeedsYou(building: building, floor: floor, signal: signal(of: floor), since: pending.map(\.since).min(), count: pending.count)
+                let state = signal(of: floor)
+                let since = state == .blocked ? pending.map(\.since).min() : floor.unseenSince
+                return NeedsYou(building: building, floor: floor, signal: state, since: since, count: pending.count)
             }
         }
         .enumerated()
@@ -492,13 +496,19 @@ final class CityStore {
         guard let floorID, let buildingID else { return }
         let watching = route == .floor(building: buildingID, floor: floorID) && NSApp.isActive && MainWindow.shared.isOpen
         guard !watching else { return }
-        update(floor: floorID, in: buildingID) { $0.unseen = true }
+        update(floor: floorID, in: buildingID) {
+            if $0.unseen != true { $0.unseenSince = Date() }
+            $0.unseen = true
+        }
         refreshBadge()
     }
 
     private func markSeen() {
         guard case .floor(let buildingID, let floorID) = route, floor(floorID, in: buildingID)?.unseen == true else { return }
-        update(floor: floorID, in: buildingID) { $0.unseen = nil }
+        update(floor: floorID, in: buildingID) {
+            $0.unseen = nil
+            $0.unseenSince = nil
+        }
         refreshBadge()
     }
 

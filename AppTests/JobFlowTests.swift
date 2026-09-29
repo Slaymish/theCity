@@ -79,10 +79,12 @@ extension WithFakeCLI {
             floor.city.route = .city
             #expect(await floor.finished())
             await eventually("the floor to be marked unseen") { floor.floor?.unseen == true }
+            #expect(floor.floor?.unseenSince != nil)
+            #expect(floor.city.floorsNeedingYou().first { $0.floor.id == floor.floorID }?.since == floor.floor?.unseenSince)
             #expect(floor.city.needsYou(try #require(floor.floor)) == 1)
             #expect(floor.city.statusLine(for: try #require(floor.city.building(floor.building.id))) == "Needs you")
             floor.city.route = .floor(building: floor.building.id, floor: floor.floorID)
-            #expect(floor.floor?.unseen == nil)
+            #expect(floor.floor?.unseen == nil && floor.floor?.unseenSince == nil)
             #expect(floor.city.needsYou(try #require(floor.floor)) == 0)
         }
 

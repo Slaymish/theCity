@@ -250,7 +250,7 @@ Each slice is shippable alone and leaves the app better.
 | Slice | Change | Risk | Needs approval |
 |---|---|---|---|
 | **1 (merged)** | **Signal model.** A single `FloorSignal` type with the priority order above, derived from existing data. Use it in the city's needs-you list, so it sorts by urgency and separates Blocked, Failed and Ready with their own symbol, label and age. Add **⌘J: Next that needs you**. No layout change. Built, **not compiled or rendered** (no Swift toolchain in that session). **Age is not in slice 1:** `PendingRequest` has no timestamp, so slice 2 starts by adding one in OfficeCore. | Low | Nothing new |
-| 2 | **Done:** `PendingRequest.since` in OfficeCore (tested on Linux), age on desk cards and in the Needs you list, longest-waiting first within a state, appearing after 30 s. **Not done:** the dispatch rail at every level, and age for ready and failed floors (needs a finish time on the floor). | Medium | Rail layout |
+| 2 | **Done:** `PendingRequest.since` in OfficeCore (tested on Linux), age on desk cards and in the Needs you list, longest-waiting first within a state, appearing after 30 s. Ready and failed floors record when they finished unseen (`Floor.unseenSince`), so they show an age and sort oldest first too. **Not done:** the dispatch rail at every level. | Medium | Rail layout |
 | 3 | Breadcrumb, single Esc handler, `SceneSafeArea`. | Medium | Breadcrumb layout |
 | 4 | One `Instruments` component; drawer for detail. | Medium | Layout |
 | 5 | Building and storey state in the world (lamps, pennants, edge colours). | Medium (RealityKit, offscreen-checkable) | Visuals |

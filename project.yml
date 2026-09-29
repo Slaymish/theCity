@@ -88,6 +88,8 @@ targets:
       - App/Horizon.swift
       - App/Wording.swift
       - App/JobJournal.swift
+      - App/DataFiles.swift
+      - App/TestHost.swift
       - App/Sound.swift
       - App/Platform.swift
       - App/GraphicsQuality.swift

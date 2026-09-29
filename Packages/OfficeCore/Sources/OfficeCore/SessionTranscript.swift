@@ -18,7 +18,7 @@ public enum SessionTranscript {
     public static func file(for sessionID: String, configDirectory: URL?, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL? {
         let config = configDirectory
             ?? environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
+            ?? URL.homeDirectory.appendingPathComponent(".claude")
         let projects = config.appendingPathComponent("projects")
         let folders = (try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil)) ?? []
         return folders.lazy

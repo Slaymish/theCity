@@ -101,15 +101,18 @@ struct CompanionTests {
     }
 
     @Test func roomCountsMatchTheMacs() throws {
-        for fixture in ["three-rooms.jsonl", "subagent-question-and-approval.jsonl"] {
+        var waited = false
+        for fixture in ["three-rooms.jsonl", "subagent-question-and-approval.jsonl", "approval-requests.jsonl", "ask-question.jsonl", "skill-and-mcp.jsonl"] {
             var reducer = OfficeReducer()
             var mirror = FloorMirror()
             for event in try Fixture.events(fixture) {
                 mirror.record(reducer.apply(.wire(event)))
                 let snapshot = mirror.snapshot(id: Self.floor, name: "F", hires: ["research", "build"], request: nil, state: reducer.state, startedAt: nil)
                 #expect(snapshot.roomCounts == reducer.state.roomCounts(staff: ["research", "build"]))
+                if snapshot.roomCounts.waiting > 0 { waited = true }
             }
         }
+        #expect(waited, "no fixture left a room waiting, so waiting counts went untested")
     }
 
     @Test func longTextIsClipped() {

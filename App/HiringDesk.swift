@@ -226,7 +226,7 @@ enum ReceptionDesk {
     }
 
     /// A preset's existing floor takes the work instead of a new one: always for one-off jobs, and for long ones when it has done related work.
-    private static func newFloor(for request: String, preset: FloorPreset?, proposed: String, floors: [CityStore.Floor], reason: String) -> RoutingSuggestion {
+    static func newFloor(for request: String, preset: FloorPreset?, proposed: String, floors: [CityStore.Floor], reason: String) -> RoutingSuggestion {
         let fallbackName = CityStore.floorName(for: request, existing: floors.map(\.name))
         guard let preset else {
             return RoutingSuggestion(floorID: nil, newFloorName: usableName(proposed, floors: floors) ?? fallbackName, reason: reason)
@@ -293,26 +293,26 @@ enum ReceptionDesk {
         }
     }
 
-    private static func words(_ text: String) -> Set<String> {
+    static func words(_ text: String) -> Set<String> {
         let stop: Set<String> = ["the", "and", "for", "with", "add", "make", "fix", "our", "this", "that", "into", "from", "about", "update", "new", "please"]
         return Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 2 && !stop.contains($0) })
     }
 
     /// The small model often picks an unrelated floor, so its pick needs a shared word or a matching preset to stand.
-    private static func supports(_ floor: CityStore.Floor, request: String, preset: FloorPreset?) -> Bool {
+    static func supports(_ floor: CityStore.Floor, request: String, preset: FloorPreset?) -> Bool {
         if let preset, presetOf(floor) == preset { return true }
         let known = ([floor.name, floor.purpose ?? ""] + recentRequests(floor)).joined(separator: " ")
         return !words(request).isDisjoint(with: words(known))
     }
 
     /// Floors set up before presets existed are matched by what they are called and for.
-    private static func presetOf(_ floor: CityStore.Floor) -> FloorPreset? {
+    static func presetOf(_ floor: CityStore.Floor) -> FloorPreset? {
         FloorPreset.named(floor.presetID) ?? FloorPreset.match(floor.name + " " + (floor.purpose ?? ""))
     }
 
     /// Backs up the small on-device model: a proposed name that repeats a floor's name, or a request sharing
     /// two meaningful words with a floor's name or last job, means that floor already does this work.
-    private static func closest(to request: String, proposed: String, in floors: [CityStore.Floor]) -> CityStore.Floor? {
+    static func closest(to request: String, proposed: String, in floors: [CityStore.Floor]) -> CityStore.Floor? {
         let proposedWords = words(proposed)
         if let byName = floors.first(where: { !proposedWords.isDisjoint(with: words($0.name)) }) { return byName }
         let asked = words(request)
@@ -322,7 +322,7 @@ enum ReceptionDesk {
     }
 
     /// Rejects names that echo the prompt or are too vague to tell floors apart.
-    private static func usableName(_ raw: String, floors: [CityStore.Floor]) -> String? {
+    static func usableName(_ raw: String, floors: [CityStore.Floor]) -> String? {
         let name = raw.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
         let words = name.split(separator: " ")
         let vague: Set<String> = ["routing", "floor", "new floor", "team", "office", "general", "task", "request", "work"]

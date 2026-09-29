@@ -130,11 +130,29 @@ targets:
         CODE_SIGN_IDENTITY: "Apple Development"
         # A free Apple ID's personal team is enough to run on your own phone. Set it with THECITY_TEAM before `make project`.
         DEVELOPMENT_TEAM: ${THECITY_TEAM}
+  # The app's own tests, hosted in the app. Under tests it uses scratch data and settings and never runs the real `claude`.
+  TheCityTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: AppTests
+        excludes: ["Support/fake-claude"]
+    dependencies:
+      - target: TheCity
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nz.hamish.thecity.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/TheCity.app/Contents/MacOS/TheCity
+        BUNDLE_LOADER: $(TEST_HOST)
 schemes:
   TheCity:
     build:
       targets:
         TheCity: all
+    test:
+      targets:
+        - TheCityTests
   TheCityCompanion:
     build:
       targets:

@@ -6,7 +6,7 @@ import OfficeCore
 enum Haiku {
     static func ask(_ prompt: String, system: String, schema: String? = nil, configDirectory: URL?) async -> String? {
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
-        guard let executable = ClaudeEnvironment.locateCLI(environment: environment) else { return nil }
+        guard let executable = RunController.executable(environment: environment) else { return nil }
         var arguments = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--model", "haiku",
                          "--no-session-persistence", "--system-prompt", system, "--tools", "", "--strict-mcp-config",
                          "--mcp-config", #"{"mcpServers":{}}"#, "--disable-slash-commands", "--setting-sources", ""]

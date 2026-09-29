@@ -99,7 +99,7 @@ final class RunController {
     }
     var workingDirectory: URL? {
         didSet {
-            if !isDemo { UserDefaults.standard.set(workingDirectory?.path, forKey: "workingDirectory") }
+            if !isDemo { UserDefaults.app.set(workingDirectory?.path, forKey: "workingDirectory") }
             loadKit()
             refreshCatalogue()
         }
@@ -313,12 +313,17 @@ final class RunController {
 
     static func kitLoader(for workingDirectory: URL, configDirectory: URL?) -> (@Sendable () async -> Kit)? {
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
-        guard let executable = cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment) else { return nil }
+        guard let executable = executable(environment: environment) else { return nil }
         return { await KitLoader.load(executable: executable, environment: environment, workingDirectory: workingDirectory) }
     }
 
     private static var cliOverride: URL? {
-        (launchArgument("-cli") ?? Preferences.shared.cliPath).map { URL(fileURLWithPath: $0) }
+        (launchArgument("-cli") ?? Preferences.shared.cliPath ?? (TestHost.isActive ? "/nonexistent/claude" : nil)).map { URL(fileURLWithPath: $0) }
+    }
+
+    /// The `claude` to run: the one chosen in Settings or with `-cli`, else the first on the path.
+    static func executable(environment: [String: String]) -> URL? {
+        cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment)
     }
 
     var primaryModels: [ModelOption] {
@@ -340,7 +345,7 @@ final class RunController {
 
     func checkReadiness() {
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
-        guard let executable = Self.cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment),
+        guard let executable = Self.executable(environment: environment),
               FileManager.default.isExecutableFile(atPath: executable.path) else {
             readiness = .cliMissing
             return
@@ -372,14 +377,14 @@ final class RunController {
     /// The inventory run costs nothing, so Settings can list models before any floor exists.
     static func models(configDirectory: URL?) async -> [ModelOption] {
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
-        guard let executable = cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment) else { return [] }
+        guard let executable = executable(environment: environment) else { return [] }
         let kit = await KitLoader.load(executable: executable, environment: environment, workingDirectory: FileManager.default.homeDirectoryForCurrentUser)
         return Array(kit.models.filter { $0.value != "default" }.prefix(4))
     }
 
     static func signIn(configDirectory: URL?) {
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
-        guard let executable = cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment) else { return }
+        guard let executable = executable(environment: environment) else { return }
         let script = FileManager.default.temporaryDirectory.appendingPathComponent("The City sign-in.command")
         let config = configDirectory.map { "export CLAUDE_CONFIG_DIR=\(shellQuoted($0.path))\n" } ?? ""
         let body = "#!/bin/zsh\n\(config)\(shellQuoted(executable.path)) auth login\necho\necho 'You can close this window and return to The City.'\n"
@@ -762,7 +767,7 @@ final class RunController {
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
         consumer = Task { [weak self] in
             guard let self else { return }
-            guard let executable = Self.cliOverride ?? ClaudeEnvironment.locateCLI(environment: environment),
+            guard let executable = Self.executable(environment: environment),
                   FileManager.default.isExecutableFile(atPath: executable.path) else {
                 appLog(Self.cliOverride.map { "No executable at \($0.path)" } ?? "claude CLI not found on PATH or in \(ClaudeEnvironment.extraPaths.joined(separator: ", "))")
                 return send(.launchFailed(.cliNotFound))

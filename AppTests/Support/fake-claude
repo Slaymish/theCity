@@ -1,0 +1,66 @@
+#!/bin/zsh
+# A stand-in for the `claude` CLI that replays recorded streams from fixtures/, so app tests run real jobs for free.
+# Each call is logged to "$0.calls" as one line of arguments. Behaviour is set by files next to the script:
+#   logged-out      `auth status` reports signed out
+#   haiku-<kind>    the reply to a Haiku request, as plain text; kind is routing, hiring, label or project by its system prompt
+#   hold            a job prints up to its session's init line, then waits until a file named `release` appears (or it is interrupted)
+# A job replays fixtures/<name>.jsonl when its request contains `fixture:<name>`, else three-rooms.jsonl.
+here="${0:A:h}"
+fixtures="$(<"$here/fixtures-path")"
+print -r -- "${(j: :)${(q)@}}" >> "$0.calls"
+
+case "$1" in
+  --version) print "2.1.283 (Claude Code)"; exit 0 ;;
+  auth)
+    if [[ -e "$here/logged-out" ]]; then print '{"loggedIn": false}'; exit 1; fi
+    print '{"loggedIn": true}'; exit 0 ;;
+  mcp) print "No MCP servers configured. Use \`claude mcp add\` to add a server."; exit 0 ;;
+esac
+
+# A Haiku request gets its scripted reply inside the real result line from three-rooms, or no answer when none is scripted.
+if [[ " $* " == *" --model haiku "* ]]; then
+  kind=""
+  case "$*" in
+    *"receptionist of an office building"*) kind=routing ;;
+    *"departments to hire"*) kind=hiring ;;
+    *"You label floors"*) kind=label ;;
+    *"You name projects"*) kind=project ;;
+  esac
+  [[ -n "$kind" && -e "$here/haiku-$kind" ]] || exit 0
+  /usr/bin/python3 -c '
+import json, sys
+line = json.loads(open(sys.argv[1]).read().splitlines()[-1])
+line["result"] = open(sys.argv[2]).read()
+print(json.dumps(line))' "$fixtures/three-rooms.jsonl" "$here/haiku-$kind"
+  exit 0
+fi
+
+if [[ " $* " == *" --model office-inventory-no-such-model "* ]]; then
+  cat "$fixtures/inventory.jsonl"
+  exit 0
+fi
+
+request=""
+while IFS= read -r line; do
+  if [[ "$line" == *'"type":"user"'* ]]; then request="$line"; break; fi
+done
+name="three-rooms"
+[[ "$request" =~ 'fixture:([a-z-]+)' ]] && name="$match[1]"
+print -r -- "request $name" >> "$0.calls"
+
+# The recordings ran in the author's SampleWorkspace; report this job's own folder instead.
+lines=("${(@f)$(sed "s|\"cwd\":\"[^\"]*\"|\"cwd\":\"${PWD:A}\"|g" "$fixtures/$name.jsonl")}")
+
+if [[ -e "$here/hold" ]]; then
+  interrupted=0
+  trap 'interrupted=1' INT TERM
+  first=${lines[(i)*\"subtype\":\"init\"*]}
+  print -rl -- "${(@)lines[1,first]}"
+  while [[ ! -e "$here/release" && $interrupted == 0 ]]; do sleep 0.05; done
+  rm -f "$here/release"
+  (( interrupted )) && exit 130
+  print -rl -- "${(@)lines[first+1,-1]}"
+  exit 0
+fi
+
+print -rl -- "${(@)lines}"

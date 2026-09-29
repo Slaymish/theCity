@@ -3,6 +3,7 @@ import Foundation
 /// The city's saved files: one folder (`-data <dir>` gives a dev build its own), read and written only through here.
 enum DataFiles {
     static let directory: URL = LaunchArgument.value("-data").map { URL(fileURLWithPath: $0) }
+        ?? (TestHost.isActive ? FileManager.default.temporaryDirectory.appendingPathComponent("TheCityTests-\(UUID().uuidString)") : nil)
         ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("The City")
 
     /// Renders load the real city to draw it, but must never write it back over the running app's.

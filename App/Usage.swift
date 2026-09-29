@@ -21,7 +21,7 @@ final class UsageStore {
     private let key = "usageReadings"
 
     private init() {
-        if let data = UserDefaults.standard.data(forKey: key) {
+        if let data = UserDefaults.app.data(forKey: key) {
             readings = (try? JSONDecoder().decode([String: Reading].self, from: data)) ?? [:]
         }
     }
@@ -49,7 +49,7 @@ final class UsageStore {
         // An observed write re-renders every reader even when nothing changed, and this runs on every rate-limit event.
         if noLimits.contains(id) { noLimits.remove(id) }
         if errors[id] != nil { errors[id] = nil }
-        if persist, let data = try? JSONEncoder().encode(readings) { UserDefaults.standard.set(data, forKey: key) }
+        if persist, let data = try? JSONEncoder().encode(readings) { UserDefaults.app.set(data, forKey: key) }
     }
 
     func refresh(_ directories: [URL?]) {
@@ -61,7 +61,7 @@ final class UsageStore {
         let id = Self.key(configDirectory)
         guard !refreshing.contains(id) else { return }
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
-        guard let executable = ClaudeEnvironment.locateCLI(environment: environment) else {
+        guard let executable = RunController.executable(environment: environment) else {
             errors[id] = "Claude Code isn’t installed."
             return
         }

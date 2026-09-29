@@ -76,7 +76,7 @@ final class CityStore {
     private init() {
         totals = JobTotals.load(seed: journal)
         buildings = DataFiles.load([Building].self, from: Self.fileURL) ?? []
-        if buildings.isEmpty, let path = RunController.launchArgument("-workspace") ?? UserDefaults.standard.string(forKey: "workingDirectory") {
+        if buildings.isEmpty, let path = RunController.launchArgument("-workspace") ?? UserDefaults.app.string(forKey: "workingDirectory") {
             _ = addBuilding(at: URL(fileURLWithPath: path))
         }
         buildings.map(\.id).forEach(nameProject)
@@ -544,13 +544,13 @@ final class CityStore {
 
     // MARK: Journal
 
-    private var lastSeen: [String: Date] = UserDefaults.standard.dictionary(forKey: "lastSeen") as? [String: Date] ?? [:]
+    private var lastSeen: [String: Date] = UserDefaults.app.dictionary(forKey: "lastSeen") as? [String: Date] ?? [:]
 
     @discardableResult
     func visit(_ id: UUID) -> Date? {
         let previous = lastSeen[id.uuidString]
         lastSeen[id.uuidString] = .now
-        UserDefaults.standard.set(lastSeen, forKey: "lastSeen")
+        UserDefaults.app.set(lastSeen, forKey: "lastSeen")
         return previous
     }
 

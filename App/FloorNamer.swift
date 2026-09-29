@@ -30,7 +30,7 @@ enum FloorNamer {
         return await Haiku.ask(prompt, system: system, configDirectory: configDirectory).flatMap { usable($0, existing: []) }
     }
 
-    private static func usable(_ raw: String, existing: [String]) -> String? {
+    static func usable(_ raw: String, existing: [String]) -> String? {
         let line = raw.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
         let trimmed = line.trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’.").union(.whitespaces))
         guard !trimmed.isEmpty, trimmed.count <= 40 else { return nil }

@@ -78,7 +78,7 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
 
     private func post(title: String, subtitle: String, body: String, category: String? = nil, info: [String: String] = [:]) {
         // An accessory app stays active after the menu bar's Ask Reception alert, with no window to show the request.
-        guard !NSApp.isActive || !MainWindow.shared.isOpen, Preferences.shared.notifications else { return }
+        guard !TestHost.isActive, !NSApp.isActive || !MainWindow.shared.isOpen, Preferences.shared.notifications else { return }
         NSApp.requestUserAttention(.informationalRequest)
         let center = UNUserNotificationCenter.current()
         Task {
@@ -130,6 +130,7 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor func applicationDidFinishLaunching(_ notification: Notification) {
+        guard !TestHost.isActive else { return }
         if let path = RunController.launchArgument("-render-icon") { IconRenderer.run(to: path) }
         if let path = RunController.launchArgument("-render-preview") { PreviewStage.run(to: path) }
         if let reel = RunController.launchArgument("-render-reel"), let path = RunController.launchArgument(reel) { ReadmeReel.run(reel, to: path) }

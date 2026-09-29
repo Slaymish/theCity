@@ -10,7 +10,7 @@ struct TheCityApp: App {
     @State private var mainWindow: MainWindow
 
     init() {
-        LegacyData.migrate()
+        if !TestHost.isActive { LegacyData.migrate() }
         _city = State(initialValue: .shared)
         _preferences = State(initialValue: .shared)
         _brands = State(initialValue: .shared)
@@ -26,7 +26,7 @@ struct TheCityApp: App {
                 .background(WindowFrameSaver(name: "office"))
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultLaunchBehavior(.presented)
+        .defaultLaunchBehavior(TestHost.isActive ? .suppressed : .presented)
         .restorationBehavior(.disabled)
         .commands { OfficeCommands(city: city) }
 
@@ -43,7 +43,7 @@ struct TheCityApp: App {
                 .preferredColorScheme(preferences.colorScheme)
         }
 
-        let inMenuBar = !MainWindow.offscreen && (preferences.menuBarIcon == .always || !mainWindow.isOpen)
+        let inMenuBar = !MainWindow.offscreen && !TestHost.isActive && (preferences.menuBarIcon == .always || !mainWindow.isOpen)
         MenuBarExtra(isInserted: Binding(get: { inMenuBar }, set: { _ in })) {
             MenuBarMenu(city: city)
         } label: {

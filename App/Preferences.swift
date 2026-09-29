@@ -49,7 +49,7 @@ final class Preferences {
     }
 
     static let shared = Preferences()
-    private let defaults = UserDefaults.standard
+    private let defaults = UserDefaults.app
 
     var configDirectory: URL? {
         didSet { defaults.set(configDirectory?.path, forKey: "configDirectory") }

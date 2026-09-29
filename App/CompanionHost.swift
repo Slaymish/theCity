@@ -9,9 +9,9 @@ import OfficeCore
 final class CompanionHost {
     static let shared = CompanionHost()
 
-    var isOn = UserDefaults.standard.bool(forKey: "companionOn") {
+    var isOn = UserDefaults.app.bool(forKey: "companionOn") {
         didSet {
-            UserDefaults.standard.set(isOn, forKey: "companionOn")
+            UserDefaults.app.set(isOn, forKey: "companionOn")
             isOn ? start() : stop()
         }
     }
@@ -41,9 +41,9 @@ final class CompanionHost {
     static let heartbeat: TimeInterval = 60
 
     static var hostID: UUID {
-        if let saved = UserDefaults.standard.string(forKey: "companionHostID").flatMap(UUID.init(uuidString:)) { return saved }
+        if let saved = UserDefaults.app.string(forKey: "companionHostID").flatMap(UUID.init(uuidString:)) { return saved }
         let id = UUID()
-        UserDefaults.standard.set(id.uuidString, forKey: "companionHostID")
+        UserDefaults.app.set(id.uuidString, forKey: "companionHostID")
         return id
     }
 

@@ -11,6 +11,7 @@ final class PhoneStorey: Storey {
 
     var isRunning: Bool { floor.isRunning }
     var waitingCount: Int { floor.questions.count }
+    var waitingSince: Date? { nil }
     var roomCounts: RoomCounts { floor.roomCounts }
 
     init(_ floor: FloorSnapshot, dark: Bool) {

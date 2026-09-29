@@ -23,6 +23,7 @@ final class CityScene {
     private var slides: [(entity: Entity, from: Float, to: Float, elapsed: Double, duration: Double)] = []
     private var labelsVisible = true
     private var hovered: UUID?
+    private var pulsingBuilding: UUID?
     private var cars: [(entity: Entity, along: Float, origin: Float, length: Float)] = []
     private var cover: [String: [simd_float4x4]] = [:]
     private let haze = Horizon.haze()
@@ -46,21 +47,28 @@ final class CityScene {
         didSet { if shadowReach != oldValue { sun.components.set(Sun.shadow(reach: shadowReach)) } }
     }
     static let tile: Float = 2
+    private static let badgeScale: Float = 0.7
+    private static let balloonHeight: Float = 1.23
+    private static let pennantScale: Float = 0.32
+    private static let pennantBottom: Float = 0.5
     static let groundLevel: Float = -0.02
 
     @MainActor private final class Lot {
         let id: UUID
+        let top: Float
         let root = Entity()
-        let beacon: ModelEntity
+        let marker = Entity()
         let glow = Entity()
+        var balloon: Entity?
+        var badge: Entity?
+        var signal = FloorSignal.quiet
         var label: Entity?
         var labelText = ""
-        var waiting = false
         var working = false
 
-        init(id: UUID, beacon: ModelEntity) {
+        init(id: UUID, top: Float) {
             self.id = id
-            self.beacon = beacon
+            self.top = top
         }
     }
 
@@ -188,19 +196,13 @@ final class CityScene {
         model.components.set(InputTargetComponent())
         root.addChild(model)
         facades[building.id] = (model, bounds.extents.y, bounds.center - model.position, bounds.extents)
-        let beacon = ModelEntity(mesh: .generateSphere(radius: 0.14), materials: [OfficeScene.material(Palette.resolved(Palette.manager, dark: dark))])
-        beacon.scale = [1, 1.15, 1]
-        beacon.position = [position.x, bounds.max.y + 0.45, position.z]
-        let string = ModelEntity(mesh: ModelLibrary.box(width: 0.012, height: 0.4, depth: 0.012),
-                                 materials: [OfficeScene.material(Palette.resolved(Palette.text, dark: dark))])
-        string.position = [0, -0.33, 0]
-        beacon.addChild(string)
-        beacon.isEnabled = false
-        root.addChild(beacon)
-        let lot = Lot(id: building.id, beacon: beacon)
+        let lot = Lot(id: building.id, top: bounds.max.y)
+        lot.marker.position = [position.x, lot.top, position.z]
+        lot.marker.isEnabled = false
+        root.addChild(lot.marker)
         lot.glow.position = [position.x, bounds.center.y, position.z + bounds.extents.z / 2 + 0.35]
         root.addChild(lot.glow)
-        lot.root.position = [position.x, bounds.max.y + 0.75, position.z]
+        lot.root.position = [position.x, lot.top + 0.75, position.z]
         root.addChild(lot.root)
         for (index, offset) in [SIMD3<Float>(-0.8, 0.1, 0.8), [0.8, 0.1, 0.8]].enumerated() where index < 2 {
             let bush = ModelLibrary.entity("bush")
@@ -278,15 +280,59 @@ final class CityScene {
         let shown = visible && !labelsVisible
         labelsVisible = visible
         if shown { refresh() }
-        for lot in lots.values {
-            lot.root.isEnabled = visible && hovered == lot.id
-            lot.beacon.isEnabled = visible && lot.waiting
+        lots.values.forEach(showMarker)
+    }
+
+    private func showMarker(_ lot: Lot) {
+        lot.root.isEnabled = labelsVisible && (hovered == lot.id || lot.signal != .quiet)
+        lot.marker.isEnabled = labelsVisible && lot.signal != .quiet
+    }
+
+    private func buildMarker(_ lot: Lot) {
+        lot.marker.children.removeAll()
+        lot.balloon = nil
+        lot.badge = nil
+        let signal = lot.signal
+        let receiver = ImageBasedLightReceiverComponent(imageBasedLight: lighting)
+        func part(_ mesh: MeshResource, _ material: PhysicallyBasedMaterial, at y: Float, in parent: Entity) {
+            let part = ModelEntity(mesh: mesh, materials: [material])
+            part.position.y = y
+            part.components.set(receiver)
+            parent.addChild(part)
+        }
+        guard signal != .quiet else { return }
+        let ink = ModelLibrary.material(Palette.resolved(Palette.text, dark: dark), roughness: nil)
+        part(ModelLibrary.box(width: 0.24, height: 0.1, depth: 0.24, cornerRadius: 0.05),
+             ModelLibrary.material(Palette.resolved(signal.colour, dark: dark), roughness: nil, emissive: signal == .queued ? 0 : 2), at: 0.05, in: lot.marker)
+        switch signal {
+        case .blocked:
+            let balloon = Entity()
+            balloon.position.y = Self.balloonHeight
+            lot.marker.addChild(balloon)
+            part(ModelLibrary.box(width: 0.012, height: 0.7, depth: 0.012), ink, at: 0.45 - Self.balloonHeight, in: balloon)
+            if let badge = Billboard.make(SignalBadgeView(signal: signal), dark: dark) {
+                badge.scale = SIMD3(repeating: Self.badgeScale)
+                balloon.addChild(badge)
+                lot.badge = badge
+            }
+            lot.balloon = balloon
+        case .failed, .ready:
+            if let pennant = Billboard.make(SignalPennantView(signal: signal), dark: dark) {
+                pennant.scale = SIMD3(repeating: Self.pennantScale)
+                let height = (pennant.model?.mesh.bounds.extents.y ?? 0) * Self.pennantScale
+                pennant.position.y = Self.pennantBottom + height / 2
+                let pole = Self.pennantBottom + height + 0.06 - 0.1
+                part(ModelLibrary.box(width: 0.03, height: pole, depth: 0.03), ink, at: 0.1 + pole / 2, in: lot.marker)
+                lot.marker.addChild(pennant)
+            }
+        default:
+            break
         }
     }
 
     func closeUpPose(of id: UUID) -> CameraRig.Pose? {
         guard let lot = lots[id] else { return nil }
-        return .init(target: lot.beacon.position - [0, 1.45, 0], yaw: 0.72, pitch: 0.45, distance: 7)
+        return .init(target: [lot.marker.position.x, lot.top - 1.0, lot.marker.position.z], yaw: 0.72, pitch: 0.45, distance: 7)
     }
 
     private func addEmptyLot(at position: SIMD3<Float>) {
@@ -472,7 +518,7 @@ final class CityScene {
         }
         guard found != hovered else { return }
         hovered = found
-        for lot in lots.values { lot.root.isEnabled = labelsVisible && lot.id == found }
+        lots.values.forEach(showMarker)
     }
 
     private func setUpLighting() {
@@ -568,8 +614,15 @@ final class CityScene {
         }
         clock += dt
         let still = OfficeScene.reduceMotion
-        for lot in lots.values where lot.waiting {
-            lot.beacon.position.y = lot.root.position.y - 0.3 + (still ? 0 : sin(Float(clock) * 2) * 0.06)
+        for lot in lots.values {
+            if let balloon = lot.balloon {
+                let y = Self.balloonHeight + (still ? 0 : 0.04 * Float(sin(2 * .pi * clock / 4)))
+                if balloon.position.y != y { balloon.position.y = y }
+            }
+            if let badge = lot.badge {
+                let scale = SIMD3(repeating: Self.badgeScale * (lot.id == pulsingBuilding ? FloorSignal.pulse(clock, still: still) : 1))
+                if badge.scale != scale { badge.scale = scale }
+            }
         }
         advanceCars(still ? 0 : dt)
         updateSky(dt)
@@ -583,28 +636,34 @@ final class CityScene {
 
     func refresh() {
         let city = CityStore.shared
+        let pulsingFloor = city.pulsingFloor(in: buildings)
+        pulsingBuilding = buildings.first { $0.floors.contains { $0.id == pulsingFloor } }?.id
         for building in buildings {
             guard let lot = lots[building.id] else { continue }
-            let status = city.status(of: building)
-            let colour = status.waiting > 0 ? Palette.manager : status.working > 0 ? Palette.primaryFill : Palette.muted
-            let symbol = status.waiting > 0 ? "hand.raised.fill" : status.working > 0 ? "bolt.fill" : "building.2.fill"
+            let (signal, count, since) = city.signal(of: building)
             let rooms = city.live(on: building.floors).rooms
-            let text = "\(building.name) · \(status.waiting > 0 ? "Needs you" : status.working > 0 ? "Working" : city.statusLine(for: building))"
-            lot.waiting = status.waiting > 0
-            lot.beacon.isEnabled = labelsVisible && lot.waiting
-            if lot.working != (status.working > 0) {
-                lot.working = status.working > 0
+            let status = signal == .quiet ? city.statusLine(for: building) : "\(signal.label(count: count))\(signal.ageSuffix(since: since))"
+            let text = "\(building.name) · \(status)"
+            if lot.signal != signal {
+                lot.signal = signal
+                buildMarker(lot)
+                lot.root.position.y = lot.top + (signal <= .ready ? 2.4 : 0.75)
+            }
+            showMarker(lot)
+            let running = building.floors.contains { city.sessions[$0.id]?.isRunning == true }
+            if lot.working != running {
+                lot.working = running
                 if lot.working {
                     lot.glow.components.set(lotGlow(.now))
                 } else {
                     lot.glow.components.remove(PointLightComponent.self)
                 }
             }
-            let key = "\(text)|\(rooms.waiting)|\(rooms.working)"
+            let key = "\(signal)|\(text)|\(rooms.waiting)|\(rooms.working)"
             guard labelsVisible, key != lot.labelText else { continue }
             lot.labelText = key
             lot.label?.removeFromParent()
-            if let label = Billboard.make(BubbleView(symbol: symbol, text: text, colour: colour, rooms: rooms), dark: dark) {
+            if let label = Billboard.make(BubbleView(symbol: signal.symbol, text: text, colour: signal.colour, rooms: rooms, glyph: signal.glyph), dark: dark) {
                 label.scale = [0.5, 0.5, 0.5]
                 lot.root.addChild(label)
                 lot.label = label

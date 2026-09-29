@@ -13,6 +13,7 @@ protocol Storey: AnyObject {
     var scene: OfficeScene { get }
     var isRunning: Bool { get }
     var waitingCount: Int { get }
+    var waitingSince: Date? { get }
     var roomCounts: RoomCounts { get }
 }
 
@@ -23,12 +24,30 @@ struct TowerPlan: Equatable {
         var name: String
         var lastOutcome: String?
         var unseen = false
+        var unseenSince: Date?
+        var queued = 0
     }
 
     var id: UUID
     var name: String
     var title: String?
     var floors: [Floor]
+}
+
+extension TowerPlan.Floor {
+    @MainActor
+    func signal(_ storey: (any Storey)?) -> FloorSignal {
+        FloorSignal.of(pending: storey?.waitingCount ?? 0, unseen: unseen, outcome: lastOutcome, running: storey?.isRunning == true, queued: queued)
+    }
+
+    @MainActor
+    func since(_ storey: (any Storey)?) -> Date? {
+        switch signal(storey) {
+        case .blocked: storey?.waitingSince
+        case .failed, .ready: unseenSince
+        default: nil
+        }
+    }
 }
 
 @Observable @MainActor
@@ -54,12 +73,15 @@ final class BuildingScene {
     /// Where labels read a floor's latest name and session between shows; without them, the ones it was shown with.
     var latestPlan: (UUID) -> TowerPlan? = { _ in nil }
     var latestStorey: (UUID) -> (any Storey)? = { _ in nil }
+    var pulsingFloor: () -> UUID? = { nil }
     private(set) var activeFloor: UUID?
     private var storeys: [(id: UUID, scene: OfficeScene, index: Int)] = []
     private var sessions: [UUID: any Storey] = [:]
     private var labels: [UUID: (entity: Entity, text: String)] = [:]
     private var receptionLabel: Entity?
-    private var highlight: Entity?
+    private var edges: [UUID: (entity: Entity, key: String)] = [:]
+    private var pulsing: UUID?
+    private var pulseClock: Double = 0
     /// Set before routing back to the building, so leaving the floor lands on reception.
     var lobbyAfterLeaving = false
     private var crown: [Entity] = []
@@ -109,6 +131,7 @@ final class BuildingScene {
     private static let roofThickness: Float = 0.4
     private static let highlightWidth: Float = 0.15
     private static let highlightGlow: Float = 2
+    static let edgeGlow: Float = 1
 
     init() {
         root.addChild(camera.entity)
@@ -134,7 +157,7 @@ final class BuildingScene {
             tower.children.removeAll()
             labels = [:]
             receptionLabel = nil
-            highlight = nil
+            edges = [:]
         }
         storeys = []
         self.sessions = Dictionary(sessions, uniquingKeysWith: { $1 })
@@ -453,7 +476,7 @@ final class BuildingScene {
             labels[other.id]?.entity.isEnabled = true
         }
         reveal(through: storey.index)
-        mark(storey.index)
+        refreshEdges()
         camera.reset(to: floorPose(storey.scene))
     }
 
@@ -462,13 +485,28 @@ final class BuildingScene {
         for storey in storeys {
             storey.scene.root.isEnabled = storey.index <= top
             fitOut[storey.index]?.isEnabled = storey.index <= top
+            edges[storey.id]?.entity.isEnabled = storey.index <= top
         }
     }
 
-    private func mark(_ index: Int) {
-        highlight?.removeFromParent()
-        let glow = ModelLibrary.material(Palette.resolved(Palette.primaryFill, dark: dark), roughness: nil, emissive: Self.highlightGlow)
-        let edge = Self.highlightWidth, width = OfficeScene.footprint.x, depth = OfficeScene.footprint.y, height = OfficeScene.floorThickness
+    private func refreshEdges() {
+        guard let buildingID, let building = latestPlan(buildingID) ?? plan else { return }
+        for storey in storeys {
+            guard let floor = building.floors.first(where: { $0.id == storey.id }) else { continue }
+            edge(storey.id, index: storey.index, signal: floor.signal(latestStorey(storey.id) ?? sessions[storey.id]))
+        }
+    }
+
+    private func edge(_ id: UUID, index: Int, signal: FloorSignal) {
+        let open = id == activeFloor
+        let key = "\(signal)|\(open)"
+        guard edges[id]?.key != key else { return }
+        edges[id]?.entity.removeFromParent()
+        edges[id] = nil
+        guard open || signal != .quiet else { return }
+        let glow = ModelLibrary.material(Palette.resolved(signal.colour, dark: dark), roughness: nil, emissive: open ? Self.highlightGlow : Self.edgeGlow)
+        let edge = open ? Self.highlightWidth * 2 : Self.highlightWidth
+        let width = OfficeScene.footprint.x, depth = OfficeScene.footprint.y, height = OfficeScene.floorThickness
         let frame = Entity()
         let strips: [(Float, Float, Float, Float)] = [(width + 2 * edge, edge, 0, -(depth + edge) / 2), (width + 2 * edge, edge, 0, (depth + edge) / 2),
                                                       (edge, depth, -(width + edge) / 2, 0), (edge, depth, (width + edge) / 2, 0)]
@@ -478,8 +516,10 @@ final class BuildingScene {
             frame.addChild(strip)
         }
         frame.position.y = Float(index + 1) * Self.storeyHeight
+        frame.isEnabled = fitOut[index]?.isEnabled ?? true
+        if storeysHidden { frame.components.set(OpacityComponent(opacity: 0)) }
         tower.addChild(frame)
-        highlight = frame
+        edges[id] = (frame, key)
     }
 
     var footprint: SIMD2<Float> {
@@ -524,7 +564,7 @@ final class BuildingScene {
     private func hideStoreysForLobby() {
         guard !storeys.isEmpty else { return }
         for storey in storeys {
-            for part in [storey.scene.root, fitOut[storey.index]].compactMap({ $0 }) {
+            for part in [storey.scene.root, fitOut[storey.index], edges[storey.id]?.entity].compactMap({ $0 }) {
                 if storeysHidden {
                     part.components.set(OpacityComponent(opacity: 0))
                 } else {
@@ -604,8 +644,6 @@ final class BuildingScene {
     func leaveFloor() {
         if let storey = storeys.first(where: { $0.id == activeFloor }) { storey.scene.showOverview() }
         activeFloor = nil
-        highlight?.removeFromParent()
-        highlight = nil
         receptionLabel?.isEnabled = false
         crown.forEach { $0.isEnabled = true }
         lobbyParts.forEach { $0.isEnabled = true }
@@ -614,9 +652,11 @@ final class BuildingScene {
             storey.scene.sunEnabled = storey.index == 0
             storey.scene.root.isEnabled = true
             fitOut[storey.index]?.isEnabled = true
+            edges[storey.id]?.entity.isEnabled = true
             storey.scene.isActive = false
             labels[storey.id]?.entity.isEnabled = true
         }
+        refreshEdges()
         if lobbyAfterLeaving {
             lobbyAfterLeaving = false
             focusLobby()
@@ -682,25 +722,29 @@ final class BuildingScene {
             labelClock = 0
             refreshLabels(force: false)
         }
+        pulseClock += dt
+        for (id, label) in labels {
+            let scale = SIMD3(repeating: 1.3 * (id == pulsing ? FloorSignal.pulse(pulseClock, still: OfficeScene.reduceMotion) : 1))
+            if label.entity.scale != scale { label.entity.scale = scale }
+        }
     }
 
     private func refreshLabels(force: Bool) {
         guard let buildingID, let building = latestPlan(buildingID) ?? plan else { return }
+        pulsing = pulsingFloor()
         for storey in storeys {
             guard let floor = building.floors.first(where: { $0.id == storey.id }) else { continue }
             let session = latestStorey(storey.id) ?? sessions[storey.id]
-            let waiting = (session?.waitingCount ?? 0) + (floor.unseen ? 1 : 0)
-            let (symbol, status): (String, String) =
-                waiting > 0 ? ("hand.raised.fill", "Needs you") :
-                session?.isRunning == true ? ("bolt.fill", "Working") :
-                floor.lastOutcome == "completed" ? ("checkmark.circle.fill", "Done") : ("moon.zzz.fill", "Quiet")
-            let text = "\(floor.name) · \(status)"
+            let signal = floor.signal(session)
+            edge(storey.id, index: storey.index, signal: signal)
+            let count = signal == .blocked ? session?.waitingCount ?? 1 : 1
+            let text = "\(floor.name) · \(signal.label(count: count))\(signal.ageSuffix(since: floor.since(session)))"
             let rooms = session?.roomCounts ?? RoomCounts()
-            let key = "\(text)|\(rooms.waiting)|\(rooms.working)"
+            let key = "\(signal)|\(text)|\(rooms.waiting)|\(rooms.working)"
             if !force, labels[storey.id]?.text == key { continue }
             labels[storey.id]?.entity.removeFromParent()
-            let colour = waiting > 0 ? Palette.manager : session?.isRunning == true ? Palette.primaryFill : Palette.muted
-            guard let label = Billboard.make(BubbleView(symbol: symbol, text: text, colour: colour, rooms: rooms), dark: dark) else { continue }
+            let bubble = BubbleView(symbol: signal.symbol, text: text, colour: signal.colour, rooms: rooms, glyph: signal.glyph)
+            guard let label = Billboard.make(bubble, dark: dark) else { continue }
             label.position = labelPosition(storey.index)
             label.scale = [1.3, 1.3, 1.3]
             Self.makeTappable(label)

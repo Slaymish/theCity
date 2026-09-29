@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 /// What a floor, building or the whole city is telling the user, in the order it matters.
@@ -33,9 +37,18 @@ enum FloorSignal: Int, Comparable, CaseIterable {
         switch self {
         case .blocked: Palette.manager
         case .failed: Palette.error
-        case .ready: Palette.primaryFill
+        case .ready: Palette.grass
         case .working: Palette.folder
         case .queued, .quiet: Palette.muted
+        }
+    }
+
+    var glyph: NSColor {
+        switch self {
+        case .blocked, .failed: Palette.textOn(colour)
+        case .working: Palette.resolved(Palette.text, dark: false)
+        case .ready: Palette.text
+        case .queued, .quiet: Palette.textOn(Palette.muted)
         }
     }
 
@@ -60,6 +73,26 @@ extension FloorSignal {
 
     /// Waiting time is calm for the first half minute, then shown, so a fresh request doesn't flicker a timer.
     static let ageAppearsAfter: TimeInterval = 30
+
+    static let pulseAfter: TimeInterval = 30
+    static let pulsePeriod: Double = 2.4
+    static let pulseGrowth: Float = 0.18
+
+    static func pulse(_ t: Double, still: Bool) -> Float {
+        if still { return 1 + pulseGrowth }
+        return 1 + pulseGrowth / 2 * (1 + Float(cos(2 * Double.pi * t / pulsePeriod)))
+    }
+
+    func ageSuffix(since: Date?, now: Date = .now) -> String {
+        guard needsAPerson, let since, now.timeIntervalSince(since) >= Self.ageAppearsAfter else { return "" }
+        return " · \(Self.age(from: since, to: now))"
+    }
+
+    func spokenAge(since: Date?, now: Date = .now) -> String {
+        guard needsAPerson, let since, now.timeIntervalSince(since) >= Self.ageAppearsAfter else { return "" }
+        let wait = Duration.seconds(now.timeIntervalSince(since)).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .wide, maximumUnitCount: 1))
+        return ", waiting \(wait)"
+    }
 }
 
 /// "Waiting 4m", shown once a request has waited past `FloorSignal.ageAppearsAfter`.

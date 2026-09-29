@@ -460,6 +460,15 @@ final class CityStore {
                    running: session?.isRunning == true, queued: floor.queued?.count ?? 0)
     }
 
+    func signal(of building: Building) -> (signal: FloorSignal, count: Int, since: Date?) {
+        let floors = building.floors.map { (floor: $0, signal: signal(of: $0)) }
+        guard let top = floors.map(\.signal).min() else { return (.quiet, 0, nil) }
+        let matching = floors.filter { $0.signal == top }
+        let pending = matching.flatMap { sessions[$0.floor.id]?.state.pendingRequests ?? [] }
+        let since = top == .blocked ? pending.map(\.since).min() : matching.compactMap(\.floor.unseenSince).min()
+        return (top, top == .blocked ? pending.count : matching.count, since)
+    }
+
     struct NeedsYou {
         var building: Building
         var floor: Floor
@@ -470,8 +479,8 @@ final class CityStore {
     }
 
     /// Every floor that needs a person: blocked, then failed, then ready, and within a state the longest-waiting first.
-    func floorsNeedingYou() -> [NeedsYou] {
-        buildings.flatMap { building in
+    func floorsNeedingYou(in buildings: [Building]? = nil) -> [NeedsYou] {
+        (buildings ?? self.buildings).flatMap { building in
             building.floors.map { floor -> NeedsYou in
                 let pending = sessions[floor.id]?.state.pendingRequests ?? []
                 let state = signal(of: floor)
@@ -483,6 +492,12 @@ final class CityStore {
         .filter { $0.element.signal.needsAPerson }
         .sorted { ($0.element.signal, $0.element.since ?? .distantFuture, $0.offset) < ($1.element.signal, $1.element.since ?? .distantFuture, $1.offset) }
         .map(\.element)
+    }
+
+    func pulsingFloor(in buildings: [Building]? = nil, now: Date = .now) -> UUID? {
+        guard let first = floorsNeedingYou(in: buildings).first, first.signal == .blocked, let since = first.since,
+              now.timeIntervalSince(since) >= FloorSignal.pulseAfter else { return nil }
+        return first.floor.id
     }
 
     /// The most urgent floor needing a person, or the next one after it if that floor is already open.
@@ -633,11 +648,13 @@ final class CityStore {
 
 extension RunController: Storey {
     var waitingCount: Int { state.pendingRequests.count }
+    var waitingSince: Date? { state.pendingRequests.map(\.since).min() }
 }
 
 extension CityStore.Building {
     var plan: TowerPlan {
-        TowerPlan(id: id, name: name, title: title, floors: floors.map { TowerPlan.Floor(id: $0.id, name: $0.name, lastOutcome: $0.lastOutcome, unseen: $0.unseen == true) })
+        TowerPlan(id: id, name: name, title: title, floors: floors.map { TowerPlan.Floor(id: $0.id, name: $0.name, lastOutcome: $0.lastOutcome, unseen: $0.unseen == true,
+                                                                                    unseenSince: $0.unseenSince, queued: $0.queued?.count ?? 0) })
     }
 }
 
@@ -646,6 +663,7 @@ extension BuildingScene {
     func show(_ building: CityStore.Building, sessions: [(UUID, RunController)], dark: Bool) {
         latestPlan = { CityStore.shared.building($0)?.plan }
         latestStorey = { CityStore.shared.sessions[$0] }
+        pulsingFloor = { CityStore.shared.pulsingFloor() }
         show(building.plan, storeys: sessions.map { ($0.0, $0.1 as any Storey) }, dark: dark)
     }
 }

@@ -1190,6 +1190,10 @@ final class RunController {
         state.handoffs(in: room).last { $0.phase == .working }?.toolUseID
     }
 
+    func backdateRequests(to date: Date) {
+        for index in state.pendingRequests.indices { state.pendingRequests[index].since = date }
+    }
+
     private func stopWaiting(_ id: String) {
         guard let since = timings[id]?.waitingSince else { return }
         timings[id]?.waited += Self.now().timeIntervalSince(since)

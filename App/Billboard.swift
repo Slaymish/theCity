@@ -123,6 +123,37 @@ struct BannerView: View, BillboardKeyed {
     }
 }
 
+struct SignalPennantView: View, BillboardKeyed {
+    let signal: FloorSignal
+
+    func billboardKey(dark: Bool) -> String { "signal-pennant|\(signal)|\(signal.colour.key(dark: dark))|\(signal.glyph.key(dark: dark))" }
+
+    var body: some View {
+        Image(systemName: signal.symbol)
+            .font(.system(size: 40, weight: .bold))
+            .foregroundStyle(Color(signal.glyph))
+            .padding(.top, 22)
+            .padding(.bottom, 58)
+            .frame(width: 96)
+            .background(Pennant().fill(Color(signal.colour)))
+    }
+}
+
+struct SignalBadgeView: View, BillboardKeyed {
+    let signal: FloorSignal
+
+    func billboardKey(dark: Bool) -> String { "signal-badge|\(signal)|\(signal.colour.key(dark: dark))|\(signal.glyph.key(dark: dark))" }
+
+    var body: some View {
+        Image(systemName: signal.symbol)
+            .font(.system(size: 36, weight: .semibold))
+            .foregroundStyle(Color(signal.glyph))
+            .frame(width: 64, height: 64)
+            .background(Circle().fill(Color(signal.colour)))
+            .overlay(Circle().strokeBorder(Color(Palette.hairline), lineWidth: 2))
+    }
+}
+
 /// A banner with a swallowtail hem.
 struct Pennant: Shape {
     func path(in rect: CGRect) -> Path {
@@ -155,16 +186,17 @@ struct BubbleView: View, BillboardKeyed {
     let text: String
     let colour: NSColor
     var rooms: RoomCounts?
+    var glyph: NSColor? = nil
 
     func billboardKey(dark: Bool) -> String {
-        "bubble|\(symbol)|\(text)|\(colour.key(dark: dark))|\(rooms.map { "\($0.waiting),\($0.working)" } ?? "-")"
+        "bubble|\(symbol)|\(text)|\(colour.key(dark: dark))|\(glyph?.key(dark: dark) ?? "-")|\(rooms.map { "\($0.waiting),\($0.working)" } ?? "-")"
     }
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: symbol)
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Color(Palette.textOn(colour)))
+                .foregroundStyle(Color(glyph ?? Palette.textOn(colour)))
                 .frame(width: 32, height: 32)
                 .background(Circle().fill(Color(colour)))
             Text(text)
@@ -235,9 +267,9 @@ enum RoomState: CaseIterable {
 
     var colour: NSColor {
         switch self {
-        case .waiting: Palette.manager
-        case .working: Palette.primaryFill
-        case .idle: Palette.muted
+        case .waiting: FloorSignal.blocked.colour
+        case .working: FloorSignal.working.colour
+        case .idle: FloorSignal.quiet.colour
         }
     }
 

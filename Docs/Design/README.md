@@ -253,11 +253,147 @@ Each slice is shippable alone and leaves the app better.
 | 2 | **Done:** `PendingRequest.since` in OfficeCore (tested on Linux), age on desk cards and in the Needs you list, longest-waiting first within a state, appearing after 30 s. Ready and failed floors record when they finished unseen (`Floor.unseenSince`), so they show an age and sort oldest first too. **Not done:** the dispatch rail at every level. | Medium | Rail layout |
 | 3 | Breadcrumb, single Esc handler, `SceneSafeArea`. | Medium | Breadcrumb layout |
 | 4 | One `Instruments` component; drawer for detail. | Medium | Layout |
-| 5 | Building and storey state in the world (lamps, pennants, edge colours). | Medium (RealityKit, offscreen-checkable) | Visuals |
+| **5 (built)** | Building and storey state in the world (lamps, pennants, edge colours). | Medium (RealityKit, offscreen-checkable) | Settled (10.1) |
 | 6 | Glance mode and escalation ladder. | Medium | Timings, ⌥⌘G |
 | 7 | First-run copy and layout. Companion: same states and rail. | Low | Copy |
 
 The Companion shares the scene files, so slice 5 must keep them free of Mac-only types (`Docs/Companion.md`). The signal type is written with no AppKit so the phone can use it in slice 7.
+
+### 10.1 Slice 5 spec
+
+Everything here is decided; the builder needs no further design judgement. Line numbers are at `b8d5f99`. Scene units: a city building is 1.4 wide and 1.14 deep (`Facade.cityScale`, `App/Facade.swift:18`), each storey 0.35 tall, and the overview camera shows about 50 px per unit in a 1600 × 1000 render. Every visual reads its state from `FloorSignal`; no scene decides state itself.
+
+**What this changes from the plan above.**
+- **Ready is `grass`, not `primaryFill`.** In The City brand `primaryFill` (#F2C14E) is almost the same yellow as `folder` (#FAC740), so Ready and Working would look alike. In Alphero `primaryFill` *is* `manager` (#3D2051), so Ready and Blocked would look alike. `grass` is an existing token in both brands, is green (which 4.1 and 6.1 already describe), and differs from every other signal colour. No new token.
+- **`FloorSignal` isn't phone-safe yet.** Section 10 says it has no AppKit, but `App/FloorSignal.swift:1` imports AppKit and the file isn't in the companion's sources. Step 1 fixes that.
+- **The balloon already exists and is too small.** `CityScene` has a `manager` sphere (radius 0.14, about 14 px) on a string, shown for any "needs you", including unseen results (`App/CityScene.swift:191-199`, `:594`). That's why finding 4 holds. It's replaced, not added to.
+- **Storey labels re-invent state.** `refreshLabels` (`App/BuildingScene.swift:687-712`) counts an unseen result as "Needs you ✋" and colours Working `primaryFill`. It moves onto `FloorSignal`.
+- **Bob and pulse.** Section 8 says "everything else holds still", while 6.1 says every balloon bobs. Resolved as: the bob is ambient (a 4 s loop, allowed by the Ambient tier), and only the single oldest Blocked item *pulses* (grows and shrinks).
+
+#### Step 1: shared signal type and data
+
+| Change | Where |
+|---|---|
+| Replace `import AppKit` with `#if os(macOS) import AppKit #else import UIKit #endif`, and add `- App/FloorSignal.swift` to `TheCityCompanion` sources after `App/Billboard.swift`. Run `make project`. | `App/FloorSignal.swift:1`, `project.yml:87` |
+| `.ready` colour becomes `Palette.grass`. | `App/FloorSignal.swift:36` |
+| Add `var glyph: NSColor`, the colour of the symbol drawn on a filled signal shape: blocked and failed `Palette.textOn(colour)`; working `Palette.resolved(Palette.text, dark: false)` (dark in both brands and themes, since `folder` is light in both); ready `Palette.text`; queued and quiet `Palette.textOn(Palette.muted)`. | `App/FloorSignal.swift`, after `colour` |
+| Add `static let pulseAfter: TimeInterval = 30`, `static let pulsePeriod: Double = 2.4`, `static let pulseGrowth: Float = 0.18`, and `static func pulse(_ t: Double, still: Bool) -> Float`, returning `1 + pulseGrowth` when `still`, else `1 + pulseGrowth / 2 * (1 + cos(2π t / pulsePeriod))`. It starts at full size, so the Reduce Motion hold is the pulse's peak. | `App/FloorSignal.swift`, after `ageAppearsAfter` (`:62`) |
+| `RoomState.colour` returns `FloorSignal.blocked.colour`, `.working.colour` and `.quiet.colour`, so the room counts inside a label match the label (Working chips turn from `primaryFill` to `folder`). Its only use is `BubbleView`. | `App/Billboard.swift:239-245` |
+| `BubbleView` gains `var glyph: NSColor? = nil`, drawn as `glyph ?? Palette.textOn(colour)` and added to `billboardKey`. | `App/Billboard.swift:152-192` |
+| `OfficeScene.reduceMotion` also returns true when the launch arguments contain `-reduce-motion`, so renders can check the static replacements. | `App/OfficeScene.swift:67-73` |
+| `Storey` gains `var waitingSince: Date? { get }`. `RunController` returns `state.pendingRequests.map(\.since).min()`, and `PhoneStorey` returns `nil` (`QuestionSnapshot` has no date; the phone's ages are slice 7). | `App/BuildingScene.swift:12-17`, `App/CityStore.swift:634-636`, `Companion/PhoneCity.swift:8-14` |
+| `TowerPlan.Floor` gains `var unseenSince: Date?` and `var queued = 0`. `Building.plan` fills them from `unseenSince` and `queued?.count ?? 0`. The phone's `PhoneCity.plan` leaves the defaults. | `App/BuildingScene.swift:21-26`, `App/CityStore.swift:639-641`, `Companion/PhoneCity.swift:128-133` |
+| In `BuildingScene.swift`, `extension TowerPlan.Floor { func signal(_ storey: (any Storey)?) -> FloorSignal }` calls `FloorSignal.of(pending: storey?.waitingCount ?? 0, unseen: unseen, outcome: lastOutcome, running: storey?.isRunning == true, queued: queued)`, plus `func since(_ storey:) -> Date?` (blocked: `storey?.waitingSince`; failed and ready: `unseenSince`; otherwise nil). Same rule as `CityStore.signal(of:)`, through the same function. | `App/BuildingScene.swift`, after `TowerPlan` |
+| `floorsNeedingYou()` becomes `floorsNeedingYou(in buildings: [Building]? = nil)`, using `buildings ?? self.buildings`. Add `pulsingFloor(in buildings: [Building]? = nil, now: Date = .now) -> UUID?`: the first `.blocked` item of that list if `now − since ≥ FloorSignal.pulseAfter`, else nil. The list is already oldest-first, so this is the one pulse. | `App/CityStore.swift:472-486` |
+| Add `signal(of building: Building) -> (signal: FloorSignal, count: Int, since: Date?)`: the lowest `signal(of:)` across its floors (`.quiet` for an empty lot). `count` is the number of pending requests on its blocked floors when Blocked, otherwise the number of floors in that state. `since` is the oldest `since` among those floors, worked out as in `floorsNeedingYou`. | `App/CityStore.swift`, after `:461` |
+| `BuildingScene` gains `var pulsingFloor: () -> UUID? = { nil }`. The Mac `show` extension sets it to `{ CityStore.shared.pulsingFloor() }`. | `App/BuildingScene.swift:55-56`, `App/CityStore.swift:646-650` |
+
+#### Step 2: the city (`App/CityScene.swift`, Mac only)
+
+Each building gets one **marker** entity in place of `beacon`, at the roof centre `(x, top, z)`, where `top = bounds.max.y` (`:193`). `Lot` (`:51-65`) keeps `top`, `marker`, `balloon` (the moving part) and `signal`. Build parts with `ModelLibrary.box` and `ModelLibrary.material`, and signs with `Billboard.make`, so all are cached. Rebuild the marker's children only when the building's signal changes.
+
+| State | Lamp | Above the lamp | Label |
+|---|---|---|---|
+| Blocked | `manager`, glowing | **Balloon**: string, then the hand badge; bobs | always shown |
+| Failed | `error`, glowing | **Pennant** on a pole: `exclamationmark.triangle.fill` on `error` | always shown |
+| Ready | `grass`, glowing | **Pennant** on a pole: `tray.full.fill` on `grass` | always shown |
+| Working | `folder`, glowing | nothing (the windows are already lit, `:494`) | always shown |
+| Queued | `muted`, not glowing | nothing | always shown |
+| Quiet | none | nothing | on hover only (as today) |
+
+Sizes, in city units above `top`:
+
+| Part | Geometry | Centre |
+|---|---|---|
+| Lamp | `box(width: 0.24, height: 0.1, depth: 0.24, cornerRadius: 0.05)`, `material(colour, roughness: nil, emissive: 2)`, or `emissive: 0` for Queued. 2 is the tower's existing `highlightGlow`. | + 0.05 |
+| Balloon string | `box(width: 0.012, height: 0.7, depth: 0.012)` in `Palette.text`, as today's string | + 0.45 |
+| Balloon badge | `SignalBadgeView(signal: .blocked)` billboard, scale 0.7 (0.86 units, about 44 px, against today's 14 px sphere) | + 1.23 |
+| Pennant pole | `box(width: 0.03, depth: 0.03)` in `Palette.text`, from + 0.1 to 0.06 above the pennant's top edge | halfway along it (spans 0.1 to about 1.45) |
+| Pennant | `SignalPennantView(signal:)` billboard, scale 0.32 (about 44 px tall), bottom edge at + 0.5 so about 10 px of pole shows above the lamp | + 0.5 + half its height |
+| Label (`lot.root`) | unchanged `BubbleView` at scale 0.5 | + 2.4 with a balloon or pennant, + 0.75 otherwise (today's height) |
+
+New views in `App/Billboard.swift`, both `BillboardKeyed` on the signal and its colours (`colour.key(dark:)`):
+- `SignalBadgeView`: `Image(systemName: signal.symbol)` at `.system(size: 36, weight: .semibold)` in `signal.glyph`, on a 64 pt `Circle` in `signal.colour` with a 2 pt `Palette.hairline` border. This is `BubbleView`'s leading circle (`:164-168`) at twice the size.
+- `SignalPennantView`: the symbol at `.system(size: 40, weight: .bold)` in `signal.glyph`, `.padding(.top, 22)`, `.padding(.bottom, 58)`, width 96, on the existing `Pennant()` shape (`:126-139`) filled with `signal.colour`. This is `BannerView` (`:102-124`) without the title.
+
+Behaviour:
+- `refresh()` (`:584-613`) uses `city.signal(of: building)` for the label's symbol, colour and glyph, and stops using `status(of:)`. Text: `"\(name) · \(signal.label(count: count))"`, plus `" · \(FloorSignal.age(...))"` for Blocked, Failed and Ready once `since` is at least `ageAppearsAfter` old. Quiet keeps today's `statusLine(for:)` ("Empty lot", "3 floors · all quiet"). Between 30 s and 60 s the text changes every second; that's at most 30 billboard renders per building, which is acceptable.
+- Visibility, in `setLabelsVisible` (`:283`), `hover` (`:476`) and `refresh`: label `labelsVisible && (hovered == id || signal != .quiet)`; marker `labelsVisible && signal != .quiet`. So both hide on entering a building (`App/World.swift:66`) and return on leaving (`:113`).
+- The window glow (`lot.working`, `lotGlow`) stays tied to "any floor running", even under a higher state. It shows activity, not status.
+- `closeUpPose` (`:289`) targets `[x, top − 1.0, z]`, where it aims today.
+- Remove the `beacon` sphere and its `generateSphere` call.
+
+#### Step 3: the tower (`App/BuildingScene.swift`, shared with the phone)
+
+**State edge.** The open-floor glow (`mark`, `:468-483`) becomes a frame on every storey that isn't Quiet, and on the open storey whatever its state. `highlight` (`:62`) becomes `edges: [UUID: (entity: Entity, key: String)]`, rebuilt in the labels' one-second pass and keyed on `"\(signal)|\(open)"`. The geometry is today's four strips at slab height.
+
+| | Colour | Strip width | Emissive |
+|---|---|---|---|
+| Open storey | `signal.colour` (`muted` if Quiet) | 0.3 (twice `highlightWidth`) | 2 (`highlightGlow`) |
+| Other storey, not Quiet | `signal.colour` | 0.15 (`highlightWidth`) | 1 |
+| Other storey, Quiet | no edge | | |
+
+Add `static let edgeGlow: Float = 1` beside `highlightWidth` and `highlightGlow` (`:110-111`). Hook points: clear `edges` where `labels` and `highlight` are cleared on a rebuild (`:133-138`); `enter(floor:)` (`:456`) and `leaveFloor()` (`:607-608`) refresh the edges in place of `mark` and removing `highlight`; `reveal(through:)` (`:461-466`) enables an edge like its `fitOut`; `hideStoreysForLobby` (`:527`) adds the edge to the parts it makes transparent.
+
+**Storey labels.** `refreshLabels` (`:687-712`) uses `floor.signal(session)` and `floor.since(session)`: symbol `signal.symbol`, circle `signal.colour`, glyph `signal.glyph`, text `"\(floor.name) · \(signal.label(count:))"` plus the city's age suffix. The count is `session.waitingCount` when Blocked, otherwise 1. "Needs you" and "Done" go: a finished, seen floor reads "Quiet", an unseen one "Ready". Add the age string to the label key. The label is the storey's hand balloon; nothing else goes over the storey.
+
+#### Step 4: motion
+
+| What | Motion | Reduce Motion |
+|---|---|---|
+| Blocked balloon (city) | Bob: `balloon.position.y = top + 1.23 + 0.04 · sin(2π · clock / 4)`, replacing `sin(clock * 2) * 0.06` at `:568-573` | Still at `top + 1.23` |
+| The single pulse, city | If `pulsingFloor(in: buildings)` is a floor of this building, the badge (not the string) scales by `FloorSignal.pulse(clock, still: false)` | Held at 1.18× |
+| The same pulse, tower | If `pulsingFloor()` is one of the storeys, that label scales by `1.3 × FloorSignal.pulse(pulseClock, still: false)`; add `pulseClock`, advanced in `update` (`:652`) | Held at 1.3 × 1.18 |
+| Lamps, pennants, edges | Still | Still |
+
+City markers hide on entering a building, so there is only ever one pulse on screen. Write the scale only when it changes (`.claude/rules/app.md`). On the phone `pulsingFloor` stays nil, so nothing pulses there yet.
+
+#### Step 5: accessibility
+
+| State | Colour | Second channel |
+|---|---|---|
+| Blocked | `manager` | Round balloon on a string, bobbing; hand glyph; the only thing that pulses |
+| Failed | `error` | Swallowtail pennant on a pole; triangle glyph |
+| Ready | `grass` | Swallowtail pennant on a pole; tray glyph |
+| Working | `folder` | Lamp, lit windows, bolt glyph in the label |
+| Queued | `muted` | Unlit lamp; clock glyph in the label |
+| Quiet | none | No lamp or marker; label on hover only |
+
+Failed and Ready share a shape; their glyphs tell them apart and the label names them. VoiceOver has no path through the world, so the words go on the existing keyboard lists: `ProjectList`'s symbol and `accessibilityLabel` (`App/CityViews.swift:134-146`) and `FloorList`'s symbol and `floorStatus` (`:467-472`, `:500-506`) use the signal's symbol and `label(count:)`, plus "waiting 4 minutes" once past `ageAppearsAfter`. Glyphs need 3:1 on their fill; `glyph` is chosen for that, and the renders below check it.
+
+#### Step 6: renders
+
+`-city` builds its own five sample buildings (`App/OffscreenRenderer.swift:132-161`), and the tower uses `buildings[0]`. Today's seed gives one Blocked floor (Security review), two Working floors and a Docs floor that is only Quiet. There's no Ready or Failed floor, and the request's age is zero, because `PendingRequest.since` is the real `Date()` (`Packages/OfficeCore/Sources/OfficeCore/OfficeReducer.swift:128`), not the renderer's clock. Seed as follows:
+
+- `buildings[0].floors[2]` (Docs, `:159`): add `unseen: true, unseenSince: .now - 900`. Ready, 15m.
+- `buildings[2].floors = [.init(name: "Payments", hires: ["build", "review"], budgetUSD: 1, lastOutcome: "failed", unseen: true, unseenSince: .now - 300)]`. Failed, 5m.
+- `buildings[3].floors = [.init(name: "Changelog", hires: ["research", "review"], budgetUSD: 1)]`, and in `seedStatus` (`:256-260`), under `floors.count > 5`, play `approval-requests.jsonl` for 12 lines on `floors[5]`. A second Blocked building.
+- Add `RunController.backdateRequests(to: Date)`, which sets every pending request's `since` (`state` is `private(set)`, `App/RunController.swift:131`). Call it with `.now - 240` on `floors[1]` (Security review: 4m, pulses) and `.now - 45` on `floors[5]` (Changelog: 45s, shows an age, doesn't pulse).
+- After `tower.show` (`:207`), set `tower.pulsingFloor = { CityStore.shared.pulsingFloor(in: buildings) }`, since the preview's buildings aren't in the store.
+
+That gives theCity Blocked (pulsing), alphero-web Working, client-portal Failed, docs-site Blocked (still) and infra Quiet. Run `make build`, then these from the repo root (no `timeout` on this Mac), and `sips -Z 1000` each file before viewing:
+
+```
+B=build/Build/Products/Debug/TheCity.app/Contents/MacOS/TheCity
+W="$PWD/SampleWorkspace"
+$B -render-preview /tmp/s5-city-dark.png  -theme dark  -workspace "$W" -city
+$B -render-preview /tmp/s5-city-light.png -theme light -workspace "$W" -city
+$B -render-preview /tmp/s5-city-still.png -theme dark  -workspace "$W" -city -reduce-motion
+$B -render-preview /tmp/s5-tower-dark.png  -theme dark  -workspace "$W" -building
+$B -render-preview /tmp/s5-tower-light.png -theme light -workspace "$W" -building
+$B -render-preview /tmp/s5-open-blocked.png -theme dark -workspace "$W" -building -floor 1
+$B -render-preview /tmp/s5-open-ready.png   -theme dark -workspace "$W" -building -floor 2
+```
+
+| Render | Must show |
+|---|---|
+| `s5-city-dark`, `s5-city-light` | Four labels without hovering: "theCity · Waiting · 4m" (hand, `manager`), "alphero-web · Working" (bolt, `folder`), "client-portal · Failed · 5m", "docs-site · Waiting · 45s". infra has no label, lamp or marker. Balloons over theCity and docs-site, theCity's visibly larger (the city render stops at 0.5 s, where the pulse is 1.11×). A red pennant over client-portal. Lamps in `manager`, `folder`, `error`, `manager`. No pink sphere anywhere. Every glyph readable on its fill. |
+| `s5-city-still` | As dark, but theCity's badge is exactly 1.18× docs-site's, and both balloons sit at the same height above their roofs. |
+| `s5-tower-dark`, `s5-tower-light` | Edges: Feature: login `folder`, Security review `manager`, Docs `grass`, all 0.15 wide. Labels "Feature: login · Working", "Security review · Waiting · 4m", "Docs · Ready · 15m". No "Needs you" or "Done". |
+| `s5-open-blocked` | Security review's edge `manager` at 0.3 wide; Docs, above it, hidden along with its edge. |
+| `s5-open-ready` | Docs's edge `grass` at 0.3 wide; the lower storeys' edges still 0.15. |
+
+Also run `make test` (OfficeCore is unchanged) and **`make companion`**, which proves `FloorSignal.swift`, `Billboard.swift` and `BuildingScene.swift` still compile for iOS. There's no render argument for the brand, so check Alphero's glyph contrast in the live window (`Tools/Dev/relaunch.sh`, then switch brand in Settings).
 
 ---
 
@@ -287,11 +423,14 @@ The Companion shares the scene files, so slice 5 must keep them free of Mac-only
 
 ---
 
-## 12. Decisions needed from the owner
+## 12. Decisions
 
-1. Approve the six-state vocabulary, its priority order and its use of existing colour roles (section 4.1).
-2. Dock badge counts **Blocked only**, or everything as today (5.3).
-3. The 60% hero rule for the floor screen (6.3).
-4. Camera doesn't steal focus for new Blocked items when you're elsewhere (7).
-5. Escalation timings 30 s, 5 min and 15 min (8).
-6. ⌥⌘G for Glance mode (5.3), and whether Glance should exist on the phone.
+The owner delegated every decision and value in this plan on 2026-09-29, so *(needs approval)* marks above are settled as proposed unless listed here.
+
+1. **Approved:** the six-state vocabulary, its priority order and its use of existing colour roles (section 4.1).
+2. **Dock badge counts Blocked only** (5.3).
+3. **Approved:** the 60% hero rule for the floor screen (6.3).
+4. **Approved:** the camera doesn't steal focus for new Blocked items when you're elsewhere (7).
+5. **Approved:** escalation timings of 30 s, 5 min and 15 min (8).
+6. **⌥⌘G** toggles Glance mode on the Mac. There is no Glance mode on the phone for now.
+7. **Order:** slice 5 next, since finding 4 is confirmed and it can be checked with offscreen renders. Then the rest of slice 2 (the rail), then 3, 4, 6 and 7.

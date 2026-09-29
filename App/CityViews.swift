@@ -132,10 +132,11 @@ struct ProjectList: View {
         HStack(spacing: 8) {
             ForEach(city.buildings) { building in
                 let status = city.status(of: building)
+                let signal = city.signal(of: building)
                 Button {
                     city.route = .building(building.id)
                 } label: {
-                    Label(building.name, systemImage: status.waiting > 0 ? "hand.raised.fill" : status.working > 0 ? "bolt.fill" : "building.2")
+                    Label(building.name, systemImage: signal.signal.symbol)
                 }
                 .buttonStyle(PillButtonStyle(kind: .secondary))
                 .contextMenu {
@@ -143,7 +144,7 @@ struct ProjectList: View {
                     Button("Remove from City…") { removing = building }
                         .disabled(status.working > 0)
                 }
-                .accessibilityLabel("\(building.name), \(building.floors.count) floors\(status.working > 0 ? ", \(status.working) working" : "")\(status.waiting > 0 ? ", needs you" : "")")
+                .accessibilityLabel("\(building.name), \(building.floors.count) floors, \(signal.signal.label(count: signal.count))\(signal.signal.spokenAge(since: signal.since))")
                 .help("\(city.statusLine(for: building)). Rooms: \(city.live(on: building.floors).rooms.spoken).")
             }
         }
@@ -467,7 +468,7 @@ struct FloorList: View {
                 Button {
                     city.route = .floor(building: building.id, floor: floor.id)
                 } label: {
-                    Label(floor.name, systemImage: city.needsYou(floor) > 0 ? "hand.raised.fill" : session?.isRunning == true ? "bolt.fill" : "square.stack.3d.up")
+                    Label(floor.name, systemImage: city.signal(of: floor).symbol)
                 }
                 .buttonStyle(PillButtonStyle(kind: .secondary))
                 .help(floorStatus(floor, session: session))
@@ -500,10 +501,11 @@ struct FloorList: View {
 
     private func floorStatus(_ floor: CityStore.Floor, session: RunController?) -> String {
         let rooms = city.live(on: [floor]).rooms.spoken
-        if city.needsYou(floor) > 0 { return "Needs you. \(rooms)." }
-        guard let session else { return "Quiet. \(rooms)." }
-        guard session.isRunning else { return "Quiet. \(rooms)." }
-        return "Working\(session.currentStep.map { ": \($0)" } ?? ""). \(rooms)."
+        let signal = city.signal(of: floor)
+        let pending = session?.state.pendingRequests ?? []
+        let since = signal == .blocked ? pending.map(\.since).min() : floor.unseenSince
+        let label = signal == .working ? "Working\(session?.currentStep.map { ": \($0)" } ?? "")" : signal.label(count: pending.count)
+        return "\(label)\(signal.spokenAge(since: since)). \(rooms)."
     }
 }
 

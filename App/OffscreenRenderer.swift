@@ -156,9 +156,11 @@ enum PreviewStage {
         buildings[0].floors = [
             .init(name: "Feature: login", hires: ["research", "build", "review"], budgetUSD: 1),
             .init(name: "Security review", hires: ["research", "review"], budgetUSD: 2),
-            .init(name: "Docs", hires: ["design", "build"], budgetUSD: 1, lastOutcome: "completed"),
+            .init(name: "Docs", hires: ["design", "build"], budgetUSD: 1, lastOutcome: "completed", unseen: true, unseenSince: .now - 900),
         ]
         buildings[1].floors = [.init(name: "Landing page", hires: ["research", "build"], budgetUSD: 1)]
+        buildings[2].floors = [.init(name: "Payments", hires: ["build", "review"], budgetUSD: 1, lastOutcome: "failed", unseen: true, unseenSince: .now - 300)]
+        buildings[3].floors = [.init(name: "Changelog", hires: ["research", "review"], budgetUSD: 1)]
         let seeded = seedStatus(buildings, workspace: workspace, dark: dark)
         let building = buildings[0]
         let sessions = building.floors.compactMap { floor in seeded[floor.id].map { (floor.id, $0) } }
@@ -206,6 +208,7 @@ enum PreviewStage {
         }
         let tower = BuildingScene()
         tower.show(building, sessions: sessions, dark: dark)
+        tower.pulsingFloor = { CityStore.shared.pulsingFloor(in: buildings) }
         tower.fit(size)
         if let index = RunController.launchArgument("-floor").flatMap(Int.init), index < sessions.count {
             tower.enter(floor: sessions[index].0)
@@ -255,6 +258,11 @@ enum PreviewStage {
             sessions[floors[0].id].map { play($0, "three-rooms.jsonl", lines: 25) }
             sessions[floors[1].id].map { play($0, "approval-requests.jsonl", lines: 12) }
             sessions[floors[3].id].map { play($0, "three-rooms.jsonl", lines: 10) }
+        }
+        if floors.count > 5 {
+            sessions[floors[5].id].map { play($0, "approval-requests.jsonl", lines: 12) }
+            sessions[floors[1].id]?.backdateRequests(to: .now - 240)
+            sessions[floors[5].id]?.backdateRequests(to: .now - 45)
         }
         let requests = ["Add a sign-in page", "Fix the flaky auth test", "Write the README intro", "Review the payment flow"]
         var jobs: [JobRecord] = []

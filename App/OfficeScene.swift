@@ -65,10 +65,11 @@ final class OfficeScene {
     private var strollTask: Task<Void, Never>?
 
     static var reduceMotion: Bool {
+        if ProcessInfo.processInfo.arguments.contains("-reduce-motion") { return true }
         #if os(macOS)
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         #else
-        UIAccessibility.isReduceMotionEnabled
+        return UIAccessibility.isReduceMotionEnabled
         #endif
     }
 

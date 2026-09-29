@@ -85,6 +85,7 @@ targets:
       - App/DayCycle.swift
       - App/SceneGrade.swift
       - App/Billboard.swift
+      - App/FloorSignal.swift
       - App/Horizon.swift
       - App/Wording.swift
       - App/JobJournal.swift

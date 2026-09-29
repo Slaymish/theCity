@@ -122,7 +122,7 @@ final class PhoneCity {
     }
 
     func tapped(_ entity: Entity) {
-        if let id = tower.floor(of: entity), id != floorID { enter(floor: id) }
+        if floorID != nil, tower.isReception(entity) { leaveFloor() } else if let id = tower.floor(of: entity), id != floorID { enter(floor: id) }
     }
 
     static func plan(_ building: BuildingSnapshot) -> TowerPlan {

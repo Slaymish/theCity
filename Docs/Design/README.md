@@ -265,6 +265,12 @@ The Companion shares the scene files, so slice 5 must keep them free of Mac-only
 
 **Before building past slice 2, confirm with renders:** offscreen renders of city, building and floor in light and dark with a blocked floor and a ready floor, checked against findings 4, 5 and 12. (`-render-preview`, see `CLAUDE.md`.) If a finding doesn't hold, strike it here.
 
+**Checked on a Mac at `e25dbdd`:** slices 1 and 2 build, and all 170 OfficeCore tests pass.
+- **Finding 4 holds.** In the city render, the building with a blocked floor looks the same as the others. Light and dark city renders are also almost identical (both lit for dusk).
+- **Finding 12 is struck.** `Typography.number` already uses `.monospacedDigit()`.
+- **6.2 is partly done already.** The building view labels each storey in the world ("Security review · Needs you ✋ 1", "Feature: login · Working ⚡ 1", "Docs · Done"). What's missing is the state colour on the storey edge, and a Ready state that's distinct from Done-and-seen.
+- **Findings 5 and 6 are unchecked.** Offscreen renders draw the scene and in-world labels but not the SwiftUI HUD, so they need a live window (`Tools/Dev/relaunch.sh`).
+
 **Tests with 5 developers, 2 tasks each, on a real or replayed multi-floor stream (`make replay`):**
 
 | Task | Measure | Target |

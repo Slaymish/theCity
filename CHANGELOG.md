@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.0
+
+- Arrow keys orbit and tilt the camera in the city, building and floor views, and + and - zoom in and out.
+- Right-dragging or Shift-dragging pans the camera, and swiping sideways on the trackpad in a building pans along the tower.
+- While a floor is open, reception and every other floor stay clickable, and swiping up or down on the trackpad moves through the tower.
+- The open floor is marked with a glowing edge in the building view.
+- Entering a building, starting a job and focusing a robot now move the camera smoothly instead of jumping.
+- Storeys sit flush on top of each other, with no gap between them.
+- Shadows now reach as far as the camera can see, and the city's lighting carries on inside buildings.
+- Edges are smoothed at every graphics quality level, including Low.
+
 ## 0.12.0
 
 - A floor shows a pill when another floor needs you, and clicking it jumps straight there.

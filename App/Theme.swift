@@ -221,6 +221,21 @@ struct PillButtonStyle: ButtonStyle {
     }
 }
 
+/// One segment of a hairline capsule, such as Open in and the breadcrumb.
+struct SegmentStyle: ButtonStyle {
+    var colour: NSColor = Palette.text
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Typography.controlQuiet)
+            .foregroundStyle(Color(colour))
+            .padding(.vertical, 8)
+            .padding(.horizontal, 15)
+            .contentShape(Rectangle())
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+    }
+}
+
 private extension PillButtonStyle.Kind {
     var isPrimary: Bool {
         switch self {

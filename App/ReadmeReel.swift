@@ -207,7 +207,8 @@ enum ReadmeReel {
                            layers.append((hud(BuildingHUD(city: .shared, building: building, scene: world.building, composer: composer), dark: dark), alpha))
                        }
                        if let onFloor, let floor = world.building.scene(for: sessions[0].0) {
-                           layers.append((hud(OfficeOverlay(controller: login, scene: floor, onBack: {}, onClose: {}), dark: dark), fade(time, in: onFloor + 0.5)))
+                           layers.append((hud(OfficeOverlay(controller: login, scene: floor, breadcrumb: Breadcrumb(home: {}, crumbs: [.init(name: building.name) {}, .init(name: login.displayTitle)]), onClose: {})
+                               .environment(\.sceneSafeArea, SceneSafeArea(panelOpen: login.showPanel)), dark: dark), fade(time, in: onFloor + 0.5)))
                        }
                        return try layer(image, layers)
                    })
@@ -281,7 +282,8 @@ enum ReadmeReel {
         try record(seconds: 13, fps: fps, cues: cues, recorder: recorder, to: folder,
                    step: scene.update, camera: { scene.camera.entity },
                    overlay: { image, time in
-                       let base = hud(OfficeOverlay(controller: controller, scene: scene, onBack: {}, onClose: {}, showsDeskRequests: false), dark: dark)
+                       let base = hud(OfficeOverlay(controller: controller, scene: scene, breadcrumb: Breadcrumb(home: {}, crumbs: [.init(name: controller.buildingID.flatMap { CityStore.shared.building($0)?.name } ?? "Building") {}, .init(name: controller.displayTitle)]), onClose: {}, showsDeskRequests: false)
+                           .environment(\.sceneSafeArea, SceneSafeArea(panelOpen: controller.showPanel)), dark: dark)
                        if delivered == nil { before = base }
                        let arriving = delivered.map { fade(time, in: $0) } ?? 1
                        var layers: [(CGImage?, Double)] = arriving < 1 ? [(before, 1 - arriving), (base, arriving)] : [(base, 1)]

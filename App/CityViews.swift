@@ -62,64 +62,108 @@ struct TitleHUD: View {
 
 struct CityHUD: View {
     let city: CityStore
+    @Environment(\.sceneSafeArea) private var safeArea
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
-                Wordmark(compact: true)
+                Breadcrumb.here(city)
                 Spacer()
                 if !city.allFloors.isEmpty { VitalsStrip(city: city, scope: .city(city.buildings)) }
                 UsageHUD(configDirectory: Preferences.shared.configDirectory)
                 Button("New project…", systemImage: "plus") { ProjectPicker.addProject() }
                     .buttonStyle(PillButtonStyle())
             }
-            NeedsYouList(city: city)
             Spacer()
             ProjectList(city: city)
         }
         .padding(20)
+        .padding(.bottom, safeArea.bottom)
     }
 }
 
-/// Floors waiting on you, across the whole city, most urgent first, so nothing is missed while you're elsewhere.
-struct NeedsYouList: View {
+/// Every other floor that needs you, across the whole city, most urgent first, in the same corner at every level.
+struct DispatchRail: View {
     let city: CityStore
 
+    private var here: (building: UUID?, floor: UUID?) {
+        switch city.route {
+        case .building(let id), .newFloor(let id): (id, nil)
+        case .floor(let building, let floor): (building, floor)
+        default: (nil, nil)
+        }
+    }
+
+    private var items: [CityStore.NeedsYou] { city.floorsNeedingYou().filter { $0.floor.id != here.floor } }
+
     var body: some View {
-        let waiting = city.floorsNeedingYou()
-        if !waiting.isEmpty {
+        let items = items
+        if !items.isEmpty {
             TimelineView(.periodic(from: .now, by: 5)) { context in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Needs you").eyebrow()
-                    ForEach(waiting, id: \.floor.id) { item in
-                        let waited = item.since.flatMap { context.date.timeIntervalSince($0) >= FloorSignal.ageAppearsAfter ? " · \(FloorSignal.age(from: $0, to: context.date))" : nil } ?? ""
-                        Button("\(item.building.name) · \(item.floor.name) · \(item.signal.label(count: item.count))\(waited)", systemImage: item.signal.symbol) {
-                            city.route = .floor(building: item.building.id, floor: item.floor.id)
+                ViewThatFits(in: .horizontal) {
+                    ForEach((1...items.count).reversed(), id: \.self) { shown in
+                        HStack(spacing: 8) {
+                            ForEach(items.prefix(shown), id: \.floor.id) { chip($0, first: $0.floor.id == items[0].floor.id, now: context.date) }
+                            if shown < items.count { more(items.dropFirst(shown), now: context.date) }
                         }
-                        .buttonStyle(PillButtonStyle(kind: .accent(item.signal.colour)))
+                        .fixedSize()
                     }
                 }
-                .glass()
-                .frame(maxWidth: 360, alignment: .leading)
+                .modifier(Glass(radius: 24, padding: EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5)))
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Needs you")
         }
     }
-}
 
-/// The most urgent other floor waiting on you, so a raised hand elsewhere isn't missed while you're on a floor.
-struct ElsewhereNeedsYou: View {
-    let city: CityStore
-    let floorID: UUID?
+    private func name(_ item: CityStore.NeedsYou) -> String {
+        item.building.id == here.building ? item.floor.name : "\(item.building.name) · \(item.floor.name)"
+    }
 
-    var body: some View {
-        let waiting = city.floorsNeedingYou().filter { $0.floor.id != floorID }
-        if let next = waiting.first {
-            Button("\(next.building.name) · \(next.floor.name) \(next.signal == .blocked ? "needs you" : next.signal.label().lowercased())", systemImage: next.signal.symbol) {
-                city.route = .floor(building: next.building.id, floor: next.floor.id)
+    private func age(_ item: CityStore.NeedsYou, now: Date) -> String? {
+        guard let since = item.since, now.timeIntervalSince(since) >= FloorSignal.ageAppearsAfter else { return nil }
+        return FloorSignal.age(from: since, to: now)
+    }
+
+    private func spoken(_ item: CityStore.NeedsYou, now: Date) -> String {
+        "\(item.building.name), \(item.floor.name), \(item.signal.label(count: item.count))\(item.signal.spokenAge(since: item.since, now: now))"
+    }
+
+    private func chip(_ item: CityStore.NeedsYou, first: Bool, now: Date) -> some View {
+        Button {
+            go(to: item)
+        } label: {
+            Label {
+                if let age = age(item, now: now) {
+                    Text("\(name(item)) \(Text(age).font(Typography.caption).monospacedDigit())")
+                } else {
+                    Text(name(item))
+                }
+            } icon: {
+                Image(systemName: item.signal.symbol)
             }
-            .buttonStyle(PillButtonStyle(kind: .accent(next.signal.colour)))
-            .help(waiting.count > 1 ? "\(waiting.count) floors need you. Go to \(next.floor.name), the most urgent (⌘J)." : "Go to \(next.floor.name) (⌘J)")
         }
+        .buttonStyle(PillButtonStyle(kind: .accent(item.signal.colour)))
+        .accessibilityLabel(spoken(item, now: now))
+        .help("\(item.building.name) · \(item.floor.name) · \(item.signal.label(count: item.count))\(item.signal.ageSuffix(since: item.since, now: now))\(first ? " (⌘J)" : "")")
+    }
+
+    private func more(_ rest: ArraySlice<CityStore.NeedsYou>, now: Date) -> some View {
+        Menu("+\(rest.count)") {
+            ForEach(rest, id: \.floor.id) { item in
+                Button("\(name(item))\(item.signal.ageSuffix(since: item.since, now: now))", systemImage: item.signal.symbol) { go(to: item) }
+            }
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(PillButtonStyle(kind: .secondary))
+        .fixedSize()
+        .accessibilityLabel("\(rest.count) more")
+        .help("\(rest.count) more floors need you")
+    }
+
+    private func go(to item: CityStore.NeedsYou) {
+        city.route = .floor(building: item.building.id, floor: item.floor.id)
     }
 }
 
@@ -161,7 +205,7 @@ struct ProjectList: View {
 struct WorldView: View {
     let city: CityStore
     @State private var world = World()
-    @State private var since: Date?
+    @State private var railHeight: CGFloat = 0
     @Environment(\.colorScheme) private var colorScheme
 
     private var buildingID: UUID? {
@@ -196,7 +240,7 @@ struct WorldView: View {
                     if case .active(let point) = phase, world.inBuilding == nil { world.city.hover(at: point) } else { world.city.hover(at: nil) }
                 }
                 .modifier(SceneControls(camera: { [world] in world.camera },
-                                        excludedTrailing: session?.showPanel == true ? OfficeView.panelWidth + 40 : 0,
+                                        excludedTrailing: safeArea.trailing + 20,
                                         onScroll: { [city, world] event in
                                             guard world.inBuilding != nil, event.hasPreciseScrollingDeltas, !event.modifierFlags.contains(.option) else { return false }
                                             switch city.route {
@@ -245,16 +289,46 @@ struct WorldView: View {
             .accessibilityHidden(true)
 
             if let buildingID, let session, let floorScene = world.building.scene(for: session.floorID ?? UUID()) {
-                OfficeOverlay(controller: session, scene: floorScene, onBack: { city.route = .building(buildingID) },
+                OfficeOverlay(controller: session, scene: floorScene, breadcrumb: Breadcrumb.here(city),
                               onClose: { city.removeFloor(session.floorID ?? UUID(), in: buildingID) })
             } else if let buildingID, let building = city.building(buildingID) {
-                BuildingHUD(city: city, building: building, since: since, scene: world.building)
+                BuildingHUD(city: city, building: building, scene: world.building)
             } else if city.route == .welcome {
                 TitleHUD(city: city)
             } else {
                 CityHUD(city: city)
             }
         }
+        .environment(\.sceneSafeArea, safeArea)
+        .overlay(alignment: .bottomLeading) {
+            if showsRail {
+                DispatchRail(city: city)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { railHeight = $0 }
+                    .onDisappear { railHeight = 0 }
+                    .padding(20)
+                    .padding(.trailing, safeArea.trailing)
+            }
+        }
+        .background {
+            // Resolved on press, because a shortcut can keep the action from an earlier render.
+            Button("Up One Level") { Breadcrumb.here(city).up?() }
+                .keyboardShortcut(.escape, modifiers: [])
+                .disabled(Breadcrumb.here(city).up == nil || session?.kiosk.isOpen == true)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var safeArea: SceneSafeArea {
+        let session = floorID.flatMap { city.sessions[$0] }
+        return SceneSafeArea(panelOpen: session?.showPanel == true, rail: showsRail && railHeight > 0 ? railHeight + 12 : 0)
+    }
+
+    /// The desk and the kiosk take the whole frame, and the title screen has nothing to dispatch.
+    private var showsRail: Bool {
+        guard city.route != .welcome else { return false }
+        guard let session = floorID.flatMap({ city.sessions[$0] }) else { return true }
+        return session.selectedRoom == nil && !session.kiosk.isOpen
     }
 
     private func buildingsChanged() {
@@ -339,7 +413,7 @@ struct WorldView: View {
             world.leave(animated: animated && target == nil)
         }
         guard let target else { return }
-        since = city.visit(target)
+        city.visit(target)
         show(target)
         world.enter(target, animated: animated)
         if let floorID { world.building.enter(floor: floorID) }
@@ -349,30 +423,21 @@ struct WorldView: View {
 struct BuildingHUD: View {
     let city: CityStore
     let building: CityStore.Building
-    var since: Date?
     let scene: BuildingScene
     var composer: ReceptionComposer?
     @State private var composerSize = CGSize(width: 592, height: 120)
+    @Environment(\.sceneSafeArea) private var safeArea
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                Button("City", systemImage: "chevron.backward") { city.route = .city }
-                    .buttonStyle(PillButtonStyle(kind: .secondary))
-                    .keyboardShortcut(city.route == .newFloor(building.id) ? nil : KeyboardShortcut(.escape, modifiers: []))
-                Spacer()
-                UsageHUD(configDirectory: Preferences.shared.configDirectory)
-                OpenInMenu(directory: building.url)
-                Button("New floor…", systemImage: "plus") { city.startNewFloor(in: building.id) }
-                    .buttonStyle(PillButtonStyle(kind: .secondary))
-                    .help("Set up a floor yourself instead of asking reception")
+            ViewThatFits(in: .horizontal) {
+                topRow(compact: false)
+                topRow(compact: true)
             }
-            Text(building.name).font(Typography.titleSmall)
             Text(building.floors.isEmpty ? "Tell reception what you need. It sets up a floor with the right team." : "Swipe up or down on the trackpad to move between floors. Click one to go in, or ask reception below.")
                 .font(Typography.caption).foregroundStyle(Color(Palette.muted))
             if !building.floors.isEmpty { VitalsStrip(city: city, scope: .building(building)) }
             Spacer()
-            if let since { SinceYouLeftNote(city: city, building: building, since: since) }
             HStack(alignment: .bottom) {
                 Color.clear.frame(width: composerSize.width, height: composerSize.height)
                 Spacer(minLength: 12)
@@ -380,6 +445,7 @@ struct BuildingHUD: View {
             }
         }
         .padding(20)
+        .padding(.bottom, safeArea.bottom)
         .overlay {
             GeometryReader { geometry in
                 // Built outside the timeline, so following the receptionist only moves the panel instead of re-running its body every frame.
@@ -396,11 +462,12 @@ struct BuildingHUD: View {
                 }
                     .onGeometryChange(for: CGSize.self) { $0.size } action: { composerSize = $0 }
                 TimelineView(.animation(paused: !scene.watch.lobbyFocused)) { _ in
-                    let resting = CGPoint(x: 20 + composerSize.width / 2, y: geometry.size.height - 20 - composerSize.height / 2)
+                    let bottom = geometry.size.height - 20 - safeArea.bottom - composerSize.height / 2
+                    let resting = CGPoint(x: 20 + composerSize.width / 2, y: bottom)
                     let head = scene.lobbyFocused ? scene.receptionistPoint : nil
                     let pinned = head.map { head in
                         CGPoint(x: min(head.x + 60 + composerSize.width / 2, geometry.size.width - 20 - composerSize.width / 2),
-                                y: min(max(head.y, 20 + composerSize.height / 2), geometry.size.height - 20 - composerSize.height / 2))
+                                y: min(max(head.y, 20 + composerSize.height / 2), bottom))
                     }
                     panel
                         .position(pinned ?? resting)
@@ -409,48 +476,17 @@ struct BuildingHUD: View {
             }
         }
     }
-}
 
-struct SinceYouLeftNote: View {
-    let city: CityStore
-    let building: CityStore.Building
-    let since: Date
-
-    var body: some View {
-        let jobs = city.jobs(in: building, since: since)
-        let waiting = building.floors.filter { (city.sessions[$0.id]?.state.pendingRequests.count ?? 0) > 0 }
-        if !jobs.isEmpty || !waiting.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Since you left").eyebrow()
-                ForEach(waiting) { floor in
-                    line(symbol: "hand.raised.fill", text: "\(floor.name) is waiting for you", floor: floor.id)
-                }
-                ForEach(jobs.prefix(6)) { job in
-                    let cost = job.costUSD.map { " · \($0.formatted(.currency(code: "USD")))" } ?? ""
-                    let floor = job.floorID.flatMap { id in building.floors.first { $0.id == id } }
-                    line(symbol: job.outcome == "completed" ? "checkmark.circle.fill" : "xmark.circle.fill",
-                         text: "\(floor.map { "\($0.name): " } ?? "")\(job.request)\(job.outcome == "completed" ? "" : " (\(job.outcome))")\(cost)",
-                         floor: floor?.id)
-                }
-            }
-            .frame(maxWidth: 420, alignment: .leading)
-            .glass()
+    private func topRow(compact: Bool) -> some View {
+        HStack(alignment: .top) {
+            Breadcrumb.here(city).compact(compact)
+            Spacer()
+            UsageHUD(configDirectory: Preferences.shared.configDirectory)
+            OpenInMenu(directory: building.url)
+            Button("New floor…", systemImage: "plus") { city.startNewFloor(in: building.id) }
+                .buttonStyle(PillButtonStyle(kind: .secondary))
+                .help("Set up a floor yourself instead of asking reception")
         }
-    }
-
-    private func line(symbol: String, text: String, floor: UUID?) -> some View {
-        Button {
-            if let floor { city.route = .floor(building: building.id, floor: floor) }
-        } label: {
-            Label(text, systemImage: symbol)
-                .font(Typography.caption)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(floor == nil)
-        .help(text)
     }
 }
 

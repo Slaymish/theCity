@@ -45,6 +45,8 @@ extension Notification.Name {
 
 struct Wordmark: View {
     var compact = false
+    /// Just the symbol, where there's no room for the name. Brands without a symbol keep the name.
+    var symbolOnly = false
 
     var body: some View {
         let brand = BrandStore.shared.current
@@ -57,7 +59,9 @@ struct Wordmark: View {
                         .font(.system(size: compact ? 18 : 30, weight: .semibold))
                         .foregroundStyle(Color(Palette.primaryFill))
                 }
-                Text(brand.name).font(compact ? Typography.titleSmall : Typography.titleLarge)
+                if !symbolOnly || brand.wordmarkSymbol == nil {
+                    Text(brand.name).font(compact ? Typography.titleSmall : Typography.titleLarge)
+                }
             }
         }
         .accessibilityElement(children: .ignore)

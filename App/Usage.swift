@@ -96,15 +96,88 @@ final class UsageStore {
     }
 }
 
+/// Plan usage at a glance: a ring and percentage per window. Clicking opens the reset times and refresh.
 struct UsageHUD: View {
     let usage = UsageStore.shared
     var configDirectory: URL?
     @Environment(\.rendersOffscreen) private var rendersOffscreen
+    @State private var showsDetail = false
 
     private var accounts: [URL?] { rendersOffscreen ? [configDirectory] : Preferences.shared.visibleAccounts(including: configDirectory) }
 
     var body: some View {
         let accounts = accounts
+        HStack(spacing: 14) {
+            ForEach(Array(accounts.enumerated()), id: \.offset) { index, account in
+                if index > 0 { Text("·").font(Typography.caption).foregroundStyle(Color(Palette.muted)) }
+                compact(account, named: accounts.count > 1)
+            }
+        }
+        .fixedSize()
+        .modifier(Glass(radius: 24, padding: EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14)))
+        .contentShape(RoundedRectangle(cornerRadius: 24))
+        // A Button here didn't open its popover when clicked (cause unknown); a tap gesture does.
+        .onTapGesture { showsDetail.toggle() }
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { showsDetail.toggle() }
+        .help(accounts.compactMap(resets).joined(separator: "\n"))
+        .accessibilityLabel("Plan usage")
+        .accessibilityValue(accounts.map(spoken).joined(separator: ". "))
+        .popover(isPresented: $showsDetail, arrowEdge: .bottom) {
+            UsageDetail(configDirectory: configDirectory, accounts: accounts)
+                .padding(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
+                .fixedSize()
+        }
+    }
+
+    @ViewBuilder
+    private func compact(_ account: URL?, named: Bool) -> some View {
+        HStack(spacing: 8) {
+            if named {
+                Text(Preferences.accountName(account))
+                    .font(account == configDirectory ? Typography.captionMedium : Typography.caption)
+                    .foregroundStyle(Color(account == configDirectory ? Palette.text : Palette.muted))
+            }
+            if let reading = usage.reading(account) {
+                ring(reading.session, title: named ? nil : "Session")
+                ring(reading.week, title: named ? nil : "Week")
+            } else {
+                Text(usage.hasNoLimits(account) ? "No plan limits" : usage.refreshError(account) == nil ? "No reading yet" : "Couldn’t refresh")
+                    .font(Typography.caption).foregroundStyle(Color(Palette.muted))
+            }
+        }
+    }
+
+    private func ring(_ window: RateLimit.Window?, title: String?) -> some View {
+        let used = window?.utilization ?? 0
+        return HStack(spacing: 8) {
+            RingGauge(fraction: used)
+            Text("\(title.map { "\($0) " } ?? "")\(Int((used * 100).rounded()))%").font(Typography.captionMedium).monospacedDigit()
+        }
+    }
+
+    private func resets(_ account: URL?) -> String? {
+        guard let reading = usage.reading(account) else { return nil }
+        let when = [("Session", reading.session), ("Week", reading.week)].compactMap { name, window in
+            window?.resetsAt.map { "\(name) resets \(UsageDetail.when($0))" }
+        }.joined(separator: ", ")
+        return "\(Preferences.accountName(account)): \(when)"
+    }
+
+    private func spoken(_ account: URL?) -> String {
+        guard let reading = usage.reading(account) else { return "\(Preferences.accountName(account)), no reading" }
+        return "\(Preferences.accountName(account)), session \(Int(((reading.session?.utilization ?? 0) * 100).rounded())) percent, week \(Int(((reading.week?.utilization ?? 0) * 100).rounded())) percent"
+    }
+}
+
+/// The full plan-usage readout: every window with its reset time, when it was read, and a refresh.
+struct UsageDetail: View {
+    let usage = UsageStore.shared
+    var configDirectory: URL?
+    let accounts: [URL?]
+
+    var body: some View {
         HStack(spacing: 14) {
             if accounts.count > 1 {
                 Grid(horizontalSpacing: 14, verticalSpacing: 8) {
@@ -136,7 +209,6 @@ struct UsageHUD: View {
                   : "Refresh your plan limits (sends one tiny request to Haiku)")
             .accessibilityLabel("Refresh plan limits")
         }
-        .modifier(Glass(radius: 24, padding: EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14)))
     }
 
     @ViewBuilder

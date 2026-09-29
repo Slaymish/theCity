@@ -250,10 +250,10 @@ Each slice is shippable alone and leaves the app better.
 | Slice | Change | Risk | Needs approval |
 |---|---|---|---|
 | **1 (merged)** | **Signal model.** A single `FloorSignal` type with the priority order above, derived from existing data. Use it in the city's needs-you list, so it sorts by urgency and separates Blocked, Failed and Ready with their own symbol, label and age. Add **⌘J: Next that needs you**. No layout change. Built, **not compiled or rendered** (no Swift toolchain in that session). **Age is not in slice 1:** `PendingRequest` has no timestamp, so slice 2 starts by adding one in OfficeCore. | Low | Nothing new |
-| 2 | **Done:** `PendingRequest.since` in OfficeCore (tested on Linux), age on desk cards and in the Needs you list, longest-waiting first within a state, appearing after 30 s. Ready and failed floors record when they finished unseen (`Floor.unseenSince`), so they show an age and sort oldest first too. **Not done:** the dispatch rail at every level. | Medium | Rail layout |
-| 3 | Breadcrumb, single Esc handler, `SceneSafeArea`. | Medium | Breadcrumb layout |
-| 4 | One `Instruments` component; drawer for detail. | Medium | Layout |
-| **5 (built)** | Building and storey state in the world (lamps, pennants, edge colours). | Medium (RealityKit, offscreen-checkable) | Settled (10.1) |
+| **2 (built)** | `PendingRequest.since` in OfficeCore, age on desk cards, longest-waiting first within a state, appearing after 30 s. Ready and failed floors record when they finished unseen (`Floor.unseenSince`), so they show an age and sort oldest first too. The dispatch rail at every level (10.2). | Medium | Settled (10.2) |
+| **3 (built)** | Breadcrumb, single Esc handler, `SceneSafeArea` (10.3). | Medium | Settled (10.3) |
+| 4 | One `Instruments` component; drawer for detail. **Started:** plan usage is compact, with its detail in a popover (10.3). | Medium | Layout |
+| **5 (checked)** | Building and storey state in the world (lamps, pennants, edge colours). | Medium (RealityKit, offscreen-checkable) | Settled (10.1) |
 | 6 | Glance mode and escalation ladder. | Medium | Timings, ⌥⌘G |
 | 7 | First-run copy and layout. Companion: same states and rail. | Low | Copy |
 
@@ -395,6 +395,28 @@ $B -render-preview /tmp/s5-open-ready.png   -theme dark -workspace "$W" -buildin
 
 Also run `make test` (OfficeCore is unchanged) and **`make companion`**, which proves `FloorSignal.swift`, `Billboard.swift` and `BuildingScene.swift` still compile for iOS. There's no render argument for the brand, so check Alphero's glyph contrast in the live window (`Tools/Dev/relaunch.sh`, then switch brand in Settings).
 
+### 10.2 Dispatch rail
+
+Decided with the owner on 2026-09-30. It uses existing styles and values only.
+
+- **One view.** `DispatchRail` (`App/CityViews.swift`) replaces `NeedsYouList` (city), `ElsewhereNeedsYou` (floor) and `SinceYouLeftNote` (building). `WorldView` mounts it once, bottom left with the HUDs' 20 pt margin, so it's in the same place at every level.
+- **Bottom row, lifts the rest.** When it has chips, everything anchored to the bottom (`ProjectList`, the Reception composer and hiring panel, `FloorList`, the floor's action strip and desk cards) moves up by the rail's height plus the HUDs' 12 pt stack gap, passed down as the `railInset` environment value. An empty rail shows nothing and moves nothing. This is the first piece of `SceneSafeArea` (slice 3).
+- **Contents.** `floorsNeedingYou()`, so Blocked, then Failed, then Ready, oldest first, minus the open floor. Hidden on the title screen, on a focused desk and in the kiosk (4.3: the desk card is the only overlay).
+- **Chip.** The accent pill already used for these items: `PillButtonStyle(.accent(signal.colour))`, the signal's symbol, the name (the floor alone inside its own building, otherwise `Building · Floor`), then the age in `Typography.caption` with tabular digits once it passes `ageAppearsAfter`. The chips sit in `ProjectList`'s pill bar (glass, radius 24, padding 5, spacing 8). Help text gives the full name and state, plus "(⌘J)" on the first chip. VoiceOver reads a "Needs you" group, with each chip read as "building, floor, state, waiting 4 minutes".
+- **Overflow.** One line, never wrapped. As many chips as fit, then a secondary `+N` pill whose menu lists the rest. On a floor with the side panel open, the rail stops 20 pt short of the panel.
+
+### 10.3 Breadcrumb, Esc and safe area
+
+Decided with the owner on 2026-09-30. It uses existing styles and values only.
+
+- **Breadcrumb** (`App/Frame.swift`). Top left at every level, in place of the "‹ City" pill, the floor-name back pill and the desk's "Back to floor" pill. The segments come from the route: the compact wordmark (home), then the building, the floor, and the desk (the robot's name). Every segment but the last is a button in `muted`. The current one is plain text in `text`. They sit in one glass capsule, the rail's surface (`Glass`, radius 24, no padding), with `SegmentStyle` segments (moved from `OpenInMenu` into `Theme.swift`) and muted chevrons. On the city the breadcrumb is just the wordmark, as before. The new-floor flow reads `Building › New floor`.
+- **Narrow windows.** The building's top row tries the full wordmark first, then drops the wordmark to its symbol if the row doesn't fit (`Breadcrumb.compact`, `Wordmark(symbolOnly:)`).
+- **Building title.** The name is in the breadcrumb only. The "Swipe up or down…" hint stays.
+- **Floor menu.** History and Close floor move into a `…` secondary pill menu after the breadcrumb. ⌘Y still opens History from the menu bar.
+- **Esc.** One hidden button in `WorldView` runs the segment one level above the current one (`Breadcrumb.up`): desk → floor → building → city, and New floor → building. It's disabled in the kiosk. The other `.escape` shortcuts are gone (building back, floor back, desk back, `HiringView` back). It works out "up" at the moment you press it, because a shortcut kept an earlier render's action and jumped two levels.
+- **`SceneSafeArea`.** `WorldView` works it out once (the side panel's width on the trailing edge, the rail on the bottom) and passes it down in the environment. The camera's `trailingInset`, `SceneControls.excludedTrailing`, the floor overlay's trailing padding and the rail all read from it. It replaces `railInset`. `OfficeView`, which is never created, still works it out by hand.
+- **Plan usage (slice 4, early, at the owner's request).** `UsageHUD` is one row: for each account, its name (shown only when there's more than one account), then Session and Week as the existing ring with a percentage. Reset times go in the hover help. Clicking opens the old full panel (`UsageDetail`: reset times, "as of", refresh) in a popover. The floor no longer squeezes it to the panel's width.
+
 ---
 
 ## 11. Validation
@@ -406,6 +428,12 @@ Also run `make test` (OfficeCore is unchanged) and **`make companion`**, which p
 - **Finding 12 is struck.** `Typography.number` already uses `.monospacedDigit()`.
 - **6.2 is partly done already.** The building view labels each storey in the world ("Security review · Needs you ✋ 1", "Feature: login · Working ⚡ 1", "Docs · Done"). What's missing is the state colour on the storey edge, and a Ready state that's distinct from Done-and-seen.
 - **Findings 5 and 6 are unchecked.** Offscreen renders draw the scene and in-world labels but not the SwiftUI HUD, so they need a live window (`Tools/Dev/relaunch.sh`).
+
+**Slice 5 checked on a Mac at `6486e66`:** it builds, all 170 OfficeCore tests pass and `make companion` builds. All seven renders in 10.1 step 6 match their table. Seen along the way, not caused by slice 5: in `s5-open-ready`, the "Needs approval" desk label from the storey below shows through onto Docs; in light mode the `grass` edge is pale against the pale ground.
+
+**Slice 2's rail checked in the live window** (dev data seeded with two Failed and four Ready floors) at 1400 and 1000 pt wide: city, building and floor, and a floor with its side panel open. The order, short names and `+N` overflow are right, and everything bottom-anchored clears the rail. Already there before the rail: at 1000 pt, `FloorList` pills wrap mid-word ("Paym ents"), and on a floor with the side panel open the HUD is wider than the window and clipped at both edges. Blocked chips and the escalation to "5m+" (slice 6) are unchecked, because a Blocked floor needs a live request.
+
+**Slice 3 checked in the live window** at 1000 and 1400 pt wide, on city, building and floor. Esc goes floor → building → city one level at a time; the first build jumped two levels, which the resolve-on-press fix above cured. The breadcrumb is readable over grass and road. The building row fits at 1000 pt with the symbol-only root. Usage fits on one line at every level, and its popover opens with the full detail. The floor menu opens. Unchecked: the desk segment and Esc from a desk (clicking a robot on an idle floor didn't select it), and Esc from New floor. `make test` and `make companion` pass.
 
 **Tests with 5 developers, 2 tasks each, on a real or replayed multi-floor stream (`make replay`):**
 
@@ -434,3 +462,6 @@ The owner delegated every decision and value in this plan on 2026-09-29, so *(ne
 5. **Approved:** escalation timings of 30 s, 5 min and 15 min (8).
 6. **⌥⌘G** toggles Glance mode on the Mac. There is no Glance mode on the phone for now.
 7. **Order:** slice 5 next, since finding 4 is confirmed and it can be checked with offscreen renders. Then the rest of slice 2 (the rail), then 3, 4, 6 and 7.
+8. **Rail (2026-09-30):** the rail is the bottom row and lifts the rest; the open floor is left out; overflow goes into a `+N` menu (10.2).
+9. **Breadcrumb (2026-09-30):** wordmark root; one glass capsule; building title dropped and hint kept; History and Close floor in a `…` menu; the root drops to its symbol when the row is short (10.3).
+10. **Plan usage (2026-09-30):** rings and percentages only, with detail in a popover on click (10.3).

@@ -175,12 +175,13 @@ struct OfficeView: View {
 struct OfficeOverlay: View {
     @Bindable var controller: RunController
     let scene: OfficeScene
-    var onBack: (() -> Void)?
+    var breadcrumb: Breadcrumb?
     var onClose: (() -> Void)?
     var showsDeskRequests = true
     @State private var outboxCollapsed = false
     @State private var closing: ClosingFloor?
     @State private var bottomHeight: CGFloat = 0
+    @Environment(\.sceneSafeArea) private var safeArea
     static var panelWidth: CGFloat { OfficeView.panelWidth }
 
     var body: some View {
@@ -199,27 +200,10 @@ struct OfficeOverlay: View {
 
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 10) {
-                    if let onBack {
+                    if let breadcrumb {
                         HStack(spacing: 8) {
-                            Button(controller.displayTitle, systemImage: "chevron.backward", action: onBack)
-                                .buttonStyle(PillButtonStyle(kind: .secondary))
-                                .keyboardShortcut(controller.selectedRoom == nil ? .cancelAction : nil)
-                                .help("Back to the building (esc)")
-                            if onClose != nil, let id = controller.floorID {
-                                Button("Close floor", systemImage: "xmark") {
-                                    closing = ClosingFloor(id: id, name: controller.displayTitle)
-                                }
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(PillButtonStyle(kind: .secondary))
-                                .help("Close this floor")
-                            }
-                            if controller.floorID != nil, !controller.history.isEmpty {
-                                Button("History", systemImage: "clock.arrow.circlepath") { controller.showHistory = true }
-                                    .labelStyle(.iconOnly)
-                                    .buttonStyle(PillButtonStyle(kind: .secondary))
-                                    .help("Show this floor’s past requests and results (⌘Y)")
-                            }
-                            ElsewhereNeedsYou(city: CityStore.shared, floorID: controller.floorID)
+                            breadcrumb
+                            floorMenu
                         }
                     }
                     if !controller.request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, controller.state.phase != .idle {
@@ -248,7 +232,6 @@ struct OfficeOverlay: View {
                     CounterCard(controller: controller)
                     FloorStats(controller: controller)
                     UsageHUD(configDirectory: controller.configDirectory)
-                        .frame(maxWidth: Self.panelWidth, alignment: .trailing)
                     if controller.showPanel {
                         SidePanel(controller: controller)
                             .frame(width: Self.panelWidth)
@@ -260,7 +243,7 @@ struct OfficeOverlay: View {
             .opacity(controller.kiosk.isOpen ? 0 : 1)
             .allowsHitTesting(!controller.kiosk.isOpen)
 
-            if showsDeskRequests { DeskRequestLayer(controller: controller, scene: scene, bottomInset: bottomHeight) }
+            if showsDeskRequests { DeskRequestLayer(controller: controller, scene: scene, bottomInset: bottomHeight + safeArea.bottom) }
 
             VStack(spacing: 12) {
                 Spacer()
@@ -277,8 +260,8 @@ struct OfficeOverlay: View {
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomHeight = $0 + 20 }
             }
-            .padding(.bottom, 20)
-            .padding(.trailing, controller.showPanel ? Self.panelWidth + 20 : 0)
+            .padding(.bottom, 20 + safeArea.bottom)
+            .padding(.trailing, safeArea.trailing)
             .opacity(controller.kiosk.isOpen ? 0 : 1)
             .allowsHitTesting(!controller.kiosk.isOpen)
 
@@ -296,18 +279,9 @@ struct OfficeOverlay: View {
                  ? "This follow-up has to resume where its session ran. Sharing means both jobs edit the same files at once."
                  : "Two jobs in one checkout edit the same files at once. A worktree gives this job its own copy of the branch.")
         }
-        .overlay(alignment: .top) {
-            if controller.selectedRoom != nil {
-                Button("Back to floor", systemImage: "chevron.backward") { controller.selectedRoom = nil }
-                    .buttonStyle(PillButtonStyle(kind: .secondary))
-                    .keyboardShortcut(.escape, modifiers: [])
-                    .padding(.top, 20)
-                    .padding(.trailing, controller.showPanel ? Self.panelWidth + 20 : 0)
-            }
-        }
         .onChange(of: controller.startedAt) { previous, _ in outboxCollapsed = previous != nil }
-        .onChange(of: controller.showPanel, initial: true) {
-            scene.trailingInset = controller.showPanel ? Self.panelWidth + 20 : 0
+        .onChange(of: safeArea.trailing, initial: true) {
+            scene.trailingInset = safeArea.trailing
             if let room = controller.selectedRoom { scene.focus(room: room) }
         }
         .onChange(of: controller.kiosk.isOpen) {
@@ -316,6 +290,30 @@ struct OfficeOverlay: View {
         .onChange(of: controller.selectedRoom) {
             guard !controller.kiosk.isOpen else { return }
             if let room = controller.selectedRoom { scene.focus(room: room) } else { scene.showOverview() }
+        }
+    }
+
+    @ViewBuilder
+    private var floorMenu: some View {
+        let history = controller.floorID != nil && !controller.history.isEmpty
+        let closable = onClose != nil && controller.floorID != nil
+        if history || closable {
+            Menu {
+                if history {
+                    Button("History", systemImage: "clock.arrow.circlepath") { controller.showHistory = true }
+                }
+                if closable, let id = controller.floorID {
+                    Button("Close Floor…", systemImage: "xmark") { closing = ClosingFloor(id: id, name: controller.displayTitle) }
+                }
+            } label: {
+                Label("Floor", systemImage: "ellipsis")
+            }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .labelStyle(.iconOnly)
+            .buttonStyle(PillButtonStyle(kind: .secondary))
+            .fixedSize()
+            .help("This floor’s history, or close it")
         }
     }
 

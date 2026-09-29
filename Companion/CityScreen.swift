@@ -33,6 +33,15 @@ struct CityScreen: View {
             VStack(spacing: 0) {
                 topBar
                 Spacer(minLength: 0)
+                PhoneRail(snapshot: link.snapshot, building: city.buildingID, floor: city.floorID) { building, floor in
+                    Task {
+                        if building.id != city.buildingID {
+                            selection = building.id
+                            await city.fly(to: building.id)
+                        }
+                        city.enter(floor: floor.id)
+                    }
+                }
                 if let floor = city.floor, let building = city.building {
                     FloorBanner(building: building, floor: floor, busy: !link.outstanding.isEmpty,
                                 back: { city.leaveFloor() }, answer: { asking = true }, stop: { confirmingStop = true })
@@ -49,6 +58,9 @@ struct CityScreen: View {
             city.dark = dark
             city.update(from: snapshot)
             if selection == nil || !buildings.contains(where: { $0.id == selection }) { selection = city.buildingID }
+        }
+        .onChange(of: city.floorID) {
+            if let floor = city.floor, floor.unseen == true { link.send(.seen(floor: floor.id)) }
         }
         .onChange(of: selection) {
             guard let id = selection, id != city.buildingID else { return }
@@ -193,7 +205,13 @@ struct BuildingBanner: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(building.displayName).font(Typography.ui(PhoneLayout.buildingTitle, weight: 600)).foregroundStyle(Color(Palette.text)).lineLimit(1)
-                    Text(status).font(.subheadline).foregroundStyle(Color(building.waitingCount > 0 ? Palette.manager : Palette.muted))
+                    TimelineView(.periodic(from: .now, by: 5)) { context in
+                        let (signal, _, _) = building.signal
+                        Label(status(now: context.date), systemImage: signal.symbol)
+                            .font(.subheadline)
+                            .foregroundStyle(Color(signal == .quiet ? Palette.muted : Palette.text))
+                            .labelStyle(SignalLabelStyle(colour: signal == .quiet ? Palette.muted : signal.colour))
+                    }
                 }
                 Spacer()
                 if count > 1 {
@@ -218,11 +236,12 @@ struct BuildingBanner: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// The same wording as the Mac's menu bar.
-    private var status: String {
-        let floors = building.floors.isEmpty ? "Empty lot" : "\(building.floors.count) floor\(building.floors.count == 1 ? "" : "s")"
-        return building.waitingCount > 0 ? "Needs you" : building.workingCount > 0 ? "\(building.workingCount) working"
-            : building.floors.isEmpty ? floors : "\(floors) · all quiet"
+    /// The same wording as the Mac's building label.
+    private func status(now: Date) -> String {
+        let (signal, count, since) = building.signal
+        guard signal == .quiet else { return "\(signal.label(count: count))\(signal.ageSuffix(since: since, now: now))" }
+        let floors = "\(building.floors.count) floor\(building.floors.count == 1 ? "" : "s")"
+        return building.floors.isEmpty ? "Empty lot" : "\(floors) · all quiet"
     }
 }
 
@@ -282,6 +301,18 @@ struct FloorBanner: View {
         case .cancelled: return "Stopped"
         case .failed(let message): return message ?? "The job stopped"
         case .idle: return nil
+        }
+    }
+}
+
+/// The state's symbol in its colour, the words in the text colour, so colour is never the only channel.
+private struct SignalLabelStyle: LabelStyle {
+    let colour: UIColor
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) {
+            configuration.icon.foregroundStyle(Color(colour))
+            configuration.title
         }
     }
 }

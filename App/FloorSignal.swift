@@ -37,7 +37,7 @@ enum FloorSignal: Int, Comparable, CaseIterable {
         switch self {
         case .blocked: Palette.manager
         case .failed: Palette.error
-        case .ready: Palette.grass
+        case .ready: Palette.signalReady
         case .working: Palette.folder
         case .queued, .quiet: Palette.muted
         }
@@ -45,9 +45,8 @@ enum FloorSignal: Int, Comparable, CaseIterable {
 
     var glyph: NSColor {
         switch self {
-        case .blocked, .failed: Palette.textOn(colour)
+        case .blocked, .failed, .ready: Palette.textOn(colour)
         case .working: Palette.resolved(Palette.text, dark: false)
-        case .ready: Palette.text
         case .queued, .quiet: Palette.textOn(Palette.muted)
         }
     }

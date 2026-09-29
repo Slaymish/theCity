@@ -114,13 +114,19 @@ final class CompanionHost {
     static func snapshot(of city: CityStore) -> CitySnapshot {
         CitySnapshot(host: hostName, takenAt: .distantPast, buildings: city.buildings.map { building in
             BuildingSnapshot(id: building.id, name: building.name, title: building.title, style: building.style, floors: building.floors.map { floor in
-                guard let session = city.sessions[floor.id] else {
-                    return FloorSnapshot(id: floor.id, name: floor.name, hires: floor.hires, request: floor.lastRequest, phase: .idle, startedAt: nil)
+                var snapshot = if let session = city.sessions[floor.id] {
+                    session.mirror.snapshot(id: floor.id, name: floor.name, hires: floor.hires,
+                                            colours: Dictionary(session.catalogueNames.enumerated().map { ($1, $0) }) { first, _ in first },
+                                            request: session.request.isEmpty ? floor.lastRequest : session.request,
+                                            state: session.state, startedAt: session.startedAt)
+                } else {
+                    FloorSnapshot(id: floor.id, name: floor.name, hires: floor.hires, request: floor.lastRequest, phase: .idle, startedAt: nil)
                 }
-                let colours = Dictionary(session.catalogueNames.enumerated().map { ($1, $0) }) { first, _ in first }
-                return session.mirror.snapshot(id: floor.id, name: floor.name, hires: floor.hires, colours: colours,
-                                               request: session.request.isEmpty ? floor.lastRequest : session.request,
-                                               state: session.state, startedAt: session.startedAt)
+                snapshot.unseen = floor.unseen
+                snapshot.unseenSince = floor.unseenSince
+                snapshot.outcome = floor.lastOutcome
+                snapshot.queued = floor.queued.map(\.count)
+                return snapshot
             })
         })
     }
@@ -237,6 +243,8 @@ final class CompanionHost {
         case .cancel(let floor):
             guard let session = city.sessions[floor], session.isRunning else { return .refused("Nothing is running on that floor.") }
             session.cancel()
+        case .seen(let floor):
+            city.markSeen(floor: floor)
         }
         return .done
     }

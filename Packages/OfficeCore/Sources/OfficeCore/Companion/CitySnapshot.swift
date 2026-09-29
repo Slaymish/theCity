@@ -73,10 +73,19 @@ public struct FloorSnapshot: Codable, Sendable, Equatable, Identifiable {
     public var questions: [QuestionSnapshot]
     public var tokens: Int
     public var costUSD: Double?
+    /// The Mac's attention state, so the phone shows the same Ready and Failed floors. Optional so older Macs still decode.
+    public var unseen: Bool?
+    /// When an unseen job finished.
+    public var unseenSince: Date?
+    /// How the floor's last job ended ("completed", "failed"), which tells Ready from Failed.
+    public var outcome: String?
+    /// Jobs waiting behind the one running.
+    public var queued: Int?
 
     public init(id: UUID, name: String, hires: [String], colours: [String: Int] = [:], request: String?, phase: Phase, startedAt: Date?, managerActive: Bool = false,
                 handoffs: [HandoffSnapshot] = [], captions: [String: String] = [:], skills: [String: [String]] = [:],
-                serviceCalls: [ServiceCallSnapshot] = [], questions: [QuestionSnapshot] = [], tokens: Int = 0, costUSD: Double? = nil) {
+                serviceCalls: [ServiceCallSnapshot] = [], questions: [QuestionSnapshot] = [], tokens: Int = 0, costUSD: Double? = nil,
+                unseen: Bool? = nil, unseenSince: Date? = nil, outcome: String? = nil, queued: Int? = nil) {
         self.id = id
         self.name = name
         self.hires = hires
@@ -92,6 +101,10 @@ public struct FloorSnapshot: Codable, Sendable, Equatable, Identifiable {
         self.questions = questions
         self.tokens = tokens
         self.costUSD = costUSD
+        self.unseen = unseen
+        self.unseenSince = unseenSince
+        self.outcome = outcome
+        self.queued = queued
     }
 
     public var isRunning: Bool { phase == .running }
@@ -161,17 +174,21 @@ public struct QuestionSnapshot: Codable, Sendable, Equatable, Identifiable {
     /// Set for `AskUserQuestion`; otherwise this is an approval described by `summary`.
     public var questions: [AskedQuestion]?
     public var summary: String?
+    /// When it arrived on the Mac, so the phone can show how long it has waited.
+    public var since: Date?
 
-    public init(requestID: String, room: String, toolName: String, questions: [AskedQuestion]?, summary: String?) {
+    public init(requestID: String, room: String, toolName: String, questions: [AskedQuestion]?, summary: String?, since: Date? = nil) {
         self.requestID = requestID
         self.room = room
         self.toolName = toolName
         self.questions = questions
         self.summary = summary
+        self.since = since
     }
 
     public init(_ pending: PendingRequest) {
         requestID = pending.id
+        since = pending.since
         room = pending.room
         toolName = pending.request.toolName
         switch pending.request.kind {

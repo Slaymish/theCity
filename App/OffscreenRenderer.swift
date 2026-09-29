@@ -148,9 +148,12 @@ enum PreviewStage {
             } else {
                 for _ in 0..<60 { city.update(1.0 / 60) }
             }
-            let image = try OffscreenRenderer.render(root: city.root, camera: city.camera.entity, width: 1600, height: 1000,
+            var image = try OffscreenRenderer.render(root: city.root, camera: city.camera.entity, width: 1600, height: 1000,
                                                      environment: ModelLibrary.environment("sky"), exposure: CityScene.skyExposure(.now),
                                                      background: DayCycle.now.sky(dark: dark).cgColor)
+            if arguments.contains("-hud") {
+                image = try overlay(image, dark: dark, alignment: .topLeading) { TitleHUD(city: .shared).frame(height: 1000) }
+            }
             return try OffscreenRenderer.writePNG(image, to: URL(fileURLWithPath: path))
         }
         buildings[0].floors = [

@@ -10,6 +10,8 @@ public struct CompanionCommand: Codable, Sendable, Equatable, Identifiable {
         /// Goes to Reception, which picks a floor or sets one up, just as a request typed on the Mac does.
         case newJob(building: UUID, request: String)
         case cancel(floor: UUID)
+        /// The floor was opened on the phone, so its finished result no longer needs you.
+        case seen(floor: UUID)
     }
 
     public var id: UUID

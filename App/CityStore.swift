@@ -574,7 +574,14 @@ final class CityStore {
     }
 
     private func markSeen() {
-        guard case .floor(let buildingID, let floorID) = route, floor(floorID, in: buildingID)?.unseen == true else { return }
+        guard case .floor(_, let floorID) = route else { return }
+        markSeen(floor: floorID)
+    }
+
+    /// Also run when the floor is opened on the phone.
+    func markSeen(floor floorID: UUID) {
+        guard let buildingID = buildings.first(where: { $0.floors.contains { $0.id == floorID } })?.id,
+              floor(floorID, in: buildingID)?.unseen == true else { return }
         update(floor: floorID, in: buildingID) {
             $0.unseen = nil
             $0.unseenSince = nil

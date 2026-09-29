@@ -196,13 +196,39 @@ struct CommandGateTests {
         let actions: [CompanionCommand.Action] = [
             .answer(floor: floor, requestID: "r1", answers: ["Which colour?": "Blue"]),
             .allow(floor: floor, requestID: "r2"), .deny(floor: floor, requestID: "r3"),
-            .newJob(building: UUID(), request: "Hi"), .cancel(floor: floor),
+            .newJob(building: UUID(), request: "Hi"), .cancel(floor: floor), .seen(floor: floor),
         ]
         for action in actions {
             let command = CompanionCommand(issuedAt: Self.now, device: "Phone", action: action)
             let data = try CompanionCoding.encoder.encode(command)
             #expect(try CompanionCoding.decoder.decode(CompanionCommand.self, from: data) == command)
         }
+    }
+}
+
+struct SnapshotCompatibilityTests {
+    /// A Mac from before the attention fields still sends snapshots the phone can read, with those fields empty.
+    @Test func anOlderSnapshotStillDecodes() throws {
+        let current = FloorSnapshot(id: UUID(), name: "Docs", hires: ["build"], request: nil, phase: .idle, startedAt: nil,
+                                    questions: [QuestionSnapshot(requestID: "r1", room: "build", toolName: "Bash", questions: nil, summary: "ls", since: .now)],
+                                    unseen: true, unseenSince: .now, outcome: "failed", queued: 2)
+        var object = try #require(JSONSerialization.jsonObject(with: CompanionCoding.encoder.encode(current)) as? [String: Any])
+        for key in ["unseen", "unseenSince", "outcome", "queued"] { object[key] = nil }
+        var questions = try #require(object["questions"] as? [[String: Any]])
+        questions[0]["since"] = nil
+        object["questions"] = questions
+        let old = try CompanionCoding.decoder.decode(FloorSnapshot.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(old.unseen == nil && old.unseenSince == nil && old.outcome == nil && old.queued == nil)
+        #expect(old.questions.first?.since == nil)
+        #expect(old.name == "Docs")
+    }
+
+    @Test func theAttentionFieldsTravel() throws {
+        let since = Date(timeIntervalSince1970: 1_800_000_000)
+        let floor = FloorSnapshot(id: UUID(), name: "Docs", hires: [], request: nil, phase: .idle, startedAt: nil,
+                                  unseen: true, unseenSince: since, outcome: "completed", queued: 1)
+        let back = try CompanionCoding.decoder.decode(FloorSnapshot.self, from: CompanionCoding.encoder.encode(floor))
+        #expect(back == floor)
     }
 }
 

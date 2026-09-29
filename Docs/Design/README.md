@@ -255,7 +255,7 @@ Each slice is shippable alone and leaves the app better.
 | **4 (built)** | One `Instruments` component, with each segment's detail in a popover (10.4). | Medium | Settled (10.4) |
 | **5 (checked)** | Building and storey state in the world (lamps, pennants, edge colours). | Medium (RealityKit, offscreen-checkable) | Settled (10.1) |
 | **6 (built)** | Glance mode and escalation ladder (10.5). | Medium | Settled (10.5) |
-| 7 | First-run copy and layout. Companion: same states and rail. | Low | Copy |
+| **7 (built)** | First-run copy and layout. Companion: same states and rail (10.6). | Low | Settled (10.6) |
 
 The Companion shares the scene files, so slice 5 must keep them free of Mac-only types (`Docs/Companion.md`). The signal type is written with no AppKit so the phone can use it in slice 7.
 
@@ -264,7 +264,7 @@ The Companion shares the scene files, so slice 5 must keep them free of Mac-only
 Everything here is decided; the builder needs no further design judgement. Line numbers are at `b8d5f99`. Scene units: a city building is 1.4 wide and 1.14 deep (`Facade.cityScale`, `App/Facade.swift:18`), each storey 0.35 tall, and the overview camera shows about 50 px per unit in a 1600 × 1000 render. Every visual reads its state from `FloorSignal`; no scene decides state itself.
 
 **What this changes from the plan above.**
-- **Ready is `grass`, not `primaryFill`.** In The City brand `primaryFill` (#F2C14E) is almost the same yellow as `folder` (#FAC740), so Ready and Working would look alike. In Alphero `primaryFill` *is* `manager` (#3D2051), so Ready and Blocked would look alike. `grass` is an existing token in both brands, is green (which 4.1 and 6.1 already describe), and differs from every other signal colour. No new token.
+- **Ready is `grass`, not `primaryFill`.** In The City brand `primaryFill` (#F2C14E) is almost the same yellow as `folder` (#FAC740), so Ready and Working would look alike. In Alphero `primaryFill` *is* `manager` (#3D2051), so Ready and Blocked would look alike. `grass` is an existing token in both brands, is green (which 4.1 and 6.1 already describe), and differs from every other signal colour. No new token. *(Superseded on 2026-09-30: see `signalReady` in 10.5, under the escalation section.)*
 - **`FloorSignal` isn't phone-safe yet.** Section 10 says it has no AppKit, but `App/FloorSignal.swift:1` imports AppKit and the file isn't in the companion's sources. Step 1 fixes that.
 - **The balloon already exists and is too small.** `CityScene` has a `manager` sphere (radius 0.14, about 14 px) on a string, shown for any "needs you", including unseen results (`App/CityScene.swift:191-199`, `:594`). That's why finding 4 holds. It's replaced, not added to.
 - **Storey labels re-invent state.** `refreshLabels` (`App/BuildingScene.swift:687-712`) counts an unseen result as "Needs you ✋" and colours Working `primaryFill`. It moves onto `FloorSignal`.
@@ -441,6 +441,25 @@ Decided with the owner on 2026-09-30.
 - **Shows:** only the dispatch rail. In-world labels are at 2×, and each Blocked building gets a beam (a 0.08 × 0.08 box, `manager`, emissive 2, 12 units tall). The camera orbits once every 120 s, and for the first 8 s of each turn it holds on the building of the most urgent floor (aimed 1.2 above its roof, pitch 0.45, distance 26). With Reduce Motion there's no orbit, and the camera holds on that building.
 - **Out:** any click or key, ⌥⌘G, or the window becoming key again. That returns to where you were. A rail chip goes to its floor instead.
 
+**`signalReady` token (2026-09-30, owner approved).** `grass` couldn't serve as Ready: as a symbol on glass it had too little contrast in both themes, and as the tower edge it vanished into the light-mode ground. `Brand.Tokens.signalReady` is optional, so a custom brand falls back to The City's values. Ready's glyph is now `textOn(colour)`, like Blocked and Failed. Values, with contrast against the panel, the glyph and the grass:
+
+| Brand / theme | `signalReady` | Panel | Glyph | Grass |
+|---|---|---|---|---|
+| The City, light | `#33994D` | 3.56 | 3.57 | 2.53 |
+| The City, dark | `#47C266` | 5.35 | 5.64 | 2.10 |
+| Alphero | `#2B8241` | 4.46 | 4.80 | 3.36 |
+
+In The City's light theme no green reaches both 3:1 against the pale panel and 4.5:1 against the dark `onAccent` chip text, so this value balances the two. It passes for symbols (3:1) but not for chip text (4.5:1). The Blocked chip (`manager` with the same text) already has the same shortfall.
+
+### 10.6 First run and the phone
+
+Decided with the owner on 2026-09-30.
+
+- **First run** (`TitleHUD`). The paragraph becomes one line, "Every project is a building." Then comes the primary "Break ground on your first project…" button, and "Watch a demo" as an underlined caption link in `text`, with "Replays a recording — no tokens used." as its help text. It's a plain button, not `.link`: that's an AppKit control, which offscreen renders (and so the README reel) draw as a placeholder.
+- **Phone states.** `FloorSnapshot` carries the Mac's `unseen`, `unseenSince`, `outcome` and `queued`, and `QuestionSnapshot` carries `since`. All are optional, so older Macs and phones still decode (`SnapshotCompatibilityTests`). The phone works out `FloorSignal` through the same `FloorSignal.of` as the Mac (`Companion/PhoneRail.swift`), so its storey labels, edges and ages match. The building banner shows the building's state symbol, label and age.
+- **Phone rail.** One horizontally scrolling row of chips just above the banner: the same order, names and ages as the Mac, with the outlined "5m+" chip after 5 minutes. Tapping one flies to that building and opens the floor.
+- **Seen from the phone.** Opening an unseen floor on the phone sends a signed `seen(floor:)` command, and the Mac clears it (`CityStore.markSeen(floor:)`). An older Mac refuses it as unreadable.
+
 ---
 
 ## 11. Validation
@@ -462,6 +481,8 @@ Decided with the owner on 2026-09-30.
 **Slice 4 checked** in offscreen `-hud` renders (city in light and dark, building, floor with `-focus build -hud`) and in the live window at 1000 pt: the building row fits with icon-only buttons, and the ledger popover opens from the counts. The owner checked the usage popover and the floor's `FloorDetail` popover in the live window. **Found:** the Ready symbol in `grass` has too little contrast on glass in both themes (pale on pale in light, dark green on dark in dark). It needs a token decision (section 9 already anticipates `signalReady`).
 
 **Slice 6 checked:** a `-city -hud -blocked-age 400` render in light and dark (outlined "5m+" chip), `-city -glance` renders with and without `-reduce-motion` (2× labels, beams, framing), and in the live window: ⌥⌘G in, a key out, and automatic entry after 60 s in the background, leaving on return. **Unchecked:** the reminder notification and the 15-minute menu bar icon, which need a real request left waiting.
+
+**Slices 7 and `signalReady` checked:** `-title -hud` renders in light and dark; `-city -hud` and `-building` renders in light and dark for the new Ready colour; `make companion`; 172 OfficeCore tests, including the new snapshot-compatibility and `seen` round-trip tests. **Unchecked:** the phone UI itself (no iOS simulator runtime is installed on this Mac) and `seen` from a paired phone.
 
 **Tests with 5 developers, 2 tasks each, on a real or replayed multi-floor stream (`make replay`):**
 
@@ -495,3 +516,4 @@ The owner delegated every decision and value in this plan on 2026-09-29, so *(ne
 10. **Plan usage (2026-09-30):** rings and percentages only, with detail in a popover on click (10.3).
 11. **Instruments (2026-09-30):** state and usage only; floors counted by state; one popover per segment; icon-only Open in and New floor when the building row is short (10.4).
 12. **Escalation and Glance (2026-09-30):** the outlined chip with a "5m+" badge; a "Still waiting" reminder; the circled hand in the menu bar; Glance also starts after 60 s in the background (10.5).
+13. **Ready colour and the phone (2026-09-30):** a `signalReady` token in every brand (10.5); the phone's rail sits above the banner; opening a floor on the phone marks it seen on the Mac (10.6).

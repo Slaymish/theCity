@@ -11,7 +11,7 @@ final class PhoneStorey: Storey {
 
     var isRunning: Bool { floor.isRunning }
     var waitingCount: Int { floor.questions.count }
-    var waitingSince: Date? { nil }
+    var waitingSince: Date? { floor.questions.compactMap(\.since).min() }
     var roomCounts: RoomCounts { floor.roomCounts }
 
     init(_ floor: FloorSnapshot, dark: Bool) {
@@ -128,8 +128,15 @@ final class PhoneCity {
 
     static func plan(_ building: BuildingSnapshot) -> TowerPlan {
         TowerPlan(id: building.id, name: building.name, title: building.title, floors: building.floors.map { floor in
-            let outcome: String? = if case .completed = floor.phase { "completed" } else { nil }
-            return TowerPlan.Floor(id: floor.id, name: floor.name, lastOutcome: outcome)
+            let phase: String? = switch floor.phase {
+            case .completed: "completed"
+            case .failed: "failed"
+            default: nil
+            }
+            var plan = TowerPlan.Floor(id: floor.id, name: floor.name, lastOutcome: floor.outcome ?? phase, unseen: floor.unseen == true)
+            plan.unseenSince = floor.unseenSince
+            plan.queued = floor.queued ?? 0
+            return plan
         })
     }
 }

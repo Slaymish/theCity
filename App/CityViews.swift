@@ -33,7 +33,7 @@ struct TitleHUD: View {
         VStack(alignment: .leading) {
             VStack(alignment: .leading, spacing: 20) {
                 Wordmark()
-                Text("Every project is a building. Every floor is an office of Claude Code departments you set up once and come back to.")
+                Text("Every project is a building.")
                     .font(Typography.body)
                     .foregroundStyle(Color(Palette.muted))
                     .fixedSize(horizontal: false, vertical: true)
@@ -41,12 +41,14 @@ struct TitleHUD: View {
                     .buttonStyle(PillButtonStyle())
                     .keyboardShortcut(.defaultAction)
                     .disabled(city.groundBreaking != nil)
-                Button("Watch a demo") { city.startDemo() }
-                    .buttonStyle(PillButtonStyle(kind: .secondary))
-                    .disabled(city.groundBreaking != nil)
-                Text("Replays a recording — no tokens used.")
-                    .font(Typography.caption)
-                    .foregroundStyle(Color(Palette.muted))
+                // Not `.link`: that's an AppKit control, which the offscreen README reel can't draw.
+                Button { city.startDemo() } label: {
+                    Text("Watch a demo").font(Typography.caption).underline()
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color(Palette.text))
+                .disabled(city.groundBreaking != nil)
+                    .help("Replays a recording — no tokens used.")
             }
             .padding(24)
             .frame(maxWidth: 400, alignment: .leading)

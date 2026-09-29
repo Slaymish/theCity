@@ -27,6 +27,8 @@ struct Brand: Codable, Identifiable, Equatable {
         var tray: String
         var grass: String?
         var cloud: String?
+        /// Ready's signal colour: a symbol on glass and a fill behind its glyph, so it needs 3:1 against both, unlike `grass`.
+        var signalReady: String?
     }
 
     /// Scene lighting that follows the clock rather than the appearance; optional so a brand can fall back to The City's.
@@ -69,11 +71,13 @@ struct Brand: Codable, Identifiable, Equatable {
         var tokens = wantsDark ? (dark ?? light) : light
         if tokens.grass == nil { tokens.grass = wantsDark && dark != nil ? Self.defaultGrass.dark : Self.defaultGrass.light }
         if tokens.cloud == nil { tokens.cloud = wantsDark && dark != nil ? Self.defaultCloud.dark : Self.defaultCloud.light }
+        if tokens.signalReady == nil { tokens.signalReady = wantsDark && dark != nil ? Self.defaultSignalReady.dark : Self.defaultSignalReady.light }
         return tokens
     }
 
     static let defaultGrass = (light: "#BFE3A0", dark: "#5E7A4F")
     static let defaultCloud = (light: "#FFFFFF", dark: "#D9D4E6")
+    static let defaultSignalReady = (light: "#33994D", dark: "#47C266")
     static let defaultSky = Sky(moonlight: "#9DB4E8", dusk: "#FFB070", streetlight: "#FFC46B", nightSky: "#1A1F3D", duskSky: "#F2A88C")
 
     var logoImage: NSImage? {

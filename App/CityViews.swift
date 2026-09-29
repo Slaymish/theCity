@@ -69,8 +69,7 @@ struct CityHUD: View {
             HStack(alignment: .top) {
                 Breadcrumb.here(city)
                 Spacer()
-                if !city.allFloors.isEmpty { VitalsStrip(city: city, scope: .city(city.buildings)) }
-                UsageHUD(configDirectory: Preferences.shared.configDirectory)
+                Instruments(city: city, scope: .city(city.buildings), configDirectory: Preferences.shared.configDirectory)
                 Button("New project…", systemImage: "plus") { ProjectPicker.addProject() }
                     .buttonStyle(PillButtonStyle())
             }
@@ -431,12 +430,12 @@ struct BuildingHUD: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ViewThatFits(in: .horizontal) {
-                topRow(compact: false)
-                topRow(compact: true)
+                topRow(compact: false, iconsOnly: false)
+                topRow(compact: true, iconsOnly: false)
+                topRow(compact: true, iconsOnly: true)
             }
             Text(building.floors.isEmpty ? "Tell reception what you need. It sets up a floor with the right team." : "Swipe up or down on the trackpad to move between floors. Click one to go in, or ask reception below.")
                 .font(Typography.caption).foregroundStyle(Color(Palette.muted))
-            if !building.floors.isEmpty { VitalsStrip(city: city, scope: .building(building)) }
             Spacer()
             HStack(alignment: .bottom) {
                 Color.clear.frame(width: composerSize.width, height: composerSize.height)
@@ -477,15 +476,19 @@ struct BuildingHUD: View {
         }
     }
 
-    private func topRow(compact: Bool) -> some View {
+    /// Narrower windows first drop the wordmark's name, then the button labels.
+    private func topRow(compact: Bool, iconsOnly: Bool) -> some View {
         HStack(alignment: .top) {
             Breadcrumb.here(city).compact(compact)
             Spacer()
-            UsageHUD(configDirectory: Preferences.shared.configDirectory)
-            OpenInMenu(directory: building.url)
-            Button("New floor…", systemImage: "plus") { city.startNewFloor(in: building.id) }
-                .buttonStyle(PillButtonStyle(kind: .secondary))
-                .help("Set up a floor yourself instead of asking reception")
+            Instruments(city: city, scope: .building(building), configDirectory: Preferences.shared.configDirectory)
+            Group {
+                OpenInMenu(directory: building.url)
+                Button("New floor…", systemImage: "plus") { city.startNewFloor(in: building.id) }
+                    .buttonStyle(PillButtonStyle(kind: .secondary))
+                    .help(iconsOnly ? "New floor: set up a floor yourself instead of asking reception" : "Set up a floor yourself instead of asking reception")
+            }
+            .modifier(IconOnly(on: iconsOnly))
         }
     }
 }
@@ -807,5 +810,13 @@ struct CloseFloorConfirmation: ViewModifier {
         } message: { _ in
             Text(running ? "Its current job will be cancelled. Past jobs stay in the building's history." : "The floor and its team are removed from the building, along with its worktree if that has no uncommitted changes. Past jobs stay in the building's history.")
         }
+    }
+}
+
+private struct IconOnly: ViewModifier {
+    let on: Bool
+
+    func body(content: Content) -> some View {
+        if on { content.labelStyle(.iconOnly) } else { content }
     }
 }

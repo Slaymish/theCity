@@ -177,7 +177,7 @@ enum PreviewStage {
                 let store = CityStore.shared
                 image = try overlay(image, dark: dark, alignment: .topTrailing) {
                     VStack(alignment: .trailing, spacing: 12) {
-                        VitalsStrip(city: store, scope: .city(buildings))
+                        Instruments(city: store, scope: .city(buildings), configDirectory: Preferences.shared.configDirectory)
                         LedgerView(city: store, scope: .city(buildings)).glass(padding: 16)
                     }
                 }
@@ -226,7 +226,7 @@ enum PreviewStage {
             let store = CityStore.shared
             image = try overlay(image, dark: dark, alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 12) {
-                    VitalsStrip(city: store, scope: .building(building))
+                    Instruments(city: store, scope: .building(building), configDirectory: Preferences.shared.configDirectory)
                     LedgerView(city: store, scope: .building(building)).glass(padding: 16)
                 }
             }
@@ -318,8 +318,8 @@ enum PreviewStage {
                                                  background: DayCycle.now.sky(dark: dark).cgColor)
         image = try overlay(image, dark: dark, alignment: .topTrailing) {
             VStack(alignment: .trailing, spacing: 10) {
-                CounterCard(controller: controller)
-                FloorStats(controller: controller, expanded: true)
+                Instruments(city: .shared, scope: .floor(controller), configDirectory: controller.configDirectory)
+                FloorDetail(controller: controller).glass(padding: 16)
             }
         }
         image = try overlay(image, dark: dark, alignment: .bottom) {
@@ -414,7 +414,7 @@ enum PreviewStage {
                 let hud = VStack(alignment: .leading, spacing: 30) {
                     HStack(alignment: .top, spacing: 40) {
                         JobCard(controller: controller)
-                        CounterCard(controller: controller)
+                        FloorDetail(controller: controller).glass(padding: 16)
                     }
                     HStack(alignment: .top, spacing: 10) {
                         ForEach(Array(badges.enumerated()), id: \.offset) { index, badge in

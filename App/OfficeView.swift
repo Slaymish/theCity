@@ -229,9 +229,7 @@ struct OfficeOverlay: View {
                                 .help(controller.canTakeOver ? "Open this floor’s Claude Code session in the terminal kiosk" : "Available once the current job finishes")
                         }
                     }
-                    CounterCard(controller: controller)
-                    FloorStats(controller: controller)
-                    UsageHUD(configDirectory: controller.configDirectory)
+                    Instruments(city: .shared, scope: .floor(controller), configDirectory: controller.configDirectory)
                     if controller.showPanel {
                         SidePanel(controller: controller)
                             .frame(width: Self.panelWidth)
@@ -553,55 +551,6 @@ struct TicketShape: Shape {
         path.closeSubpath()
         return path
     }
-}
-
-struct CounterCard: View {
-    let controller: RunController
-
-    var body: some View {
-        let tally = controller.state.tally
-        TimelineView(.animation(minimumInterval: 0.25, paused: !controller.isRunning)) { _ in
-            HStack(spacing: 12) {
-            RingGauge(fraction: session.map { $0.utilization } ?? (tally.costUSD ?? 0) / max(controller.budgetUSD, 0.01))
-                .help(session == nil ? "Spent so far against the budget" : "Share of your plan's 5-hour session used")
-            VStack(alignment: .trailing, spacing: 4) {
-                if let session {
-                    Text("Plan \(session.utilization.formatted(.percent.precision(.fractionLength(0)))) of session")
-                } else {
-                    Text(costLine(tally))
-                        .foregroundStyle(Color(tally.costUSD == nil ? Palette.muted : Palette.text))
-                }
-                Text(RunController.clock(elapsed(now: RunController.now())))
-                Text("\(StatusFormat.tokens(tally.total)) tokens")
-                    .foregroundStyle(Color(Palette.muted))
-            }
-            .font(Typography.number)
-            .help(tally.isFinal ? "Final figures from Claude Code" : "Live estimate until the job finishes")
-            }
-        }
-        .glass()
-        .accessibilityElement(children: .combine)
-    }
-
-    /// On a subscription the dollar figure is only what the API would have charged, so show plan usage instead.
-    private var session: RateLimit.Window? {
-        guard let limit = controller.state.rateLimit, !limit.isUsingOverage else { return nil }
-        return limit.windows["five_hour"]
-    }
-
-    private func costLine(_ tally: TokenTally) -> String {
-        let budget = controller.budgetUSD.formatted(.currency(code: "USD"))
-        let extra = controller.state.rateLimit?.isUsingOverage == true ? " extra usage" : ""
-        guard let cost = tally.costUSD else { return "Budget \(budget)\(extra)" }
-        return "\(cost.formatted(.currency(code: "USD")))\(extra) of \(budget)"
-    }
-
-    private func elapsed(now: Date) -> TimeInterval {
-        guard let start = controller.startedAt else { return 0 }
-        return (controller.endedAt ?? now).timeIntervalSince(start)
-    }
-
-    static func format(_ seconds: TimeInterval) -> String { RunController.clock(seconds) }
 }
 
 struct StepBar: View {

@@ -96,14 +96,14 @@ final class UsageStore {
     }
 }
 
-/// Plan usage at a glance: a ring and percentage per window. Clicking opens the reset times and refresh.
+/// Plan usage at a glance, the second segment of `Instruments`: a ring and percentage per window. Clicking opens the reset times and refresh.
 struct UsageHUD: View {
     let usage = UsageStore.shared
     var configDirectory: URL?
+    var open: () -> Void = {}
     @Environment(\.rendersOffscreen) private var rendersOffscreen
-    @State private var showsDetail = false
 
-    private var accounts: [URL?] { rendersOffscreen ? [configDirectory] : Preferences.shared.visibleAccounts(including: configDirectory) }
+    var accounts: [URL?] { rendersOffscreen ? [configDirectory] : Preferences.shared.visibleAccounts(including: configDirectory) }
 
     var body: some View {
         let accounts = accounts
@@ -114,21 +114,15 @@ struct UsageHUD: View {
             }
         }
         .fixedSize()
-        .modifier(Glass(radius: 24, padding: EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14)))
-        .contentShape(RoundedRectangle(cornerRadius: 24))
-        // A Button here didn't open its popover when clicked (cause unknown); a tap gesture does.
-        .onTapGesture { showsDetail.toggle() }
+        .padding(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: open)
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction { showsDetail.toggle() }
+        .accessibilityAction { open() }
         .help(accounts.compactMap(resets).joined(separator: "\n"))
         .accessibilityLabel("Plan usage")
         .accessibilityValue(accounts.map(spoken).joined(separator: ". "))
-        .popover(isPresented: $showsDetail, arrowEdge: .bottom) {
-            UsageDetail(configDirectory: configDirectory, accounts: accounts)
-                .padding(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
-                .fixedSize()
-        }
     }
 
     @ViewBuilder

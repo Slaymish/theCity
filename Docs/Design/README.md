@@ -252,7 +252,7 @@ Each slice is shippable alone and leaves the app better.
 | **1 (merged)** | **Signal model.** A single `FloorSignal` type with the priority order above, derived from existing data. Use it in the city's needs-you list, so it sorts by urgency and separates Blocked, Failed and Ready with their own symbol, label and age. Add **⌘J: Next that needs you**. No layout change. Built, **not compiled or rendered** (no Swift toolchain in that session). **Age is not in slice 1:** `PendingRequest` has no timestamp, so slice 2 starts by adding one in OfficeCore. | Low | Nothing new |
 | **2 (built)** | `PendingRequest.since` in OfficeCore, age on desk cards, longest-waiting first within a state, appearing after 30 s. Ready and failed floors record when they finished unseen (`Floor.unseenSince`), so they show an age and sort oldest first too. The dispatch rail at every level (10.2). | Medium | Settled (10.2) |
 | **3 (built)** | Breadcrumb, single Esc handler, `SceneSafeArea` (10.3). | Medium | Settled (10.3) |
-| 4 | One `Instruments` component; drawer for detail. **Started:** plan usage is compact, with its detail in a popover (10.3). | Medium | Layout |
+| **4 (built)** | One `Instruments` component, with each segment's detail in a popover (10.4). | Medium | Settled (10.4) |
 | **5 (checked)** | Building and storey state in the world (lamps, pennants, edge colours). | Medium (RealityKit, offscreen-checkable) | Settled (10.1) |
 | 6 | Glance mode and escalation ladder. | Medium | Timings, ⌥⌘G |
 | 7 | First-run copy and layout. Companion: same states and rail. | Low | Copy |
@@ -417,6 +417,16 @@ Decided with the owner on 2026-09-30. It uses existing styles and values only.
 - **`SceneSafeArea`.** `WorldView` works it out once (the side panel's width on the trailing edge, the rail on the bottom) and passes it down in the environment. The camera's `trailingInset`, `SceneControls.excludedTrailing`, the floor overlay's trailing padding and the rail all read from it. It replaces `railInset`. `OfficeView`, which is never created, still works it out by hand.
 - **Plan usage (slice 4, early, at the owner's request).** `UsageHUD` is one row: for each account, its name (shown only when there's more than one account), then Session and Week as the existing ring with a percentage. Reset times go in the hover help. Clicking opens the old full panel (`UsageDetail`: reset times, "as of", refresh) in a popover. The floor no longer squeezes it to the panel's width.
 
+### 10.4 Instruments
+
+Decided with the owner on 2026-09-30.
+
+- **One component** (`App/Instruments.swift`), top right at every level, in place of `VitalsStrip`, `CounterCard`, `FloorStats` and the standalone `UsageHUD`. It is one glass capsule (radius 24) with two segments split by a hairline: **state**, then **plan usage**. There's no spend at a glance.
+- **State.** City and building count floors by `FloorSignal` (Blocked, Failed, Ready, Working, Queued; zeros hidden, "–" when all are quiet), with the same symbols and colours as the rail and the world. The segment is hidden when there are no floors. On a floor, where there's only one signal, it's the robots' `RoomTally`.
+- **Detail.** Clicking a segment opens its popover, hosted on the group: the ledger (city and building), `FloorDetail` (floor: the job's clock and spend against budget or plan, tokens, context, turns, per-model figures, subagents, denials and the floor's record), or `UsageDetail`. The floor's clock and spend are no longer on screen without a click.
+- **Placement.** City: between the wordmark and New project. Building: in the top row (the old Vitals strip under the hint is gone). Floor: under the Cancel / Take over row.
+- **Narrow building row.** A third fallback after the logo-only breadcrumb: Open in and New floor become icon-only pills, with their names in the help text.
+
 ---
 
 ## 11. Validation
@@ -434,6 +444,8 @@ Decided with the owner on 2026-09-30. It uses existing styles and values only.
 **Slice 2's rail checked in the live window** (dev data seeded with two Failed and four Ready floors) at 1400 and 1000 pt wide: city, building and floor, and a floor with its side panel open. The order, short names and `+N` overflow are right, and everything bottom-anchored clears the rail. Already there before the rail: at 1000 pt, `FloorList` pills wrap mid-word ("Paym ents"), and on a floor with the side panel open the HUD is wider than the window and clipped at both edges. Blocked chips and the escalation to "5m+" (slice 6) are unchecked, because a Blocked floor needs a live request.
 
 **Slice 3 checked in the live window** at 1000 and 1400 pt wide, on city, building and floor. Esc goes floor → building → city one level at a time; the first build jumped two levels, which the resolve-on-press fix above cured. The breadcrumb is readable over grass and road. The building row fits at 1000 pt with the symbol-only root. Usage fits on one line at every level, and its popover opens with the full detail. The floor menu opens. Unchecked: the desk segment and Esc from a desk (clicking a robot on an idle floor didn't select it), and Esc from New floor. `make test` and `make companion` pass.
+
+**Slice 4 checked** in offscreen `-hud` renders (city in light and dark, building, floor with `-focus build -hud`) and in the live window at 1000 pt: the building row fits with icon-only buttons, and the ledger popover opens from the counts. The owner checked the usage popover and the floor's `FloorDetail` popover in the live window. **Found:** the Ready symbol in `grass` has too little contrast on glass in both themes (pale on pale in light, dark green on dark in dark). It needs a token decision (section 9 already anticipates `signalReady`).
 
 **Tests with 5 developers, 2 tasks each, on a real or replayed multi-floor stream (`make replay`):**
 
@@ -465,3 +477,4 @@ The owner delegated every decision and value in this plan on 2026-09-29, so *(ne
 8. **Rail (2026-09-30):** the rail is the bottom row and lifts the rest; the open floor is left out; overflow goes into a `+N` menu (10.2).
 9. **Breadcrumb (2026-09-30):** wordmark root; one glass capsule; building title dropped and hint kept; History and Close floor in a `…` menu; the root drops to its symbol when the row is short (10.3).
 10. **Plan usage (2026-09-30):** rings and percentages only, with detail in a popover on click (10.3).
+11. **Instruments (2026-09-30):** state and usage only; floors counted by state; one popover per segment; icon-only Open in and New floor when the building row is short (10.4).

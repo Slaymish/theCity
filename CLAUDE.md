@@ -24,6 +24,7 @@ A macOS 26 app (SwiftUI + RealityKit) that shows Claude Code runs as a city of r
   `perl -e 'alarm 120; exec @ARGV' build/Build/Products/Debug/TheCity.app/Contents/MacOS/TheCity -render-preview out.png [-theme light|dark] [-workspace "$PWD/SampleWorkspace"] [-city | -building [-floor N] | -focus <room>]`
 - `-route-test "<request>"` prints Reception's routing decision (on-device, free; add `-receptionist claude` to ask Haiku instead).
 - `-graphics low|medium|high|ultra` forces a quality level, including in offscreen renders.
+- `-live-grade-check` logs the first and 120th live post-process frames (texture format, write support and city focus), plus scene hit-test results. Use it with an isolated dev launch to diagnose live rendering without running agent jobs.
 - `-parallel-test` spends real money. Ask first.
 - For the live window, use `Tools/Dev/relaunch.sh <args>`, and `Tools/Dev/relaunch.sh --quit` to quit it. It runs this checkout's dev build on its own data (`build/data`), next to the installed app. Never quit `TheCity` by name, because that also quits the user's city and cancels its jobs, this one included.
 

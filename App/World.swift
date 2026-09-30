@@ -6,7 +6,6 @@ final class World {
     let root = Entity()
     let city = CityScene()
     let building = BuildingScene()
-    var updates: EventSubscription?
     private(set) var inBuilding: UUID?
     var cityStale = false
     private(set) var hasBuilt = false

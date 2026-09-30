@@ -30,7 +30,7 @@ This records the current working-tree changes against the open GitHub backlog. I
 
 ## Known blockers and untouched work
 
-#44 and #51 remain open: updating live RealityKit post-processing still crashes on macOS 27. Keep grading in offscreen renders; native daylight, sky and lamp changes work in live scenes.
+#44 and #51 are addressed in the follow-up rendering change: live Mac scenes use an owned ARView with its callback registered before scene attachment. Bloom, daylight colour grading, vignette and city miniature focus now run in-game. GPU regression tests verify both grading and focus; the live window has rendered beyond 120 frames without the callback-setter trap. The companion keeps its existing RealityView.
 
 #1 and #63 need the appropriate Apple developer signing/capability setup. No account or entitlement changes were made.
 

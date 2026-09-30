@@ -257,15 +257,8 @@ struct WorldView: View {
         let quality = GraphicsQuality.current
         ZStack {
             GeometryReader { geometry in
-                RealityView { content in
-                    content.add(world.root)
-                    world.updates = content.subscribe(to: SceneEvents.Update.self) { [world] event in world.update(event.deltaTime) }
-                } update: { content in
-                    content.renderingEffects.antialiasing = quality.antialiasing
-                    content.renderingEffects.depthOfField = quality.depthOfField ? .enabled : .disabled
-                }
-                .realityViewCameraControls(.none)
-                .gesture(SpatialTapGesture().targetedToAnyEntity().onEnded { value in tapped(value.entity) })
+                LiveSceneView(root: world.root, camera: { [world] in world.camera }, quality: quality, miniatureFocus: world.inBuilding == nil,
+                              update: { [world] in world.update($0) }, tapped: tapped)
                 .onContinuousHover { phase in
                     if case .active(let point) = phase, world.inBuilding == nil { world.city.hover(at: point) } else { world.city.hover(at: nil) }
                 }

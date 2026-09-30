@@ -136,20 +136,10 @@ struct OfficeView: View {
         let quality = GraphicsQuality.current
         ZStack {
             GeometryReader { geometry in
-                RealityView { content in
-                    content.add(scene.root)
-                    scene.updates = content.subscribe(to: SceneEvents.Update.self) { [scene] event in
-                        scene.update(event.deltaTime)
-                    }
-                } update: { content in
-                    content.renderingEffects.antialiasing = quality.antialiasing
-                    content.renderingEffects.depthOfField = quality.depthOfField ? .enabled : .disabled
-                }
-                .realityViewCameraControls(.none)
-                .gesture(SpatialTapGesture().targetedToAnyEntity().onEnded { value in
-                    let room = OfficeScene.room(of: value.entity)
+                LiveSceneView(root: scene.root, camera: { [scene] in scene.camera }, quality: quality, update: { [scene] in scene.update($0) }) { entity in
+                    let room = OfficeScene.room(of: entity)
                     if room == OfficeScene.kioskRoom { controller.takeOver() } else if let room, room != "outbox", room != controller.selectedRoom { controller.select(room: room) } else { controller.selectedRoom = nil }
-                })
+                }
                 .modifier(SceneControls(camera: { [scene] in scene.camera }, excludedTrailing: controller.showPanel ? Self.panelWidth + 40 : 0,
                                         passThrough: { [controller] in controller.kiosk.isOpen }))
                 .onAppear {

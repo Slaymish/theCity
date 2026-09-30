@@ -10,7 +10,7 @@ paths:
 - Colours come from `Palette` in `App/Theme.swift`, which reads the active brand's tokens (`App/Brands/<id>/brand.json` → `Brand.swift`). Never write a colour literal elsewhere. A new colour means a new token in every brand, so ask first.
 - Sizes, spacing, timings and colours need approval from the owner. Ask before picking one.
 - The target is macOS 26. `BloomComponent` and `EnvironmentResource(equirectangular:options:)` need macOS 27.
-- Setting `renderingEffects.customPostProcessing` in a `RealityView` traps in `ARView.renderCallbacks.setter`, including on macOS 27 when the effects are updated, so `SceneGrade` only runs in offscreen renders.
+- Live macOS scenes use `LiveSceneView`, which owns an `ARView`. Install its post-process callback before adding anchors or subscribing to scene events; registering it after those operations traps in `ARView.renderCallbacks.setter` on macOS 27. Never reset callbacks during updates or teardown. Update grade/focus settings through mutexes instead. Keep `RealityView` on the companion; live Mac bloom, grading and city miniature focus use `LiveSceneProcessor`.
 - Don't wrap `RealityView` in `.accessibilityElement(children: .contain)`, because it stops the scene rendering. VoiceOver children go on a transparent overlay instead.
 - `Worker.headPosition` and `OfficeScene.overviewPose` use world positions (`relativeTo: nil`). Scale or move the city, never the building root.
 - A rig that follows a scaled scene needs `CameraRig.frame` set, and its camera entity must not be parented under the scaled root.

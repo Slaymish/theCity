@@ -5,7 +5,7 @@ import UIKit
 #endif
 import RealityKit
 
-/// Distance haze and drifting clouds, built from geometry because live RealityView post-processing traps (#44).
+/// Distance haze and drifting clouds built from geometry, shared by live and offscreen scenes.
 @MainActor
 enum Horizon {
     static let shells = 12

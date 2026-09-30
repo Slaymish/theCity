@@ -254,65 +254,8 @@ struct WorldView: View {
     var body: some View {
         let buildingID = buildingID, floorID = floorID
         let session = floorID.flatMap { city.sessions[$0] }
-        let quality = GraphicsQuality.current
         ZStack {
-            GeometryReader { geometry in
-                LiveSceneView(root: world.root, camera: { [world] in world.camera }, quality: quality, miniatureFocus: world.inBuilding == nil,
-                              update: { [world] in world.update($0) }, tapped: tapped)
-                .onContinuousHover { phase in
-                    if case .active(let point) = phase, world.inBuilding == nil { world.city.hover(at: point) } else { world.city.hover(at: nil) }
-                }
-                .modifier(SceneControls(camera: { [world] in world.camera },
-                                        excludedTrailing: safeArea.trailing + 20,
-                                        onScroll: { [city, world] event in
-                                            guard world.inBuilding != nil, event.hasPreciseScrollingDeltas, !event.modifierFlags.contains(.option) else { return false }
-                                            switch city.route {
-                                            case .building: break
-                                            case .floor where city.activeSession?.selectedRoom == nil: break
-                                            default: return false
-                                            }
-                                            world.building.scroll(by: Float(event.scrollingDeltaY))
-                                            if event.scrollingDeltaX != 0 { world.camera.pan(dx: Float(event.scrollingDeltaX), dy: 0) }
-                                            return true
-                                        },
-                                        passThrough: { [city] in if case .newFloor = city.route { true } else { city.activeSession?.kiosk.isOpen == true } }))
-                .onAppear {
-                    world.city.titleMode = city.route == .welcome
-                    world.paused = false
-                    if !world.hasBuilt || world.cityStale { world.rebuildCity(city.buildings, dark: dark) }
-                    world.fit(geometry.size)
-                    sync(animated: false)
-                    prewarm(city.buildings.map(\.id))
-                }
-                .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { note in
-                    guard let window = note.object as? NSWindow, window.identifier?.rawValue.hasPrefix("office") == true else { return }
-                    world.paused = !window.occlusionState.contains(.visible)
-                }
-                .onDisappear { world.paused = true }
-                .onChange(of: CityClock.shared.revision) { world.relight() }
-                .onChange(of: geometry.size) { world.fit(geometry.size) }
-                .onReceive(NotificationCenter.default.publisher(for: .resetView)) { _ in world.camera.recentre() }
-                .onChange(of: city.buildings.map { [$0.id] + $0.floors.map(\.id) }) { buildingsChanged() }
-                .onChange(of: city.route) {
-                    guard world.city.titleMode, city.route != .welcome else { return }
-                    world.city.titleMode = false
-                    world.rebuildCity(city.buildings, dark: dark)
-                }
-                .onChange(of: buildingID) { sync(animated: true) }
-                .onChange(of: floorID) {
-                    guard world.inBuilding == buildingID, buildingID != nil else { return }
-                    if let floorID { world.building.enter(floor: floorID) } else { world.building.leaveFloor() }
-                }
-                .onChange(of: billboardTitle) { if let buildingID { show(buildingID) } }
-                .onChange(of: buildingID.flatMap { city.building($0)?.floors.map(\.id) } ?? []) {
-                    guard let buildingID, world.inBuilding == buildingID else { return }
-                    show(buildingID)
-                    world.cityRebuilt()
-                    if let floorID { world.building.enter(floor: floorID) }
-                }
-            }
-            .ignoresSafeArea()
-            .accessibilityHidden(true)
+            sceneViewport
 
             Group {
                 if let buildingID, let session, let floorScene = world.building.scene(for: session.floorID ?? UUID()) {
@@ -381,6 +324,96 @@ struct WorldView: View {
                 .opacity(0)
                 .accessibilityHidden(true)
         }
+    }
+
+    // Separate view expressions keep this scene within Xcode 26's type-checking budget.
+    private var sceneSurface: some View {
+        LiveSceneView(root: world.root, camera: { [world] in world.camera }, quality: GraphicsQuality.current,
+                      miniatureFocus: world.inBuilding == nil, update: { [world] in world.update($0) }, tapped: tapped)
+            .onContinuousHover { phase in
+                if case .active(let point) = phase, world.inBuilding == nil { world.city.hover(at: point) }
+                else { world.city.hover(at: nil) }
+            }
+            .modifier(SceneControls(camera: { [world] in world.camera }, excludedTrailing: safeArea.trailing + 20,
+                                    onScroll: scrollBuilding,
+                                    passThrough: { [city] in
+                                        if case .newFloor = city.route { true }
+                                        else { city.activeSession?.kiosk.isOpen == true }
+                                    }))
+    }
+
+    private var sceneState: some View {
+        sceneSurface
+            .onChange(of: CityClock.shared.revision) { world.relight() }
+            .onChange(of: cityStructure) { buildingsChanged() }
+            .onChange(of: city.route) { routeChanged() }
+            .onChange(of: buildingID) { sync(animated: true) }
+            .onChange(of: floorID) { floorChanged() }
+            .onChange(of: billboardTitle) { if let buildingID { show(buildingID) } }
+            .onChange(of: buildingFloors) { buildingFloorsChanged() }
+    }
+
+    private var sceneViewport: some View {
+        GeometryReader { geometry in
+            sceneState
+                .onAppear { sceneAppeared(size: geometry.size) }
+                .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { note in
+                    guard let window = note.object as? NSWindow, window.identifier?.rawValue.hasPrefix("office") == true else { return }
+                    world.paused = !window.occlusionState.contains(.visible)
+                }
+                .onDisappear { world.paused = true }
+                .onChange(of: geometry.size) { world.fit(geometry.size) }
+                .onReceive(NotificationCenter.default.publisher(for: .resetView)) { _ in world.camera.recentre() }
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+    }
+
+    private var cityStructure: [[UUID]] { city.buildings.map { [$0.id] + $0.floors.map(\.id) } }
+
+    private var buildingFloors: [UUID] {
+        guard let buildingID, let building = city.building(buildingID) else { return [] }
+        return building.floors.map(\.id)
+    }
+
+    private func sceneAppeared(size: CGSize) {
+        world.city.titleMode = city.route == .welcome
+        world.paused = false
+        if !world.hasBuilt || world.cityStale { world.rebuildCity(city.buildings, dark: dark) }
+        world.fit(size)
+        sync(animated: false)
+        prewarm(city.buildings.map(\.id))
+    }
+
+    private func scrollBuilding(_ event: NSEvent) -> Bool {
+        guard world.inBuilding != nil, event.hasPreciseScrollingDeltas, !event.modifierFlags.contains(.option) else { return false }
+        switch city.route {
+        case .building: break
+        case .floor where city.activeSession?.selectedRoom == nil: break
+        default: return false
+        }
+        world.building.scroll(by: Float(event.scrollingDeltaY))
+        if event.scrollingDeltaX != 0 { world.camera.pan(dx: Float(event.scrollingDeltaX), dy: 0) }
+        return true
+    }
+
+    private func routeChanged() {
+        guard world.city.titleMode, city.route != .welcome else { return }
+        world.city.titleMode = false
+        world.rebuildCity(city.buildings, dark: dark)
+    }
+
+    private func floorChanged() {
+        guard let buildingID, world.inBuilding == buildingID else { return }
+        if let floorID { world.building.enter(floor: floorID) }
+        else { world.building.leaveFloor() }
+    }
+
+    private func buildingFloorsChanged() {
+        guard let buildingID, world.inBuilding == buildingID else { return }
+        show(buildingID)
+        world.cityRebuilt()
+        if let floorID { world.building.enter(floor: floorID) }
     }
 
     private var safeArea: SceneSafeArea {

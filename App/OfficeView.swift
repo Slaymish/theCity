@@ -129,7 +129,7 @@ extension View {
 /// A standalone office (a new floor before it joins its building, or a replay).
 struct OfficeView: View {
     @Bindable var controller: RunController
-    static let panelWidth: CGFloat = 400
+    nonisolated static let panelWidth: CGFloat = 400
 
     var body: some View {
         let scene = controller.scene
@@ -161,6 +161,7 @@ struct OfficeView: View {
                     scene.sunEnabled = true
                     scene.fit(geometry.size)
                 }
+                .onChange(of: CityClock.shared.revision) { scene.applyDaylight() }
                 .onChange(of: geometry.size) { scene.fit(geometry.size) }
                 .onReceive(NotificationCenter.default.publisher(for: .resetView)) { _ in scene.camera.recentre() }
             }
@@ -206,9 +207,11 @@ struct OfficeOverlay: View {
                             floorMenu
                         }
                     }
+                    DaylightDial()
                     if !controller.request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, controller.state.phase != .idle {
                         JobCard(controller: controller)
                     }
+                    if controller.isRunning { ManagerBriefing(controller: controller) }
                     Spacer()
                 }
                 Spacer(minLength: 0)
@@ -662,6 +665,7 @@ struct SidePanel: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .glass()
+        .sheltersScroll()
     }
 
     private func tab(_ title: String, _ value: RunController.PanelTab) -> some View {
@@ -673,6 +677,8 @@ struct SidePanel: View {
 
 struct ActivityFeed: View {
     let controller: RunController
+    @State private var following = true
+    @State private var userScrolling = false
 
     var body: some View {
         if controller.activity.isEmpty {
@@ -686,14 +692,30 @@ struct ActivityFeed: View {
                         ForEach(controller.activity) { item in
                             HStack(alignment: .top, spacing: 10) {
                                 Circle().fill(Color(controller.colour(for: item.room))).frame(width: 22, height: 22)
-                                Text(item.text).font(Typography.caption).frame(maxWidth: .infinity, alignment: .leading)
+                                Text(item.text).textSelection(.enabled).font(Typography.caption).frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .id(item.id)
                         }
                     }
                 }
-                .onChange(of: controller.activity.count) {
-                    if let last = controller.activity.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                .defaultScrollAnchor(.bottom)
+                .onScrollPhaseChange { _, phase in
+                    userScrolling = phase == .interacting || phase == .decelerating
+                }
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 20
+                } action: { _, atBottom in
+                    if atBottom { following = true }
+                    else if userScrolling { following = false }
+                }
+                .onChange(of: controller.activity.last?.id) {
+                    if following, let last = controller.activity.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                }
+                if !following {
+                    Button("Latest activity", systemImage: "arrow.down") {
+                        following = true
+                        if let last = controller.activity.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                    }.buttonStyle(PillButtonStyle(kind: .secondary))
                 }
             }
         }

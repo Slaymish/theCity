@@ -8,7 +8,8 @@ enum ProjectPicker {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.message = "Choose a project folder. It becomes a building in your city."
+        panel.canCreateDirectories = true
+        panel.message = "Choose or create a workspace folder: code, research, a product, or any work you want in your city."
         panel.prompt = "Add Project"
         return panel.runModal() == .OK ? panel.url : nil
     }
@@ -64,6 +65,7 @@ struct TitleHUD: View {
 
 struct CityHUD: View {
     let city: CityStore
+    @State private var showingHall = false
     @Environment(\.sceneSafeArea) private var safeArea
 
     var body: some View {
@@ -72,14 +74,18 @@ struct CityHUD: View {
                 Breadcrumb.here(city)
                 Spacer()
                 Instruments(city: city, scope: .city(city.buildings), configDirectory: Preferences.shared.configDirectory)
-                Button("New project…", systemImage: "plus") { ProjectPicker.addProject() }
+                Button("City Hall", systemImage: "building.columns.fill") { showingHall = true }
+                    .buttonStyle(PillButtonStyle(kind: .secondary))
+                Button("New building…", systemImage: "plus") { ProjectPicker.addProject() }
                     .buttonStyle(PillButtonStyle())
             }
             Spacer()
+            DaylightDial()
             ProjectList(city: city)
         }
         .padding(20)
         .padding(.bottom, safeArea.bottom)
+        .sheet(isPresented: $showingHall) { CityHall(city: city) }
     }
 }
 
@@ -226,6 +232,7 @@ struct ProjectList: View {
 struct WorldView: View {
     let city: CityStore
     @State private var world = World()
+    @State private var showingHall = false
     @State private var railHeight: CGFloat = 0
     @State private var glanceKeys: Any?
     @State private var autoGlance: Task<Void, Never>?
@@ -278,7 +285,8 @@ struct WorldView: View {
                                         passThrough: { [city] in if case .newFloor = city.route { true } else { city.activeSession?.kiosk.isOpen == true } }))
                 .onAppear {
                     world.city.titleMode = city.route == .welcome
-                    world.rebuildCity(city.buildings, dark: dark)
+                    world.paused = false
+                    if !world.hasBuilt || world.cityStale { world.rebuildCity(city.buildings, dark: dark) }
                     world.fit(geometry.size)
                     sync(animated: false)
                     prewarm(city.buildings.map(\.id))
@@ -287,6 +295,8 @@ struct WorldView: View {
                     guard let window = note.object as? NSWindow, window.identifier?.rawValue.hasPrefix("office") == true else { return }
                     world.paused = !window.occlusionState.contains(.visible)
                 }
+                .onDisappear { world.paused = true }
+                .onChange(of: CityClock.shared.revision) { world.relight() }
                 .onChange(of: geometry.size) { world.fit(geometry.size) }
                 .onReceive(NotificationCenter.default.publisher(for: .resetView)) { _ in world.camera.recentre() }
                 .onChange(of: city.buildings.map { [$0.id] + $0.floors.map(\.id) }) { buildingsChanged() }
@@ -335,6 +345,7 @@ struct WorldView: View {
                     .accessibilityAddTraits(.isButton)
             }
         }
+        .sheet(isPresented: $showingHall) { CityHall(city: city) }
         .onChange(of: city.glance, initial: true) {
             world.city.glancing = city.glance
             glanceKeys.map(NSEvent.removeMonitor)
@@ -423,6 +434,7 @@ struct WorldView: View {
             }
         }
         guard world.inBuilding == nil, let target = CityScene.target(of: entity) else { return }
+        if target == "lot:hall" { showingHall = true; return }
         if target == "lot:new" { return ProjectPicker.addProject() }
         guard let id = UUID(uuidString: String(target.dropFirst("building:".count))), id != buildingID else { return }
         prewarm([id])
@@ -489,6 +501,7 @@ struct BuildingHUD: View {
     let building: CityStore.Building
     let scene: BuildingScene
     var composer: ReceptionComposer?
+    @State private var showingNoticeboard = false
     @State private var composerSize = CGSize(width: 592, height: 120)
     @Environment(\.sceneSafeArea) private var safeArea
 
@@ -499,6 +512,7 @@ struct BuildingHUD: View {
                 topRow(compact: true, iconsOnly: false)
                 topRow(compact: true, iconsOnly: true)
             }
+            DaylightDial()
             Text(building.floors.isEmpty ? "Tell reception what you need. It sets up a floor with the right team." : "Swipe up or down on the trackpad to move between floors. Click one to go in, or ask reception below.")
                 .font(Typography.caption).foregroundStyle(Color(Palette.muted))
             Spacer()
@@ -510,6 +524,7 @@ struct BuildingHUD: View {
         }
         .padding(20)
         .padding(.bottom, safeArea.bottom)
+        .sheet(isPresented: $showingNoticeboard) { ProjectNoticeboard(city: city, building: building) }
         .overlay {
             GeometryReader { geometry in
                 // Built outside the timeline, so following the receptionist only moves the panel instead of re-running its body every frame.
@@ -548,6 +563,8 @@ struct BuildingHUD: View {
             Spacer()
             Instruments(city: city, scope: .building(building), configDirectory: Preferences.shared.configDirectory)
             Group {
+                Button("Noticeboard", systemImage: "doc.text.image") { showingNoticeboard = true }
+                    .buttonStyle(PillButtonStyle(kind: .secondary))
                 OpenInMenu(directory: building.url)
                 Button("New floor…", systemImage: "plus") { city.startNewFloor(in: building.id) }
                     .buttonStyle(PillButtonStyle(kind: .secondary))
@@ -575,6 +592,7 @@ struct FloorList: View {
                     Label(floor.name, systemImage: city.signal(of: floor).symbol)
                 }
                 .buttonStyle(PillButtonStyle(kind: .secondary))
+                .fixedSize(horizontal: true, vertical: false)
                 .help(floorStatus(floor, session: session))
                 .accessibilityLabel("\(floor.name), \(floorStatus(floor, session: session))")
                 .contextMenu {

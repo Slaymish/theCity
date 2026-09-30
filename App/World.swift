@@ -9,6 +9,7 @@ final class World {
     var updates: EventSubscription?
     private(set) var inBuilding: UUID?
     var cityStale = false
+    private(set) var hasBuilt = false
     private var generation = 0
     static let slide = BuildingScene.slide
 
@@ -29,7 +30,7 @@ final class World {
     }
 
     func update(_ dt: Double) {
-        guard !paused else { return }
+        guard !paused, MainWindow.shared.isOpen else { return }
         city.update(dt)
         guard building.root.isEnabled else { return }
         building.update(dt)
@@ -39,6 +40,11 @@ final class World {
             city.hideOccluders(eye: eye, target: target, keeping: id)
             city.borrowedEye = (eye, target)
         }
+    }
+
+    func relight() {
+        city.applyDaylight()
+        building.applyDaylight()
     }
 
     func fit(_ size: CGSize) {
@@ -125,6 +131,7 @@ final class World {
 
     func rebuildCity(_ buildings: [CityStore.Building], dark: Bool) {
         cityStale = false
+        hasBuilt = true
         city.build(buildings, dark: dark)
         cityRebuilt()
     }

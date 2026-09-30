@@ -40,6 +40,8 @@ final class CityStore {
         var floors: [Floor] = []
         var createdAt = Date()
         var title: String?
+        var purpose: String?
+        var previewURL: String?
 
         var url: URL { URL(fileURLWithPath: path) }
     }
@@ -118,6 +120,13 @@ final class CityStore {
             buildings[index].title = title
             save()
         }
+    }
+
+    func describeBuilding(_ id: UUID, purpose: String, previewURL: String) {
+        guard let index = buildings.firstIndex(where: { $0.id == id }) else { return }
+        buildings[index].purpose = purpose.trimmingCharacters(in: .whitespacesAndNewlines)
+        buildings[index].previewURL = ProjectNoticeboard.webURL(previewURL)?.absoluteString
+        save()
     }
 
     func removeBuilding(_ id: UUID) {

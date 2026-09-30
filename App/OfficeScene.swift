@@ -223,7 +223,8 @@ final class OfficeScene {
         cabinet.position = position + [0, 0.08, -0.6]
         cabinet.scale = [1.3, 1.3, 1.3]
         root.addChild(cabinet)
-        outboxSpot = position + [0, 0.08 + 1.62 * 1.3 + 0.05, -0.6]
+        ModelLibrary.rest(cabinet, on: position.y + 0.08, relativeTo: root)
+        outboxSpot = [position.x, cabinet.visualBounds(relativeTo: root).max.y + 0.05, position.z - 0.6]
         let tray = ModelEntity(mesh: ModelLibrary.box(width: 1.1, height: 0.1, depth: 0.8, cornerRadius: 0.04),
                                materials: [Self.material(Palette.tray)])
         tray.position = outboxSpot
@@ -232,8 +233,9 @@ final class OfficeScene {
         let plant = ModelLibrary.entity("cactus_medium_A")
         plant.position = position + [1.6, 0.08, 1.2]
         root.addChild(plant)
+        ModelLibrary.rest(plant, on: position.y + 0.08, relativeTo: root)
         let banner = Pod.banner(symbol: "tray.full.fill", title: "Outbox", colour: Palette.folder, dark: dark)
-        banner.position += position
+        banner.position += position + [0, 0.08, 0]
         root.addChild(banner)
         outboxBanner = banner
     }
@@ -336,7 +338,7 @@ final class OfficeScene {
 
     static func studioExposure(_ cycle: DayCycle) -> Float { cycle.mix(day: 0.55, night: -1.6) }
 
-    private func applyDaylight() {
+    func applyDaylight() {
         let cycle = DayCycle.now
         lighting.components.removeAll()
         if let environment = ModelLibrary.environment("studio") {
@@ -930,10 +932,11 @@ final class Pod {
             entity.orientation = simd_quatf(angle: yaw, axis: [0, 1, 0])
             entity.scale = [scale, scale, scale]
             base.addChild(entity)
+            ModelLibrary.rest(entity, on: offset.y + 0.08, relativeTo: base)
             return entity
         }
-        _ = place("table_medium_long", [0.3, 0, 0], yaw: .pi / 2)
-        let top: Float = 1.08
+        let table = place("table_medium_long", [0.3, 0, 0], yaw: .pi / 2)
+        let top = table.visualBounds(relativeTo: base).max.y
         deskTop = position + [0.3, top, 0]
         NightLight.add(to: base, at: [0.3, 2.2, 0.4], colour: Palette.resolved(Palette.lamp, dark: false), intensity: 150000, radius: 4, bulb: 0)
         let monitor = place("monitor", [0.65, top - 0.08, 0.1], yaw: -.pi / 2, scale: 1.7)
@@ -957,7 +960,7 @@ final class Pod {
             _ = place("shelf_B_small_decorated", [1.4, 0, -2.0], scale: 1.1)
         case 1:
             OfficeScene.addLampLight(to: place("lamp_standing", [-2.0, 0, -1.7], scale: 0.75), standing: true)
-            _ = place("book_set", [0.7, top - 0.08 + 0.25, -1.05], yaw: .pi / 2, scale: 0.8)
+            _ = place("book_set", [0.7, top - 0.08, -1.05], yaw: .pi / 2, scale: 0.8)
             _ = place("cactus_small_B", [2.0, 0, 1.9])
         case 2:
             _ = place("shelf_B_small_decorated", [-1.9, 0, -2.0], scale: 1.1)
@@ -995,6 +998,7 @@ final class Pod {
 
     func hangBanner(symbol: String, title: String, dark: Bool) {
         let flag = Self.banner(symbol: symbol, title: title, colour: colour, dark: dark)
+        flag.position.y = 0.08
         root.addChild(flag)
         banner = flag
     }
@@ -1049,7 +1053,7 @@ final class Pod {
         bookTitles.append(title)
         let book = ModelEntity(mesh: ModelLibrary.box(width: 0.42, height: 0.1, depth: 0.32, cornerRadius: 0.02),
                                materials: [OfficeScene.material(colour)])
-        book.position = [-0.2, 1.08 + Float(books.count) * 0.105, -0.9]
+        book.position = [-0.2, deskTop.y - root.position.y + 0.05 + Float(books.count) * 0.1, -0.9]
         root.addChild(book)
         books.append(book)
         bookLabel?.removeFromParent()

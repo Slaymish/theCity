@@ -13,7 +13,13 @@ struct ContentView: View {
                 Color(DayCycle.now.sky(dark: colorScheme == .dark)).ignoresSafeArea()
             }
             switch city.route {
-            case .welcome, .city, .building, .floor, .newFloor:
+            case .newFloor:
+                if let draft = city.draft, draft.screen == .office {
+                    OfficeView(controller: draft)
+                } else {
+                    WorldView(city: city)
+                }
+            case .welcome, .city, .building, .floor:
                 WorldView(city: city)
             }
         }

@@ -35,6 +35,9 @@ The app uses [Sparkle](https://sparkle-project.org) to check for new releases an
 ![A floor at work: the manager hands a folder to each desk while the step bar and counter tick along, the build robot asks for approval to run npm test, then the delivery card lists the finished file](Docs/Media/office.gif)
 
 - **City:** each project folder is a building (File › New Project…, ⇧⌘N). Beacons show which buildings are working or need you, and a "Needs you" list jumps to the waiting floor. ⌘0 returns to the city.
+- **City Hall:** a city-wide dispatch desk routes requests to a building and its floor before you send them. Enable the optional native mayor for on-device conversation and background rounds at your chosen interval. Rounds inspect local workspace changes and floor signals while the app runs; they never start agent jobs. The mayor is off by default.
+- **Noticeboard:** each building has a brief, a document shelf, recent deliveries with Run Again and Continue, and a pinned site or app link. A building can hold research or product work as well as code.
+- **Daylight:** the HUD dial moves the scene from warm dawn through daylight to purple twilight and night. Each launch follows your system’s local time until you move the dial; Local time restores it.
 - **Reception:** tell the receptionist what you need. It sends the job to the floor whose team fits, taking into account work already running on other floors, or proposes a new floor. A busy floor queues the job.
 - **Hiring:** a new floor's departments are picked from the project's `.claude/agents/*.md`. You can hire or release any of them.
 - **Floor:** a saved team (departments, model, budget, allowed services and skills) with its own Claude session and job history. Floors run in parallel.
@@ -47,6 +50,8 @@ The app uses [Sparkle](https://sparkle-project.org) to check for new releases an
 Settings (⌘,) holds the defaults for new jobs (account, model, budget), the theme, notifications, sounds and the location of `claude`. **View › Show Raw Log** (⌥⌘L) opens the raw CLI stream.
 
 The city is saved in `~/Library/Application Support/The City/`.
+
+The optional iPhone companion is described in the [setup and troubleshooting guide](Docs/Companion.md).
 
 ## Bugs and ideas
 

@@ -38,6 +38,7 @@ struct Brand: Codable, Identifiable, Equatable {
         var streetlight: String
         var nightSky: String
         var duskSky: String
+        var dawnSky: String?
     }
 
     struct Font: Codable, Equatable {
@@ -78,7 +79,7 @@ struct Brand: Codable, Identifiable, Equatable {
     static let defaultGrass = (light: "#BFE3A0", dark: "#5E7A4F")
     static let defaultCloud = (light: "#FFFFFF", dark: "#D9D4E6")
     static let defaultSignalReady = (light: "#33994D", dark: "#47C266")
-    static let defaultSky = Sky(moonlight: "#9DB4E8", dusk: "#FFB070", streetlight: "#FFC46B", nightSky: "#1A1F3D", duskSky: "#F2A88C")
+    static let defaultSky = Sky(moonlight: "#9DB4E8", dusk: "#FFB070", streetlight: "#FFC46B", nightSky: "#1A1F3D", duskSky: "#AC8ACB", dawnSky: "#F2B896")
 
     var logoImage: NSImage? {
         guard let logo, let folder else { return nil }
@@ -160,7 +161,7 @@ extension Brand {
         light: .init(background: "#DCEEFB", panel: "#FFFDF7", panelEdge: "#EADFCB", text: "#3B2F2A", muted: "#7A6A60",
                      primaryFill: "#F2C14E", primaryText: "#3B2F2A", floor: "#E8CFA8", walls: "#F6EEDF",
                      screen: "#2D3A36", screenPixels: "#B6F26B", robot: "#F5F2F8", desk: "#CC9E73", lamp: "#FFDB9E",
-                     folder: "#FAC740", error: "#E54D4D", tray: "#4D5266", grass: "#BFE3A0", cloud: "#FFFFFF"),
+                     folder: "#FAC740", error: "#E54D4D", tray: "#4D5266", grass: "#BFE3A0", cloud: "#FFFFFF", signalReady: defaultSignalReady.light),
         dark: nil, sky: defaultSky, departments: ["#F2836B", "#7DBB5E", "#F2C14E", "#5A7BD8"], manager: "#C9557A", onAccent: "#3B2F2A",
         notes: nil, folder: nil)
 }

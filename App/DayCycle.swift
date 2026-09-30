@@ -15,7 +15,13 @@ struct DayCycle {
 
     @MainActor static var now: DayCycle {
         let parts = Calendar.current.dateComponents([.hour, .minute], from: .now)
-        return DayCycle(hour: LaunchArgument.value("-hour").flatMap(Double.init) ?? Double(parts.hour ?? 13) + Double(parts.minute ?? 0) / 60)
+        let local = Double(parts.hour ?? 13) + Double(parts.minute ?? 0) / 60
+        #if os(macOS)
+        let selected = CityClock.shared.hour ?? local
+        #else
+        let selected = local
+        #endif
+        return DayCycle(hour: LaunchArgument.value("-hour").flatMap(Double.init) ?? selected)
     }
 
     /// 1 in full day, 0 in full night, eased through dawn and dusk.
@@ -46,14 +52,14 @@ struct DayCycle {
     }
 
     var sunColour: NSColor {
-        let white = NSColor.white
-        let warmed = white.blended(withFraction: CGFloat(twilight.squareRoot()), of: Palette.dusk) ?? white
+        let white = NSColor.white.blended(withFraction: 0.12, of: Palette.dawnSky) ?? .white
+        let warmed = white.blended(withFraction: CGFloat(twilight.squareRoot()), of: hour < 12 ? Palette.dusk : Palette.duskSky) ?? white
         return warmed.blended(withFraction: CGFloat(moon), of: Palette.moonlight) ?? warmed
     }
 
     func sky(dark: Bool) -> NSColor {
         let day = Palette.resolved(Palette.background, dark: dark)
-        let warmed = day.blended(withFraction: CGFloat(twilight), of: Palette.duskSky) ?? day
+        let warmed = day.blended(withFraction: CGFloat(twilight), of: hour < 12 ? Palette.dawnSky : Palette.duskSky) ?? day
         return warmed.blended(withFraction: CGFloat(moon), of: Palette.nightSky) ?? warmed
     }
 

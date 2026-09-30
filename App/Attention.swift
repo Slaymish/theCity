@@ -59,6 +59,10 @@ final class Attention: NSObject, UNUserNotificationCenterDelegate {
              info: ["building": building.uuidString, "newFloor": drafted ? "yes" : "no"])
     }
 
+    func mayorUpdate(_ text: String, count: Int, building: UUID) {
+        post(title: "Mayor’s round", subtitle: "The City", body: text + (count > 1 ? " And \(count - 1) more updates in City Hall." : ""), info: ["building": building.uuidString])
+    }
+
     func notReady(_ readiness: RunController.Readiness, place: String, building: UUID) {
         let title = switch readiness {
         case .cliMissing: "Claude Code isn’t installed"
@@ -148,7 +152,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !MainWindow.offscreen {
             DictationStore.shared.start()
             SleepGuard.shared.watch(.shared)
-            CompanionHost.shared.start()
+            if RunController.launchArgument("-data") == nil || ProcessInfo.processInfo.arguments.contains("-companion-link") { CompanionHost.shared.start() }
+            Mayor.shared.start()
         }
         #if !DEBUG
         _ = Updater.shared

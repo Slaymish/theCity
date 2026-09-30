@@ -284,7 +284,7 @@ enum ReceptionDesk {
     }
 
     // A task group would wait for the model, which ignores cancellation, so race unstructured tasks instead.
-    private static func withTimeout<T: Sendable>(seconds: Double, _ work: @escaping @Sendable () async throws -> T) async throws -> T? {
+    static func withTimeout<T: Sendable>(seconds: Double, _ work: @escaping @Sendable () async throws -> T) async throws -> T? {
         let race = Race<T>()
         return try await withCheckedThrowingContinuation { continuation in
             race.continuation = continuation

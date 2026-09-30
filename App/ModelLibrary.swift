@@ -22,6 +22,13 @@ enum ModelLibrary {
         return loaded.clone(recursive: true)
     }
 
+    /// Rest imported assets on a measured surface after rotation and scaling.
+    static func rest(_ entity: Entity, on height: Float, relativeTo parent: Entity) {
+        let bounds = entity.visualBounds(relativeTo: parent)
+        guard bounds.min.y.isFinite, bounds.extents.y > 0 else { return }
+        entity.position.y += height - bounds.min.y
+    }
+
     static let officeModels = ["table_medium_long", "monitor", "keyboard", "mug", "chair_C", "robot", "cactus_medium_A", "cactus_small_B",
                                "shelf_B_small_decorated", "lamp_standing", "lamp_table", "book_set", "pictureframe_standing_A", "armchair_pillows",
                                "couch_pillows", "cabinet_small_decorated", "tie", "glasses", "hardhat", "magnifier", "beret", "cap"]

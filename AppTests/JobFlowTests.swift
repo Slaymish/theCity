@@ -66,11 +66,19 @@ extension WithFakeCLI {
 
             #expect(floor.session.history.map(\.kind) == [.request, .outcome])
             #expect(floor.session.history.last?.title == "Delivered")
-            #expect(FloorHistory.load(floor.floorID) == floor.session.history)
+            // ISO8601 persistence stores whole seconds, while live events keep subsecond dates.
+            let expectedHistory = floor.session.history.map { entry in
+                var saved = entry
+                saved.date = Date(timeIntervalSince1970: entry.date.timeIntervalSince1970.rounded(.down))
+                return saved
+            }
+            #expect(FloorHistory.load(floor.floorID) == expectedHistory)
 
             let onDisk = try #require(DataFiles.load([CityStore.Building].self, from: CityStore.fileURL))
             #expect(onDisk.first { $0.id == floor.building.id }?.floors.first?.sessionID == Self.firstSession)
-            #expect(JobJournal.load().contains(record))
+            var expectedRecord = record
+            expectedRecord.date = Date(timeIntervalSince1970: record.date.timeIntervalSince1970.rounded(.down))
+            #expect(JobJournal.load().contains(expectedRecord))
         }
 
         @Test func aFinishedJobNeedsYouUntilYouLookAtIt() async throws {

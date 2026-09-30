@@ -25,6 +25,21 @@ struct GitTests {
         ])
     }
 
+    @Test func workspaceChecksNoticeUntrackedFilesAndNewCommits() async throws {
+        let repo = URL(fileURLWithPath: "/tmp").appendingPathComponent("MayorGitTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: repo) }
+        #expect(await Git.workspaceStatus(in: repo) == nil)
+        try shell("git init -q -b main && git -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q --allow-empty -m init", in: repo)
+        let first = try #require(await Git.revision(in: repo))
+        #expect(await Git.workspaceStatus(in: repo) == "")
+        try "Research findings".write(to: repo.appendingPathComponent("report.txt"), atomically: true, encoding: .utf8)
+        #expect(await Git.workspaceStatus(in: repo) == "?? report.txt")
+        try shell("git add report.txt && git -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -q -m report", in: repo)
+        #expect(await Git.workspaceStatus(in: repo) == "")
+        #expect(await Git.revision(in: repo) != first)
+    }
+
     @Test func worktreeFlagOnlyWhenAsked() throws {
         let config = RunConfig(request: "hi", workingDirectory: URL(fileURLWithPath: "/tmp"), claudeConfigDirectory: nil, model: nil, maxBudgetUSD: nil)
         #expect(!config.arguments.contains("--worktree"))

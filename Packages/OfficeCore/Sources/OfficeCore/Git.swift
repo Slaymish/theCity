@@ -47,6 +47,14 @@ public enum Git {
                         worktrees: worktrees(fromPorcelain: list))
     }
 
+    public static func revision(in directory: URL) async -> String? {
+        try? await run(["rev-parse", "--short", "HEAD"], in: directory)
+    }
+
+    public static func workspaceStatus(in directory: URL) async -> String? {
+        try? await run(["status", "--porcelain", "--untracked-files=normal"], in: directory)
+    }
+
     public static func currentBranch(in directory: URL) async -> String? {
         guard let name = try? await run(["branch", "--show-current"], in: directory), !name.isEmpty else { return nil }
         return name

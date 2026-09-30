@@ -415,7 +415,8 @@ final class BuildingScene {
         return group
     }
 
-    private func applyDaylight() {
+    func applyDaylight() {
+        storeys.forEach { $0.scene.applyDaylight() }
         let cycle = DayCycle.now
         if let environment = ModelLibrary.environment("studio") {
             lobbyLight.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: OfficeScene.studioExposure(cycle)))

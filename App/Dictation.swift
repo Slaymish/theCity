@@ -294,7 +294,10 @@ struct DictationSettings: View {
             switch store.state {
             case .none: EmptyView()
             case .downloading(let fraction): ProgressView("Downloading…", value: fraction)
-            case .loading: LabeledContent("Status") { ProgressView().controlSize(.small) }
+            case .loading:
+                LabeledContent("Preparing speech model") { ProgressView().controlSize(.small) }
+                Text("Compiling and warming the model on this Mac. The first preparation can take a few minutes; later loads are usually faster.")
+                    .font(.caption).foregroundStyle(Color(Palette.muted))
             case .ready: LabeledContent("Status", value: "Ready")
             case .failed(let message):
                 Text(message).font(.caption).foregroundStyle(Color(Palette.error))

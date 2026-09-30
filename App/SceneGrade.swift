@@ -25,7 +25,7 @@ struct SceneGrade: PostProcessEffect {
     private var grader: Grader?
 
     @MainActor static func update(_ cycle: DayCycle) {
-        let moon = Self.tint(Palette.moonlight), dusk = Self.tint(Palette.dusk)
+        let moon = Self.tint(Palette.moonlight), dusk = Self.tint(cycle.hour < 12 ? Palette.dusk : Palette.duskSky)
         var next = Settings()
         next.bloom = cycle.mix(day: 0.15, night: 1.2)
         next.threshold = cycle.mix(day: 1.1, night: 0.45)

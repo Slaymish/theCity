@@ -5,7 +5,7 @@ import UIKit
 #endif
 import RealityKit
 
-/// Distance haze and drifting clouds, built from geometry because RealityView post-processing crashes on macOS 26 (#44).
+/// Distance haze and drifting clouds, built from geometry because live RealityView post-processing traps (#44).
 @MainActor
 enum Horizon {
     static let shells = 12

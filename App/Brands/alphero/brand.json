@@ -9,6 +9,7 @@
     "screen": "#2D3A36", "screenPixels": "#B6F26B",
     "robot": "#F5F2F8", "desk": "#CC9E73", "lamp": "#FFDB9E", "folder": "#FAC740", "error": "#E54D4D", "tray": "#4D5266", "grass": "#BFE3A0", "signalReady": "#2B8241", "cloud": "#FFFFFF"
   },
+  "sky": { "moonlight": "#9DB4E8", "dusk": "#FFB070", "streetlight": "#FFC46B", "nightSky": "#1A1F3D", "duskSky": "#AC8ACB", "dawnSky": "#F2B896" },
   "departments": ["#3D2051"],
   "manager": "#3D2051",
   "onAccent": "#FFFFFF",

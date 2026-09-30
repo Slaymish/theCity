@@ -31,11 +31,30 @@ The mic button beside the New Job field and the "Something else" answer field re
 
 A free Apple ID can install apps on your own phone for 7 days at a time. Local network works; iCloud doesn't (see below).
 
-1. In Xcode, sign in with your Apple ID (Settings › Accounts) and note your personal team ID.
-2. `THECITY_TEAM=<team id> make project`, then open `TheCity.xcodeproj`, pick the `TheCityCompanion` scheme and your phone, and run.
-3. On the Mac, open Settings › iPhone, turn it on, and scan the code with the phone.
+1. Finish Xcode’s first-launch setup and sign in with your Apple ID in **Xcode › Settings › Accounts**. Select your personal team and note its team ID.
+2. Connect the unlocked iPhone by cable, confirm **Trust This Computer**, and select it in **Xcode › Window › Devices and Simulators**. Enable **Connect via network** for later Wi-Fi installs.
+3. On the phone, turn on **Settings › Privacy & Security › Developer Mode**. Restart and confirm Developer Mode when prompted.
+4. Run `THECITY_TEAM=<team id> make phone`. To select a particular device, use `THECITY_TEAM=<team id> Tools/Dev/install-phone.sh "My iPhone"`. Keep the phone unlocked. The script builds, installs and launches the app.
+5. If iOS reports an untrusted developer, go to **Settings › General › VPN & Device Management**, select your developer profile, and trust it.
+6. Open the installed Mac app’s **Settings › iPhone**, turn on the link and scan its pairing code with the companion. Allow **Camera** and **Local Network** access on the phone.
 
-Once the phone has been set up for wireless use, `THECITY_TEAM=<team id> make phone` does step 2 and the install without opening Xcode, over Wi-Fi. Set it up once: plug the phone in, turn on Developer Mode, and in Xcode's Window › Devices and Simulators tick "Connect via network". Re-run it every 7 days to renew the install. If the team can't register the bundle id, set `THECITY_BUNDLE_ID` to something unique.
+Both devices must be on the same local network for pairing and local use. A guest Wi-Fi network that isolates clients, or a VPN, can prevent Bonjour discovery. Try your regular Wi-Fi and temporarily disconnect the VPN when diagnosing discovery.
+
+Use the installed Mac app for pairing. Development builds launched with `-data` leave the companion link off; `-companion-link` explicitly enables it for companion development.
+
+A free account’s profile expires after 7 days and permits only a small number of installed development apps. Re-run the same `make phone` command to renew the installation. A paid team extends provisioning validity and can enable iCloud; the current local build does not automatically gain away-from-home access.
+
+### Troubleshooting
+
+| Symptom | What to check |
+|---|---|
+| “Failed to register bundle identifier” | Pick a unique ID: `THECITY_TEAM=<team id> THECITY_BUNDLE_ID=nz.yourname.citycompanion make phone`. Use that same ID for subsequent installs. |
+| No iPhone found | Unlock it, connect by cable for initial pairing, and check its entry in Xcode’s Devices window. Wi-Fi installs need the network connection enabled there. |
+| Camera or Local Network permission was denied | Open the companion’s entry in iOS Settings and enable the permission. Return to pairing. |
+| Not paired | Open Settings › iPhone in the installed Mac app and scan its current QR code. **Pair Again** invalidates older keys, so repeat pairing afterwards. |
+| Mac asleep or disconnected | Wake the Mac, open The City, and confirm that both devices are reachable on the same network. |
+| Stale picture | The phone marks snapshots stale after three minutes without a fresh update. Check that the Mac app is running and its iPhone link is enabled. |
+| App stops opening after a week | Renew the free provisioning profile by running `make phone` again. |
 
 `make companion` builds for the simulator, which needs no signing.
 

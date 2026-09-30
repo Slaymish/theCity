@@ -21,7 +21,7 @@ A macOS 26 app (SwiftUI + RealityKit) that shows Claude Code runs as a city of r
 ## Checking your work
 
 - Offscreen renders are the reliable check. Wrap them in a 120 s timeout and downscale with `sips -Z 1000` before viewing:
-  `build/Build/Products/Debug/TheCity.app/Contents/MacOS/TheCity -render-preview out.png [-theme light|dark] [-workspace "$PWD/SampleWorkspace"] [-city | -building [-floor N] | -focus <room>]`
+  `perl -e 'alarm 120; exec @ARGV' build/Build/Products/Debug/TheCity.app/Contents/MacOS/TheCity -render-preview out.png [-theme light|dark] [-workspace "$PWD/SampleWorkspace"] [-city | -building [-floor N] | -focus <room>]`
 - `-route-test "<request>"` prints Reception's routing decision (on-device, free; add `-receptionist claude` to ask Haiku instead).
 - `-graphics low|medium|high|ultra` forces a quality level, including in offscreen renders.
 - `-parallel-test` spends real money. Ask first.

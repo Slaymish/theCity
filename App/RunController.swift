@@ -1040,7 +1040,7 @@ final class RunController {
 
     private func note(_ room: String, _ text: String) {
         activity.append(ActivityItem(room: room, text: text))
-        if activity.count > 40 { activity.removeFirst(activity.count - 40) }
+        if activity.count > 250 { activity.removeFirst(activity.count - 250) }
     }
 
     private func track(_ events: [OfficeEvent]) {

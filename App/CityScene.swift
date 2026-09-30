@@ -58,6 +58,7 @@ final class CityScene {
     private static let glanceLift: Float = 1.2
     private static let glancePitch: Float = 0.45
     private static let glanceDistance: Float = 26
+    private var hall: Entity?
     private var greeter: Worker?
     private var emptyLot: SIMD3<Float> = .zero
     private var rises: [(entity: Entity, top: Float, height: Float, elapsed: Double)] = []
@@ -100,6 +101,10 @@ final class CityScene {
     }
 
     func build(_ buildings: [CityStore.Building], dark: Bool) {
+        let rising = rises.compactMap { rise -> (UUID, Double)? in
+            guard let id = facades.first(where: { $0.value.entity === rise.entity })?.key else { return nil }
+            return (id, rise.elapsed)
+        }
         self.dark = dark
         self.buildings = buildings
         root.children.removeAll()
@@ -113,7 +118,7 @@ final class CityScene {
         greeter = nil
         cover = [:]
 
-        let plots = buildings.count + 1
+        let plots = buildings.count + 2
         let blocks = max(Int(ceil(sqrt(Double(plots)))), 2)
         let cells = blocks * 2 + 1
         extent = Float(cells) * Self.tile
@@ -139,12 +144,19 @@ final class CityScene {
                 if plotIndex < buildings.count {
                     addBuilding(buildings[plotIndex], at: position)
                 } else if plotIndex == buildings.count {
+                    addCityHall(at: position)
+                } else if plotIndex == buildings.count + 1 {
                     addEmptyLot(at: position)
                 } else {
                     addPark(at: position, seed: plotIndex)
                 }
                 plotIndex += 1
             }
+        }
+        for (id, elapsed) in rising {
+            guard let facade = facades[id], elapsed < Self.riseTime else { continue }
+            facade.entity.position.y = 0.1 - facade.height * (1 - Self.riseProgress(elapsed))
+            rises.append((facade.entity, 0.1, facade.height, elapsed))
         }
         addCars(origin: origin, cells: cells)
         addTreeRing(halfWidth: extent / 2)
@@ -295,6 +307,7 @@ final class CityScene {
 
     private func addProp(_ entity: Entity) {
         root.addChild(entity)
+        if entity.name != "lot:hall" { ModelLibrary.rest(entity, on: entity.position.y, relativeTo: root) }
         let bounds = entity.visualBounds(relativeTo: root)
         props.append((entity, bounds.max.y, max(bounds.extents.x, bounds.extents.z) / 2))
     }
@@ -304,10 +317,11 @@ final class CityScene {
         labelsVisible = visible
         if shown { refresh() }
         lots.values.forEach(showMarker)
+        hall?.descendants.filter { $0.components.has(BillboardComponent.self) }.forEach { $0.isEnabled = visible }
     }
 
     private func showMarker(_ lot: Lot) {
-        lot.root.isEnabled = labelsVisible && (hovered == lot.id || lot.signal != .quiet)
+        lot.root.isEnabled = labelsVisible
         lot.marker.isEnabled = labelsVisible && lot.signal != .quiet
     }
 
@@ -362,6 +376,23 @@ final class CityScene {
         return .init(target: [lot.marker.position.x, lot.top - 1.0, lot.marker.position.z], yaw: 0.72, pitch: 0.45, distance: 7)
     }
 
+    private func addCityHall(at position: SIMD3<Float>) {
+        let civic = CityStore.Building(name: "City Hall", path: "", style: 2)
+        let model = Facade.tower(civic, dark: dark)
+        model.position = position + [0, 0.1, 0]
+        model.name = "lot:hall"
+        let bounds = model.visualBounds(relativeTo: nil)
+        model.components.set(CollisionComponent(shapes: [.generateBox(size: bounds.extents).offsetBy(translation: bounds.center - model.position)]))
+        model.components.set(InputTargetComponent())
+        addProp(model)
+        if let sign = Billboard.make(BubbleView(symbol: "building.columns.fill", text: "City Hall", colour: Palette.primaryFill), dark: dark) {
+            sign.position = [0, bounds.extents.y + 0.5, 0]
+            sign.scale = SIMD3(repeating: 0.6)
+            model.addChild(sign)
+        }
+        hall = model
+    }
+
     private func addEmptyLot(at position: SIMD3<Float>) {
         emptyLot = position
         addStreetlight(at: position)
@@ -373,7 +404,7 @@ final class CityScene {
         pad.components.set(InputTargetComponent())
         root.addChild(pad)
         let sign = Pod.banner(symbol: "signpost.right.fill", title: "For sale", colour: Palette.primaryFill, dark: dark)
-        sign.position = [-0.35, 0.14, 0.35]
+        sign.position = [-0.35, 0.02, 0.35]
         sign.scale = SIMD3(repeating: 0.28)
         pad.addChild(sign)
         for offset in [SIMD3<Float>(0.55, 0.02, 0.6), [0.62, 0.02, 0.25], [-0.6, 0.02, -0.55]] {
@@ -396,6 +427,12 @@ final class CityScene {
 
     func titlePose() -> CameraRig.Pose {
         .init(target: emptyLot + [0, 0.5, 0], yaw: 0.72, pitch: 0.42, distance: 9)
+    }
+
+    private static func riseProgress(_ elapsed: Double) -> Float {
+        let t = Float(min(elapsed / riseTime, 1))
+        let ease = { (x: Float) in 1 - (1 - x) * (1 - x) * (1 - x) }
+        return t < 0.75 ? 1.05 * ease(t / 0.75) : 1.05 - 0.05 * ease((t - 0.75) / 0.25)
     }
 
     func riseBuilding(_ id: UUID) {
@@ -557,8 +594,9 @@ final class CityScene {
 
     static func skyExposure(_ cycle: DayCycle) -> Float { Horizon.skyExposure(cycle) }
 
-    private func applyDaylight() {
+    func applyDaylight() {
         let cycle = DayCycle.now
+        if let hall { Facade.light(hall, glow: 0.6 * cycle.lamps) }
         if let environment = ModelLibrary.environment("sky") {
             lighting.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: Self.skyExposure(cycle)))
         }
@@ -627,10 +665,7 @@ final class CityScene {
         for index in rises.indices {
             rises[index].elapsed += dt
             let rise = rises[index]
-            let t = Float(min(rise.elapsed / Self.riseTime, 1))
-            let ease = { (x: Float) in 1 - (1 - x) * (1 - x) * (1 - x) }
-            let progress = t < 0.75 ? 1.05 * ease(t / 0.75) : 1.05 - 0.05 * ease((t - 0.75) / 0.25)
-            rise.entity.position.y = rise.top - rise.height * (1 - progress)
+            rise.entity.position.y = rise.top - rise.height * (1 - Self.riseProgress(rise.elapsed))
         }
         rises.removeAll { $0.elapsed >= Self.riseTime }
         greeter?.update(dt, reduceMotion: OfficeScene.reduceMotion)

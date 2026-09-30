@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.15.0
+
+### Added
+
+- City Hall now stands in the city, and clicking it or the City Hall button in the city view opens a dispatch desk where you describe the work, pick a building and have it find the right floor before you send it.
+- An optional mayor, off by default and switched on in City Hall, answers questions about the city on-device with Apple Intelligence and suggests a building for the work.
+- While the mayor is on, it makes rounds at an interval you choose that check each workspace for changes and each floor for requests, failures and results, and sends a notification, without running agent jobs or spending tokens.
+- Each building has a Noticeboard, opened from the building view or City Hall, with an editable brief, a link to the project's site or app, the folder's documents and README, its git branch and changed files, and the last ten finished jobs with Run again and Continue.
+- A daylight dial in the city, building and floor views sets the scene's time of day, and Local time puts it back on your clock, which every launch starts from.
+- Bloom, the time-of-day colour grade and the vignette now show in the live city and office views, and higher graphics quality levels add the miniature focus effect to the city.
+- While a job runs, a Manager's desk card on the floor shows what each working department is doing, the manager's latest note and a See dispatches button.
+
+### Changed
+
+- Mornings now have a warm dawn sky, and evenings turn purple at dusk.
+- New project… is now New building…, and the folder picker can create a new folder for research, product or other non-code work.
+- Building names in the city now show all the time, not only on hover or when something needs you.
+- The activity feed keeps the last 250 entries instead of 40, its text can be selected, and it stops following new entries while you scroll back, with a Latest activity button to return.
+- Dictation settings explain that preparing the speech model for the first time can take a few minutes.
+
+### Fixed
+
+- Fixed desks, books, cabinets, plants and banners floating above or sinking into the floor.
+- Fixed floor names being cut short in the building view's floor list.
+
 ## 0.14.0
 
 ### Added

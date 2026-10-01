@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Renders the README reels offscreen and encodes them to Docs/Media. Needs `make build`, ffmpeg and gifsicle.
+# Renders the README reels offscreen and encodes them to Docs/Media as GIF and H.264 MP4. Needs `make build`, ffmpeg and gifsicle.
 set -euo pipefail
 cd "${0:A:h}/../.."
 
@@ -22,6 +22,10 @@ for reel in "${reels[@]}"; do
   ffmpeg -v error -y -framerate "${fps[$reel]}" -i "$frames/$reel/frame-%05d.png" \
     -vf "scale=${width[$reel]}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=${colours[$reel]}:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" \
     -loop 0 "$frames/$reel.gif"
+  ffmpeg -v error -y -framerate "${fps[$reel]}" -i "$frames/$reel/frame-%05d.png" \
+    -vf "scale=${width[$reel]}:-2:flags=lanczos,format=yuv420p" -c:v libx264 -preset veryslow -tune animation \
+    -crf 23 -movflags +faststart -an "Docs/Media/$reel.mp4"
+  echo "Docs/Media/$reel.mp4 $(du -h "Docs/Media/$reel.mp4" | cut -f1)"
   gifsicle -O3 --lossy=${lossy[$reel]} "$frames/$reel.gif" -o "$frames/$reel-final.gif"
   bytes=$(stat -f%z "$frames/$reel-final.gif")
   if (( bytes > 8 * 1024 * 1024 )); then

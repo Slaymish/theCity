@@ -25,7 +25,7 @@ make install                  # include the new icons in the installed app
 
 Reels render at 1600 × 1000 with medium edge smoothing and miniature focus, plus the offscreen colour grade. The HUD is composited after those effects so its text stays sharp. Simulation steps stay at 1/60 second or smaller, even for a 2 fps contact sheet.
 
-GIFs use 192 colours (128 for the city tour), light ordered dithering and per-reel compression. The script refuses to replace a published GIF if the new file exceeds 8 MiB and keeps the source frames for another encoding pass. Inspect coalesced frames from the final GIF, including the approval text and both ends of the showcase loop.
+GIFs use 192 colours (128 for the city tour), light ordered dithering and per-reel compression. Each reel is also written as an H.264 MP4 (`<reel>.mp4`, CRF 23, `veryslow`, `-tune animation`, no audio, faststart) from the same source frames, at about a tenth of the GIF's size. The script refuses to replace a published GIF if the new file exceeds 8 MiB and keeps the source frames for another encoding pass. Inspect coalesced frames from the final GIF, including the approval text and both ends of the showcase loop.
 
 ## Icons
 

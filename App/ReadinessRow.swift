@@ -35,8 +35,8 @@ struct ReadinessRow: View {
     private var content: (message: String, actions: [Action])? {
         switch controller.readiness {
         case .cliMissing:
-            return ("Claude Code isn’t installed.", [
-                Action(title: "Install…") { NSWorkspace.shared.open(Self.installPage) },
+            return ("\(controller.provider.title) isn’t installed.", [
+                Action(title: "Install…") { NSWorkspace.shared.open(controller.provider == .codex ? URL(string: "https://developers.openai.com/codex/quickstart")! : Self.installPage) },
                 Action(title: "Locate…") { locate() },
             ])
         case .cliOutdated(let version):
@@ -45,7 +45,7 @@ struct ReadinessRow: View {
                 Action(title: "Check Again") { controller.checkReadiness() },
             ])
         case .notLoggedIn:
-            return ("You’re not signed in to Claude Code with the \(Preferences.accountName(controller.configDirectory)) account.", [
+            return (controller.provider == .codex ? "You’re not signed in to Codex." : "You’re not signed in to Claude Code with the \(Preferences.accountName(controller.configDirectory)) account.", [
                 Action(title: "Sign In…") { controller.signIn() },
             ])
         case .checking, .ready:
@@ -61,9 +61,10 @@ struct ReadinessRow: View {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
-        panel.message = "Choose the claude command-line tool"
+        panel.message = "Choose the \(controller.provider.rawValue) command-line tool"
         if panel.runModal() == .OK, let url = panel.url {
-            Preferences.shared.cliPath = url.path
+            if controller.provider == .codex { Preferences.shared.codexCLIPath = url.path }
+            else { Preferences.shared.cliPath = url.path }
             controller.checkReadiness()
         }
     }
@@ -111,11 +112,18 @@ struct AccountMenu: View {
 
     var body: some View {
         Menu {
-            ForEach(Preferences.shared.visibleAccounts(including: controller.configDirectory), id: \.self) { url in
-                Button(UsageStore.shared.summary(url)) { controller.configDirectory = url }
+            ForEach(AgentProvider.allCases) { provider in
+                Button(provider.title) { controller.setProvider(provider) }
+                    .disabled(controller.isRunning || controller.kiosk.isAlive)
+            }
+            if controller.provider == .claude {
+                Divider()
+                ForEach(Preferences.shared.visibleAccounts(including: controller.configDirectory), id: \.self) { url in
+                    Button(UsageStore.shared.summary(url)) { controller.configDirectory = url }
+                }
             }
         } label: {
-            Label("Account: \(Preferences.accountName(controller.configDirectory))", systemImage: "person.crop.circle")
+            Label(controller.provider == .codex ? "Codex" : "Claude: \(Preferences.accountName(controller.configDirectory))", systemImage: "person.crop.circle")
         }
         .menuStyle(.button)
         .buttonStyle(PillButtonStyle(kind: .secondary))

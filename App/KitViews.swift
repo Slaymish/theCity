@@ -123,7 +123,7 @@ struct KitPanel: View {
                 Text("Services").eyebrow()
                 let servers = controller.kit?.servers ?? controller.state.mcpServers
                 if servers.isEmpty {
-                    Text("No MCP servers for this job.").font(Typography.caption).foregroundStyle(Color(Palette.muted))
+                    Text(controller.provider == .codex ? "Codex uses its configured MCP services." : "No MCP servers for this job.").font(Typography.caption).foregroundStyle(Color(Palette.muted))
                 }
                 ForEach(servers) { server in
                     let calls = controller.state.serviceCallsByServer[server.name] ?? 0
@@ -149,7 +149,7 @@ struct KitPanel: View {
                         Text("Loaded by \(room == "manager" ? "the manager" : room.capitalized)").font(Typography.caption).foregroundStyle(Color(Palette.muted))
                     }
                 }
-                if let kit = controller.kit {
+                if controller.provider == .claude, let kit = controller.kit {
                     let blocked = kit.skills.count - kit.skills.filter { controller.allowedSkills.contains($0.name) }.count
                     Text("\(kit.skills.count - blocked) allowed · \(blocked) blocked for this job")
                         .font(Typography.caption).foregroundStyle(Color(Palette.muted))

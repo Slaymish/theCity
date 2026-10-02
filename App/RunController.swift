@@ -104,12 +104,37 @@ final class RunController {
             refreshCatalogue()
         }
     }
+    private(set) var provider: AgentProvider = Preferences.shared.provider
+    func setProvider(_ value: AgentProvider) {
+        guard value != provider, !isRunning, !kiosk.isAlive else { return }
+        provider = value
+        reset(keepLog: false)
+        jobDirectory = nil
+        branch = nil
+        checkout = nil
+        limitNotice = nil
+        model = nil
+        resumeSession = nil
+        terminalSession = nil
+        kitTask?.cancel()
+        kit = nil
+        allowedServers = []
+        allowedSkills = []
+        if let floorID, let buildingID {
+            CityStore.shared.update(floor: floorID, in: buildingID) {
+                $0.provider = value; $0.model = nil; $0.sessionID = nil; $0.jobDirectory = nil; $0.branch = nil
+            }
+        }
+        loadKit()
+        checkReadiness()
+        if screen == .office { buildScene() }
+    }
     var budgetUSD: Double = Preferences.shared.budgetUSD
     private(set) var permissionMode: PermissionMode = Preferences.shared.permissionMode
     var panelTab: PanelTab = .requests
     var showPanel = false
     var selectedRoom: String?
-    var model: String? = RunController.launchArgument("-model") ?? Preferences.shared.model
+    var model: String? = RunController.launchArgument("-model") ?? (Preferences.shared.provider == .claude ? Preferences.shared.model : nil)
     var configDirectory: URL? = Preferences.shared.configDirectory {
         didSet {
             loadKit()
@@ -162,7 +187,7 @@ final class RunController {
     private(set) var contextWindows: [String: Int] = [:]
 
     @ObservationIgnored private var reducer = OfficeReducer()
-    @ObservationIgnored private var process: ClaudeProcess?
+    @ObservationIgnored private var process: (any AgentProcess)?
     @ObservationIgnored private var consumer: Task<Void, Never>?
     @ObservationIgnored private(set) var isReplay = false
     @ObservationIgnored private var builtFor: (hires: [String], servers: [String], dark: Bool)?
@@ -173,6 +198,7 @@ final class RunController {
         buildingID = building?.id
         floorID = floor?.id
         history = floor.map { FloorHistory.load($0.id) } ?? []
+        provider = floor.map { $0.provider ?? .claude } ?? Preferences.shared.provider
         workingDirectory = building?.url ?? Self.defaultWorkspace
         if let path = floor?.configDirectory { configDirectory = URL(fileURLWithPath: path) }
         refreshCatalogue()
@@ -252,6 +278,13 @@ final class RunController {
     }
 
     func loadKit(fresh: Bool = true) {
+        if provider == .codex {
+            kitTask?.cancel()
+            kitTask = nil
+            kit = Kit()
+            isLoadingKit = false
+            return
+        }
         guard let workingDirectory, let load = Self.kitLoader(for: workingDirectory, configDirectory: configDirectory) else { return }
         kitTask?.cancel()
         let configDirectory = configDirectory
@@ -386,7 +419,28 @@ final class RunController {
     @ObservationIgnored private var readinessGeneration = 0
     private static let readinessFreshFor: TimeInterval = 30
 
+    static func codexExecutable(environment: [String: String]) -> URL? {
+        (launchArgument("-codex-cli") ?? Preferences.shared.codexCLIPath).map { URL(fileURLWithPath: $0) }
+            ?? (TestHost.isActive ? nil : CodexEnvironment.locateCLI(environment: environment))
+    }
+
     func checkReadiness(fresh: Bool = true) {
+        if provider == .codex {
+            readinessGeneration += 1
+            let generation = readinessGeneration
+            let environment = CodexEnvironment.make(base: ProcessInfo.processInfo.environment)
+            guard let executable = Self.codexExecutable(environment: environment),
+                  FileManager.default.isExecutableFile(atPath: executable.path) else { readiness = .cliMissing; return }
+            readiness = .checking
+            let directory = workingDirectory ?? FileManager.default.homeDirectoryForCurrentUser
+            Task {
+                let inventory = await CodexEnvironment.inventory(executable: executable, environment: environment, directory: directory)
+                guard generation == readinessGeneration, provider == .codex else { return }
+                kit = inventory.kit
+                readiness = inventory.loggedIn == true ? .ready : .notLoggedIn
+            }
+            return
+        }
         let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
         guard let executable = Self.executable(environment: environment),
               FileManager.default.isExecutableFile(atPath: executable.path) else {
@@ -418,7 +472,17 @@ final class RunController {
         return readiness
     }
 
-    func signIn() { Self.signIn(configDirectory: configDirectory) }
+    func signIn() {
+        guard provider == .codex else { Self.signIn(configDirectory: configDirectory); return }
+        let environment = CodexEnvironment.make(base: ProcessInfo.processInfo.environment)
+        guard let executable = Self.codexExecutable(environment: environment) else { return }
+        let script = FileManager.default.temporaryDirectory.appendingPathComponent("The City Codex sign-in.command")
+        do {
+            try ("#!/bin/zsh\n" + Self.shellQuoted(executable.path) + " login\n").write(to: script, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+            NSWorkspace.shared.open(script)
+        } catch { NSAlert(error: error).runModal() }
+    }
 
     /// The inventory run costs nothing, so Settings can list models before any floor exists.
     static func models(configDirectory: URL?) async -> [ModelOption] {
@@ -721,7 +785,7 @@ final class RunController {
         start(message: text, resume: session, place: nil)
     }
 
-    var canTakeOver: Bool { kiosk.isAlive || (!isRunning && !isDemo && workingDirectory != nil) }
+    var canTakeOver: Bool { provider == .claude && (kiosk.isAlive || (!isRunning && !isDemo && workingDirectory != nil)) }
 
     /// Opens the kiosk's terminal, starting `claude` on this floor's session if it isn't already running there.
     func takeOver() {
@@ -801,7 +865,10 @@ final class RunController {
             claudeConfigDirectory: configDirectory,
             model: model,
             maxBudgetUSD: budgetUSD,
-            appendSystemPrompt: hired.isEmpty ? nil : AgentCatalogue.hiringBrief(for: hired),
+            appendSystemPrompt: hired.isEmpty ? nil : (provider == .claude ? AgentCatalogue.hiringBrief(for: hired) :
+                "Follow these departmental stages as needed, using Codex's available tools and agents:\n" + hired.map {
+                    "\($0.name): \($0.description)\n\($0.prompt)"
+                }.joined(separator: "\n\n")),
             agents: AgentCatalogue.agentsJSON(for: hired),
             resumeSessionID: resume,
             blockedTools: kit.map { Kit.blockRules(servers: $0.usableServers, allowedServers: allowedServers,
@@ -810,20 +877,22 @@ final class RunController {
         )
         let makesWorktree = resume == nil && place == .newWorktree
         let lastDirectory = jobDirectoryIsGone ? nil : jobDirectory
-        let environment = ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
+        let provider = provider
+        let environment = provider == .codex ? CodexEnvironment.make(base: ProcessInfo.processInfo.environment)
+            : ClaudeEnvironment.make(base: ProcessInfo.processInfo.environment, configDirectory: configDirectory)
         consumer = Task { [weak self] in
             guard let self else { return }
-            guard let executable = Self.executable(environment: environment),
+            guard let executable = (provider == .codex ? Self.codexExecutable(environment: environment) : Self.executable(environment: environment)),
                   FileManager.default.isExecutableFile(atPath: executable.path) else {
-                appLog(Self.cliOverride.map { "No executable at \($0.path)" } ?? "claude CLI not found on PATH or in \(ClaudeEnvironment.extraPaths.joined(separator: ", "))")
+                appLog("\(provider.title) executable not found. Locate it in Settings.")
                 return send(.launchFailed(.cliNotFound))
             }
             appLog("Using \(executable.path)")
             let fresh = readiness == .ready && readyChecked.map {
                 $0.executable == executable && $0.configDirectory == configDirectory && Date.now.timeIntervalSince($0.at) < Self.readinessFreshFor
             } == true
-            if !fresh { appLog("Checking login (claude auth status)…") }
-            if !fresh, await ClaudeEnvironment.isLoggedIn(executable: executable, environment: environment) == false {
+            if !fresh && provider == .claude { appLog("Checking login (claude auth status)…") }
+            if provider == .claude, !fresh, await ClaudeEnvironment.isLoggedIn(executable: executable, environment: environment) == false {
                 appLog("Not logged in for config directory \(configDirectory?.path ?? "default")")
                 return send(.launchFailed(.notLoggedIn))
             }
@@ -837,7 +906,12 @@ final class RunController {
                 }
                 if makesWorktree {
                     checkout = nil
-                    config.worktreeName = try await Git.freshWorktreeName(displayTitle, in: workingDirectory)
+                    if provider == .codex {
+                        directory = try await Git.worktree(named: displayTitle, from: "HEAD", in: workingDirectory)
+                        checkout = await Self.checkout(of: directory)
+                    } else {
+                        config.worktreeName = try await Git.freshWorktreeName(displayTitle, in: workingDirectory)
+                    }
                 } else {
                     guard let claimed = try await claimCheckout(directory, resuming: resume != nil) else { return }
                     directory = claimed
@@ -845,9 +919,12 @@ final class RunController {
                 guard !Task.isCancelled else { return }
                 config.workingDirectory = directory
                 let arguments = config.arguments, spawnIn = directory
-                let process = try await Task.detached {
-                    try ClaudeProcess(executable: executable, arguments: arguments, environment: environment,
-                                      workingDirectory: spawnIn, keepInputOpen: true)
+                let process: any AgentProcess = try await Task.detached { [config] in
+                    if provider == .codex {
+                        return try CodexProcess(executable: executable, config: config, environment: environment) as any AgentProcess
+                    }
+                    return try ClaudeProcess(executable: executable, arguments: arguments, environment: environment,
+                                             workingDirectory: spawnIn, keepInputOpen: true) as any AgentProcess
                 }.value
                 guard !Task.isCancelled else {
                     process.closeInput()
@@ -860,8 +937,10 @@ final class RunController {
                 appLog("Permission mode: \(config.permissionMode.title)")
                 if !config.blockedTools.isEmpty { appLog("Blocked for this job: \(config.blockedTools.joined(separator: ", "))") }
                 send(.launched)
-                write(ControlMessage.initialize(), note: "initialize")
-                write(ControlMessage.userMessage(request), note: "request")
+                if provider == .claude {
+                    write(ControlMessage.initialize(), note: "initialize")
+                    write(ControlMessage.userMessage(request), note: "request")
+                }
                 await consume(process.output)
             } catch {
                 guard !Task.isCancelled else { return }
@@ -969,9 +1048,9 @@ final class RunController {
     }
 
     func setPermissionMode(_ mode: PermissionMode) {
-        guard mode != permissionMode else { return }
+        guard mode != permissionMode, !(provider == .codex && isRunning) else { return }
         permissionMode = mode
-        if isRunning { write(ControlMessage.setPermissionMode(mode), note: "permission mode \(mode.title)") }
+        if isRunning && provider == .claude { write(ControlMessage.setPermissionMode(mode), note: "permission mode \(mode.title)") }
     }
 
     func allowAndSwitchToAuto(_ pending: PendingRequest) {
@@ -997,6 +1076,7 @@ final class RunController {
                 case .event(let event):
                     log.append(LogEntry(elapsed: sinceStart, kind: .event(Self.tag(for: event)), text: line.raw))
                     send(.wire(event))
+                    if provider == .codex, case .controlResponse(let id?, _) = event { send(.requestResolved(requestID: id)) }
                     if case .result = event { closeInputIfIdle() }
                 case .malformed(let reason):
                     log.append(LogEntry(elapsed: sinceStart, kind: .malformed(reason), text: line.raw))
@@ -1012,7 +1092,7 @@ final class RunController {
 
     /// Background subagents start a fresh turn when they finish, so stdin stays open until nothing is outstanding.
     private func closeInputIfIdle() {
-        guard let process, state.backgroundTasks == 0, state.pendingRequests.isEmpty else { return }
+        guard provider == .claude, let process, state.backgroundTasks == 0, state.pendingRequests.isEmpty else { return }
         appLog("Turn finished with nothing outstanding; closing input")
         process.closeInput()
     }
@@ -1022,7 +1102,7 @@ final class RunController {
         // Every write to an observed property re-renders its readers, even an equal one, and this runs once per stream line.
         if state != reducer.state { state = reducer.state }
         // Replayed limits are old or made up, so they mustn't replace the account's saved reading.
-        if case .wire(.rateLimit(let limit)) = input, !isReplay { UsageStore.shared.record(limit, configDirectory: configDirectory) }
+        if case .wire(.rateLimit(let limit)) = input, !isReplay, provider == .claude { UsageStore.shared.record(limit, configDirectory: configDirectory) }
         if case .wire(.sessionStarted(let info)) = input, !isReplay, let cwd = info.cwd { settle(in: URL(fileURLWithPath: cwd)) }
         CityStore.shared.refreshBadge()
         if case .ended = state.phase, endedAt == nil {

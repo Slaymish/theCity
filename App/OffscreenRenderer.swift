@@ -311,7 +311,8 @@ enum PreviewStage {
     static func renderOfficeStatus(to path: String, room: String, dark: Bool) throws {
         let workspace = URL(fileURLWithPath: RunController.launchArgument("-workspace") ?? FileManager.default.currentDirectoryPath)
         let building = CityStore.Building(name: "theCity", path: workspace.path, style: 0)
-        let floor = CityStore.Floor(name: "Feature: login", hires: ["research", "build", "review"], budgetUSD: 1)
+        let floor = CityStore.Floor(name: "Feature: login", hires: ["research", "build", "review"],
+                                    provider: RunController.launchArgument("-provider").flatMap(AgentProvider.init(rawValue:)), budgetUSD: 1)
         let controller = RunController(building: building, floor: floor)
         play(controller, "three-rooms.jsonl", lines: 25, workspace: workspace, dark: dark)
         controller.request = "Write hello.txt with a friendly greeting, then review it"

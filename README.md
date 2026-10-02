@@ -4,16 +4,17 @@
 
 ![A miniature neighbourhood in warm evening light: brick and glass offices, glowing street lamps, and cars passing through the centre as the camera gently circles](Docs/Media/showcase.gif)
 
-A macOS app that shows Claude Code runs as a city of robot-staffed offices. Every project folder is a building, every building has floors of robots, and every animation comes from a real event in the `claude` CLI's stream.
+A macOS app that shows Claude Code and Codex runs as a city of robot-staffed offices. Every project folder is a building, every building has floors of robots, and every animation comes from a real agent event.
 
-The City starts its own Claude Code runs using the `claude` you already have installed, and they count towards your plan as usual. It doesn't show sessions you started in a terminal.
+The City starts its own runs using your installed Claude Code or Codex CLI and existing account. Choose the default agent in Settings › General, or change the Agent on an idle floor. It doesn't show sessions you started in a terminal.
 
 ![Breaking ground on a new project, walking into its building, asking reception for a password reset flow, then going up to the floor it picks, where the robots start work](Docs/Media/city.gif)
 
 ## Requirements
 
 - macOS 26 or later.
-- [Claude Code](https://docs.claude.com/en/docs/claude-code) 2.1.163 or later, installed and signed in. Older versions have known security issues and the app won't run jobs with them. The app looks for `claude` on your `PATH` and in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` and `~/.claude/local`. You can also point it at the binary in Settings. Before each job it checks that Claude Code is installed and signed in, and offers Install…, Locate… or Sign In… if not.
+- For Claude floors: [Claude Code](https://docs.claude.com/en/docs/claude-code) 2.1.163 or later, installed and signed in. Older versions have known security issues and the app won't run jobs with them. The app looks for `claude` on your `PATH` and in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` and `~/.claude/local`. You can also point it at the binary in Settings. Before each job it checks that Claude Code is installed and signed in, and offers Install…, Locate… or Sign In… if not.
+- For Codex floors: [Codex CLI](https://developers.openai.com/codex/quickstart), installed and signed in with `codex login`. The app looks on `PATH` and in the Codex and ChatGPT app bundles; Settings › General › Codex lets you locate another executable. See [Codex support](Docs/Codex.md) for permission modes and current differences.
 - Apple Intelligence enabled, for the on-device model that picks departments and routes work. Without it, choose Claude Haiku under Settings › Reception (it counts towards the account's usage limits). A word-overlap check is used as a fallback.
 
 ## Install
@@ -40,8 +41,8 @@ The app uses [Sparkle](https://sparkle-project.org) to check for new releases an
 - **Daylight:** the HUD dial moves the scene from warm dawn through daylight to purple twilight and night. Each launch follows your system’s local time until you move the dial; Local time restores it.
 - **Reception:** tell the receptionist what you need. It sends the job to the floor whose team fits, taking into account work already running on other floors, or proposes a new floor. A busy floor queues the job.
 - **Hiring:** a new floor's departments are picked from the project's `.claude/agents/*.md`. You can hire or release any of them.
-- **Floor:** a saved team (departments, model, budget, allowed services and skills) with its own Claude session and job history. Floors run in parallel.
-- **Office:** the floor runs `claude -p` in stream-JSON mode. Subagents work at their department's desk; anything the plan didn't hire sits at the Contractor desk.
+- **Floor:** a saved team (departments, model, budget, allowed services and skills) with its own Claude or Codex session and job history. Floors run in parallel.
+- **Office:** Claude floors run `claude -p` in stream-JSON mode; Codex floors use `codex app-server` over stdio. Subagents work at their department's desk; anything the plan didn't hire sits at the Contractor desk.
 - **Questions and approvals** appear as cards at the robot's desk. Use ⌘1–⌘9 to pick an option, ⌘↩ to send or allow, and ⌘⌫ to deny. **Always allow** saves the CLI's suggested rule to the project's `.claude/settings.local.json`.
 - **Outbox:** the Delivered card has the summary, every file the run wrote or edited, and a follow-up field that resumes the same session.
 - **Plan limits:** 5-hour and weekly usage from the latest job appear top right.

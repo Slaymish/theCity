@@ -511,7 +511,7 @@ struct PermissionModeMenu: View {
                 } label: {
                     if mode == controller.permissionMode { Label(mode.title, systemImage: "checkmark") } else { Text(mode.title) }
                 }
-                .help(mode.detail)
+                .help(controller.provider.permissionDetail(mode))
             }
         } label: {
             Label("Permissions: \(controller.permissionMode.title)", systemImage: "checkmark.shield")
@@ -519,7 +519,8 @@ struct PermissionModeMenu: View {
         .menuStyle(.button)
         .buttonStyle(PillButtonStyle(kind: .secondary))
         .fixedSize()
-        .help(controller.permissionMode.detail)
+        .help(controller.provider.permissionDetail(controller.permissionMode))
+        .disabled(controller.provider == .codex && controller.isRunning)
     }
 }
 

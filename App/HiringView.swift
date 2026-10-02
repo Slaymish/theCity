@@ -50,8 +50,13 @@ struct HiringView: View {
                                 }
                         }
                     }
-                    Text("Tools and skills for this job").eyebrow().frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
-                    KitChooser(controller: controller)
+                    if controller.provider == .claude {
+                        Text("Tools and skills for this job").eyebrow().frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                        KitChooser(controller: controller)
+                    } else {
+                        Text("Codex uses the skills, services and agent roles configured in Codex. Hired departments provide guidance for this job.")
+                            .font(Typography.caption).foregroundStyle(Color(Palette.muted))
+                    }
                 }
             }
             .frame(maxHeight: onBack == nil ? 440 : 300)
@@ -59,7 +64,7 @@ struct HiringView: View {
             HStack(spacing: 8) {
                 AccountMenu(controller: controller)
                 ModelMenu(controller: controller)
-                BudgetMenu(controller: controller)
+                if controller.provider == .claude { BudgetMenu(controller: controller) }
                 PermissionModeMenu(controller: controller)
             }
             HStack {

@@ -33,10 +33,15 @@ struct Instruments: View {
                     .accessibilityAction { toggle(.scope) }
                     .help(help)
             }
+            if case .floor(let controller) = scope, controller.provider == .codex {
+                Text("Codex").font(Typography.caption).foregroundStyle(Color(Palette.muted))
+                    .padding(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
+            } else {
             UsageHUD(configDirectory: configDirectory) { toggle(.usage) }
                 .overlay(alignment: .leading) {
                     if showsCounts { Rectangle().fill(Color(Palette.hairline)).frame(width: 1) }
                 }
+            }
         }
         .modifier(Glass(radius: 24, padding: EdgeInsets()))
         .popover(item: $detail, arrowEdge: .bottom) { shown in
@@ -192,6 +197,7 @@ struct FloorDetail: View {
 
     /// On a subscription the dollar figure is only what the API would have charged, so show plan usage instead.
     private func spendLine(_ tally: TokenTally) -> String {
+        if controller.provider == .codex { return "Codex account usage · no dollar cap" }
         if let limit = controller.state.rateLimit, !limit.isUsingOverage, let session = limit.windows["five_hour"] {
             return "Plan \(StatusFormat.percent(session.utilization)) of session"
         }

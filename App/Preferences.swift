@@ -51,6 +51,12 @@ final class Preferences {
     static let shared = Preferences()
     private let defaults = UserDefaults.app
 
+    var provider: AgentProvider {
+        didSet { defaults.set(provider.rawValue, forKey: "agentProvider") }
+    }
+    var codexCLIPath: String? {
+        didSet { defaults.set(codexCLIPath, forKey: "codexCLIPath") }
+    }
     var configDirectory: URL? {
         didSet { defaults.set(configDirectory?.path, forKey: "configDirectory") }
     }
@@ -98,6 +104,8 @@ final class Preferences {
     }
 
     private init() {
+        provider = AgentProvider(rawValue: RunController.launchArgument("-provider") ?? defaults.string(forKey: "agentProvider") ?? "") ?? .claude
+        codexCLIPath = defaults.string(forKey: "codexCLIPath")
         configDirectory = defaults.string(forKey: "configDirectory").map { URL(fileURLWithPath: $0) }
             ?? ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
         model = defaults.string(forKey: "model")
@@ -220,30 +228,38 @@ struct SettingsView: View {
         TabView {
             page {
                 Section("New jobs start with") {
-                    Picker("Account", selection: $preferences.configDirectory) {
-                        ForEach(preferences.visibleAccounts(including: preferences.configDirectory), id: \.self) { url in
-                            Text(Preferences.accountName(url)).tag(url)
-                        }
+                    Picker("Agent", selection: $preferences.provider) {
+                        ForEach(AgentProvider.allCases) { Text($0.title).tag($0) }
                     }
-                    Picker("Model", selection: $preferences.model) {
-                        Text("Default").tag(String?.none)
-                        ForEach(models) { model in
-                            Text(model.displayName).tag(String?.some(model.value))
+                    if preferences.provider == .claude {
+                        Picker("Account", selection: $preferences.configDirectory) {
+                            ForEach(preferences.visibleAccounts(including: preferences.configDirectory), id: \.self) { url in
+                                Text(Preferences.accountName(url)).tag(url)
+                            }
                         }
-                    }
-                    .task(id: preferences.configDirectory) {
-                        guard city.allSessions.first?.primaryModels.isEmpty != false else { return }
-                        loadedModels = await RunController.models(configDirectory: preferences.configDirectory)
-                    }
-                    Picker("Budget", selection: $preferences.budgetUSD) {
-                        ForEach(RunController.budgets, id: \.self) { budget in
-                            Text(budget.formatted(.currency(code: "USD"))).tag(budget)
+                        Picker("Model", selection: $preferences.model) {
+                            Text("Default").tag(String?.none)
+                            ForEach(models) { model in
+                                Text(model.displayName).tag(String?.some(model.value))
+                            }
                         }
+                        .task(id: preferences.configDirectory) {
+                            guard city.allSessions.first?.primaryModels.isEmpty != false else { return }
+                            loadedModels = await RunController.models(configDirectory: preferences.configDirectory)
+                        }
+                        Picker("Budget", selection: $preferences.budgetUSD) {
+                            ForEach(RunController.budgets, id: \.self) { budget in
+                                Text(budget.formatted(.currency(code: "USD"))).tag(budget)
+                            }
+                        }
+                    } else {
+                        Text("Codex uses its configured default model and account. It has no dollar budget cap.")
+                            .font(.caption).foregroundStyle(Color(Palette.muted))
                     }
                     Picker("Permissions", selection: $preferences.permissionMode) {
                         ForEach(PermissionMode.allCases) { mode in Text(mode.title).tag(mode) }
                     }
-                    Text(preferences.permissionMode.detail).font(.caption).foregroundStyle(Color(Palette.muted))
+                    Text(preferences.provider.permissionDetail(preferences.permissionMode)).font(.caption).foregroundStyle(Color(Palette.muted))
                 }
                 Section {
                     Picker("Routes and hires with", selection: $preferences.receptionist) {
@@ -253,6 +269,21 @@ struct SettingsView: View {
                     Text("Reception")
                 } footer: {
                     Text(receptionNote).font(.caption).foregroundStyle(Color(Palette.muted))
+                }
+                Section("Codex") {
+                    LabeledContent("Command-line tool", value: preferences.codexCLIPath ?? "Found automatically")
+                    Button("Choose Codex…") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = false
+                        if panel.runModal() == .OK, let url = panel.url { preferences.codexCLIPath = url.path }
+                        city.allSessions.forEach { $0.checkReadiness() }
+                    }
+                    if preferences.codexCLIPath != nil {
+                        Button("Use Default") {
+                            preferences.codexCLIPath = nil
+                            city.allSessions.forEach { $0.checkReadiness() }
+                        }
+                    }
                 }
                 Section("Claude Code") {
                     LabeledContent("Command-line tool") {

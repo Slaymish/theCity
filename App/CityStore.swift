@@ -11,6 +11,7 @@ final class CityStore {
         var id = UUID()
         var name: String
         var hires: [String]
+        var provider: AgentProvider?
         var model: String?
         var budgetUSD: Double
         var allowedServers: [String]?
@@ -202,6 +203,7 @@ final class CityStore {
     func changeSettings(of floorID: UUID, in buildingID: UUID, _ change: (inout Floor) -> Void) {
         update(floor: floorID, in: buildingID, change)
         guard let floor = floor(floorID, in: buildingID), let session = sessions[floorID] else { return }
+        session.setProvider(floor.provider ?? .claude)
         session.model = floor.model
         session.budgetUSD = floor.budgetUSD
         let account = floor.configDirectory.map { URL(fileURLWithPath: $0) } ?? Preferences.shared.configDirectory
@@ -347,7 +349,7 @@ final class CityStore {
         guard let buildingID = session.buildingID, let index = buildings.firstIndex(where: { $0.id == buildingID }) else { return nil }
         let floor = Floor(
             name: session.pendingFloorName ?? Self.floorName(for: session.request, existing: buildings[index].floors.map(\.name)),
-            hires: session.hired.map(\.name), model: session.model, budgetUSD: session.budgetUSD,
+            hires: session.hired.map(\.name), provider: session.provider, model: session.model, budgetUSD: session.budgetUSD,
             allowedServers: session.kit.map { _ in Array(session.allowedServers) },
             allowedSkills: session.kit.map { _ in Array(session.allowedSkills) },
             lastRequest: session.request,

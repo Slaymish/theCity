@@ -666,12 +666,24 @@ struct FloorSettingsMenus: View {
     var body: some View {
         let session = city.sessions[floor.id]
         let account = floor.configDirectory.map { URL(fileURLWithPath: $0) } ?? Preferences.shared.configDirectory
-        let models = ((session?.kit ?? RunController.cachedKit(for: building.url, configDirectory: account))?.models ?? [])
+        let models = ((session?.kit ?? ((floor.provider ?? .claude) == .claude ? RunController.cachedKit(for: building.url, configDirectory: account) : nil))?.models ?? [])
             .filter { $0.value != "default" }
+        let provider = floor.provider ?? .claude
+        Menu("Agent: \(provider.title)") {
+            ForEach(AgentProvider.allCases) { value in
+                Button(value.title) {
+                    guard value != provider else { return }
+                    change { $0.provider = value; $0.model = nil; $0.sessionID = nil; $0.jobDirectory = nil; $0.branch = nil }
+                }
+            }
+        }
+        .disabled(session?.isRunning == true || session?.kiosk.isAlive == true)
+        if provider == .claude {
         Menu("Account: \(Preferences.accountName(account))") {
             ForEach(Preferences.shared.visibleAccounts(including: account), id: \.self) { url in
                 Button(UsageStore.shared.summary(url)) { change { $0.configDirectory = url?.path } }
             }
+        }
         }
         Menu("Model: \(floor.model.map { value in models.first { $0.value == value }?.displayName ?? value.capitalized } ?? "Default")") {
             Button("Default") { change { $0.model = nil } }
@@ -679,10 +691,12 @@ struct FloorSettingsMenus: View {
                 Button(model.displayName) { change { $0.model = model.value } }
             }
         }
+        if provider == .claude {
         Menu("Budget: \(floor.budgetUSD.formatted(.currency(code: "USD")))") {
             ForEach(RunController.budgets, id: \.self) { budget in
                 Button(budget.formatted(.currency(code: "USD"))) { change { $0.budgetUSD = budget } }
             }
+        }
         }
     }
 

@@ -484,7 +484,7 @@ struct EndCard: View {
 
     private var title: String { RunController.title(for: outcome) }
 
-    private var message: String { RunController.message(for: outcome, budget: controller.budgetUSD) }
+    private var message: String { RunController.message(for: outcome, budget: controller.budgetUSD).replacingOccurrences(of: "Claude Code", with: controller.provider.title).replacingOccurrences(of: "Your Claude plan", with: controller.provider == .codex ? "Your Codex account" : "Your Claude plan") }
 }
 
 struct HistorySheet: View {
